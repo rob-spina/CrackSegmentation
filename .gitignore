@@ -1,0 +1,60 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- IDE / OS ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---------- PyInstaller output ----------
+# (publish executables as GitHub Releases instead of committing them)
+build/
+dist/
+# Remove the next line if you want to track your own .spec file
+*.spec
+
+# ---------- Packaging output (installers, executables) ----------
+# (publish these as GitHub Releases instead - see README)
+packaging/dist/
+packaging/build/
+*.dmg
+*.exe
+*.msi
+*.AppImage
+
+# ---------- Runtime data: NEVER commit ----------
+# Output / archive folders created by the tool
+segmentated images/
+already processed images/
+# Input photos folder (IMAGE_FOLDER in config.py) — create it locally, do not commit its content
+Images/
+
+# Photos, masks and overlays (the tool writes them next to the sources)
+*.jpg
+*.jpeg
+*.JPG
+*.tif
+*.tiff
+*.png
+# LabelMe JSON files embed the whole photo as base64 -> huge and private
+# (remove this line if you track a legitimate JSON config file)
+*.json
+# Reports produced by the evaluator
+*.csv
+# Automatic backups made by compare_and_filter_cracks.py
+*.bak
+
+# ...but keep documentation and example assets
+!docs/
+!docs/**
+!examples/
+!examples/**

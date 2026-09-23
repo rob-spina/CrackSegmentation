@@ -1,0 +1,6 @@
+# Optional: embedded PDF user manual panel.
+# PyMuPDF is licensed AGPL-3.0 (or commercial, from Artifex).
+pymupdf
+
+# Optional: only needed to build standalone executables
+# pyinstaller

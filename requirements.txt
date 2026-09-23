@@ -1,0 +1,4 @@
+# Core dependencies (Tkinter ships with Python, it is not installed via pip)
+numpy
+opencv-python>=4.4        # SIFT is part of the main module from 4.4 onwards
+scikit-image              # skeletonize() for the real-edge map
