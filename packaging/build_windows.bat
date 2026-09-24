@@ -31,6 +31,18 @@ if errorlevel 1 (
 echo == Installing/upgrading build dependencies ^(a venv is recommended^) ==
 %PYTHON_BIN% -m pip install --upgrade -r ..\requirements.txt
 if errorlevel 1 exit /b 1
+REM PyMuPDF (embedded PDF manual panel) is licensed AGPL-3.0/commercial --
+REM kept in its own file so it's a visible, separate choice. Installed here
+REM by default so the built app has a working manual panel; remove this
+REM step to build without it (the panel then just shows a fallback
+REM message instead of the rendered PDF -- see requirements-optional.txt).
+%PYTHON_BIN% -m pip install --upgrade -r ..\requirements-optional.txt
+if errorlevel 1 exit /b 1
+REM PyInstaller is a build-time-only tool, not a feature dependency -- kept
+REM out of both requirements files above so a plain "pip install -r
+REM requirements.txt" (to just run the tool from source) never pulls it in.
+%PYTHON_BIN% -m pip install --upgrade "pyinstaller>=6.3"
+if errorlevel 1 exit /b 1
 
 echo == Cleaning previous build artifacts ==
 if exist build rmdir /s /q build

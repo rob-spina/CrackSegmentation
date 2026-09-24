@@ -29,6 +29,16 @@ fi
 
 echo "== Installing/upgrading build dependencies (venv recommended) =="
 $PYTHON_BIN -m pip install --upgrade -r ../requirements.txt
+# PyMuPDF (embedded PDF manual panel) is licensed AGPL-3.0/commercial --
+# kept in its own file so it's a visible, separate choice. Installed here
+# by default so the built app has a working manual panel; comment this
+# line out to build without it (the panel then just shows a fallback
+# message instead of the rendered PDF -- see requirements-optional.txt).
+$PYTHON_BIN -m pip install --upgrade -r ../requirements-optional.txt
+# PyInstaller is a build-time-only tool, not a feature dependency -- kept
+# out of both requirements files above so a plain `pip install -r
+# requirements.txt` (to just run the tool from source) never pulls it in.
+$PYTHON_BIN -m pip install --upgrade "pyinstaller>=6.3"
 
 echo "== Cleaning previous build artifacts =="
 rm -rf build dist

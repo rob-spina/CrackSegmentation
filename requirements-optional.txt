@@ -1,6 +1,8 @@
-# Optional: embedded PDF user manual panel.
-# PyMuPDF is licensed AGPL-3.0 (or commercial, from Artifex).
-pymupdf
-
-# Optional: only needed to build standalone executables
-# pyinstaller
+# Optional: embedded PDF user manual panel ([?] key in
+# crack_segmentation_gui.py). Without it, the panel shows a graceful
+# fallback message instead of the rendered manual -- everything else in
+# the app works exactly the same either way.
+# PyMuPDF is licensed AGPL-3.0 (or commercial, from Artifex) -- kept
+# separate from requirements.txt so you can decide whether to accept
+# that license before installing it.
+pymupdf>=1.23

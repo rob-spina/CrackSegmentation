@@ -1,4 +1,17 @@
-# Core dependencies (Tkinter ships with Python, it is not installed via pip)
-numpy
-opencv-python>=4.4        # SIFT is part of the main module from 4.4 onwards
-scikit-image              # skeletonize() for the real-edge map
+# Crack & Detachment Segmentation -- runtime dependencies
+#
+# Tkinter (used only by crack_segmentation_gui.py) is NOT listed here: it
+# ships with the standard python.org installers for both Windows and
+# macOS, so there is nothing to pip-install for it. If `python3 -c "import
+# tkinter"` fails on Linux, install your distro's package (e.g. `sudo apt
+# install python3-tk` on Debian/Ubuntu) -- this is a system package, not a
+# pip package.
+#
+# PyMuPDF (the embedded PDF manual panel, [?] key) and PyInstaller (only
+# needed to build the standalone .app/.exe/.deb) are NOT listed here --
+# see requirements-optional.txt.
+
+opencv-python>=4.8
+numpy>=1.24
+scikit-image>=0.21
+Pillow>=10.0  # only used by crack_segmentation_gui.py, to blit frames into the embedded Tk canvas
