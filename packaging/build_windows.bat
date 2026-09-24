@@ -28,7 +28,29 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo == Installing/upgrading build dependencies ^(a venv is recommended^) ==
+echo == Setting up an isolated build environment ^(.venv^) ==
+REM A venv keeps this build's numpy/opencv/etc. fully separate from
+REM whatever else is installed on this machine's Python -- avoiding
+REM version conflicts with other projects, and keeping repeated builds
+REM reproducible. The venv is created from the same %PYTHON_BIN% checked
+REM above, so it inherits that same Python/Tkinter installation.
+%PYTHON_BIN% -c "import venv" >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: this Python doesn't have the venv module available.
+    echo Try reinstalling Python from https://python.org
+    exit /b 1
+)
+if not exist ".venv" (
+    %PYTHON_BIN% -m venv .venv
+    if errorlevel 1 exit /b 1
+)
+set "PYTHON_BIN=%cd%\.venv\Scripts\python.exe"
+echo Using %PYTHON_BIN%
+%PYTHON_BIN% --version
+
+echo == Installing/upgrading build dependencies ^(inside .venv^) ==
+%PYTHON_BIN% -m pip install --upgrade pip
+if errorlevel 1 exit /b 1
 %PYTHON_BIN% -m pip install --upgrade -r ..\requirements.txt
 if errorlevel 1 exit /b 1
 REM PyMuPDF (embedded PDF manual panel) is licensed AGPL-3.0/commercial --

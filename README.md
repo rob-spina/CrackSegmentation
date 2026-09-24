@@ -20,6 +20,39 @@ It produces [LabelMe](https://github.com/wkentaro/labelme)-compatible annotation
 - **Measurements**: crack length and detachment area once the image scale is calibrated.
 - **Embedded PDF user manual** inside the main window (optional, requires PyMuPDF).
 
+## Downloads
+
+Pre-built, self-contained packages are available on the [Releases page](https://github.com/rob-spina/CrackSegmentation/releases) — no separate Python installation required on the target machine.
+
+**macOS** — `CrackSegmentation.dmg`
+Open it in Finder, drag `CrackSegmentation` onto the Applications shortcut, eject, then launch from Applications/Launchpad. Don't run the `.dmg` itself as a script. It's unsigned (no paid Apple Developer certificate): if Gatekeeper blocks the first launch, allow it via **System Settings › Privacy & Security › "Open Anyway"**, or right-click the app and choose **Open**.
+
+**Windows** — `CrackSegmentation-Setup.exe`
+Run the installer and follow the wizard. It's unsigned: if SmartScreen flags it, click **More info › Run anyway** — expected for independently built software, not a sign of a problem.
+
+**Linux (Debian/Ubuntu, amd64)** — `cracksegmentation_*_amd64.deb`
+```bash
+sudo apt install ./cracksegmentation_*_amd64.deb
+# or: sudo dpkg -i ./cracksegmentation_*_amd64.deb && sudo apt-get install -f
+```
+Then launch via the Applications menu or by typing `cracksegmentation` in a terminal. Unsigned: your system may warn about an unknown source, which is expected for a locally built package.
+
+**Linux (other distributions, amd64)** — `CrackSegmentation-linux-x86_64.tar.gz`
+Portable build, no package manager required — works on Fedora, openSUSE, Arch, and others.
+```bash
+tar -xzvf CrackSegmentation-linux-x86_64.tar.gz
+./CrackSegmentation/CrackSegmentation
+```
+
+Prefer running from source, or need another platform? See Installation below — each platform can also be built directly from source using the scripts in `packaging/` (`build_mac.sh`, `build_linux.sh`, `build_windows.bat`).
+
+**Where to put your photos (pre-built packages only).** Unlike running from source (where `Images/` lives next to the script — see Quick start below), a pre-built package creates its data folder automatically on first launch, normally at:
+```
+Documents/CrackSegmentation/Images        (macOS/Linux)
+Documents\CrackSegmentation\Images        (Windows)
+```
+Just drop your photos in there and (re)launch the app. If `Documents` isn't writable on your system (e.g. a broken OneDrive/cloud-sync redirect on Windows), the app automatically falls back to a per-user app-data folder instead (`%LOCALAPPDATA%\CrackSegmentation` on Windows) — the exact path it's using is always shown in full in the "No valid file found in: ..." message if the folder is still empty.
+
 ## Installation
 
 Requires Python 3.10+ and Tkinter (bundled with most Python distributions; on Debian/Ubuntu: `sudo apt install python3-tk`).

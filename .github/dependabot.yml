@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Keeps the action versions used in the workflows up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

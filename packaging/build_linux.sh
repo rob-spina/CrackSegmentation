@@ -12,7 +12,7 @@
 # Output:
 #   packaging/dist/CrackSegmentation/CrackSegmentation   (raw onedir build,
 #                                                          runs directly)
-#   packaging/dist/crackSegmentation_1.0.0_amd64.deb      (installable
+#   packaging/dist/crackSegmentation_1.0.1_amd64.deb      (installable
 #                                                          package -- adds
 #                                                          it to the
 #                                                          Applications
@@ -32,7 +32,7 @@ PKG_NAME="cracksegmentation"
 # .deb on disk had a real fix in it (USER REPORT: a fix confirmed to be
 # in the source, and in the freshly-built .deb, simply never took effect
 # after "reinstalling").
-PKG_VERSION="1.0.0-$(date +%Y%m%d%H%M%S)"
+PKG_VERSION="1.0.1-$(date +%Y%m%d%H%M%S)"
 PKG_ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 
 echo "== Using $($PYTHON_BIN --version) at $(command -v "$PYTHON_BIN") =="

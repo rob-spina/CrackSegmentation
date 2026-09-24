@@ -1,0 +1,68 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+        **Please do not attach private or third-party photos.** If the bug depends on an image,
+        describe it, or reproduce it with a synthetic image or one you are allowed to share.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - Interactive tool, Mode 1 (new photos)
+        - Interactive tool, Mode 2 (reopen segmented photos)
+        - compare_and_filter_cracks.py
+        - crack_segmentation_evaluator.py
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the on-screen message or the console output, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Press key ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v1.0.0 or a commit hash
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11, Ubuntu 24.04, macOS 15, ...
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.4"
+  - type: input
+    id: opencv
+    attributes:
+      label: OpenCV version
+      description: 'Run: python -c "import cv2; print(cv2.__version__)"'
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output / traceback
+      render: text
