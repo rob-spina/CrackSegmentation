@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Crack &amp; Detachment Segmentation -- User Manual</title>
+<style>
+  @page { margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'DejaVu Sans', Helvetica, Arial, sans-serif;
+    color: #1f2937;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0;
+  }
+  .page-margin { padding: 0 42px; }
+
+  /* ---------- Cover page ---------- */
+  .coverpage {
+    position: relative;
+    height: 364mm;
+    background-image: url('logos/cover_gradient.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    color: #ffffff;
+    overflow: hidden;
+    page-break-after: always;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  }
+  .coverpage .top-rule {
+    position: absolute; top: 0; left: 0; right: 0; height: 7px;
+    background-image: url('logos/top_rule.png');
+    background-size: 100% 100%;
+  }
+  .coverpage .logo-row { position: relative; padding: 36px 64px 0 64px; }
+  .logo-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 84px;
+    background: rgba(255,255,255,0.96);
+    border-radius: 6px;
+    padding: 0 22px;
+    margin-right: 14px;
+    vertical-align: middle;
+  }
+  .logo-chip img { display: block; max-height: 62px; }
+  .coverpage .content {
+    position: relative;
+    padding: 34px 64px 0 64px;
+  }
+  .coverpage .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 3.5px;
+    font-size: 11.5px;
+    color: #ffe08a;
+    margin-bottom: 18px;
+    font-weight: bold;
+  }
+  .coverpage h1 {
+    font-size: 40px;
+    margin: 0 0 16px 0;
+    font-weight: bold;
+    line-height: 1.16;
+    max-width: 640px;
+  }
+  .coverpage h1 .l1 { color: #ffc700; }
+  .coverpage h1 .l2 { color: #ffffff; }
+  .coverpage .subtitle {
+    font-size: 14.5px;
+    color: #f1e9ff;
+    max-width: 480px;
+    line-height: 1.6;
+    margin-bottom: 22px;
+  }
+  .coverpage .intro {
+    max-width: 520px;
+    font-size: 12.3px;
+    color: #ede7fb;
+    line-height: 1.68;
+    background: rgba(255,255,255,0.09);
+    border-left: 3px solid #ffc700;
+    border-radius: 3px;
+    padding: 14px 18px;
+  }
+  .coverpage .intro b { color: #ffffff; }
+  .coverpage .meta-line {
+    margin-top: 22px;
+    font-size: 11px;
+    color: #e4d9ff;
+    letter-spacing: 0.4px;
+  }
+  .coverpage .illustration {
+    position: absolute;
+    right: -30px;
+    top: 470px;
+    width: 400px;
+  }
+  .coverpage .features {
+    position: absolute;
+    left: 64px;
+    top: 760px;
+    width: 460px;
+  }
+  .coverpage .features .frow {
+    display: table;
+    width: 100%;
+    margin-bottom: 13px;
+  }
+  .coverpage .features .fdot {
+    display: table-cell;
+    width: 26px;
+    vertical-align: top;
+    padding-top: 2px;
+  }
+  .coverpage .features .fdot span {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22d3ee;
+  }
+  .coverpage .features .ftext {
+    display: table-cell;
+    font-size: 11.5px;
+    color: #ede7fb;
+    line-height: 1.5;
+  }
+  .coverpage .features .ftext b { color: #ffffff; }
+  .coverpage .badge-row { position: absolute; left: 64px; bottom: 104px; }
+  .coverpage .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.38);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    margin-right: 9px;
+  }
+  .coverpage .cover-footer {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: #ffffff;
+    padding: 16px 64px;
+    display: table;
+    width: 100%;
+    text-shadow: none;
+  }
+  .coverpage .cover-footer .cf-logos { display: table-cell; vertical-align: middle; }
+  .coverpage .cover-footer .cf-logos img { height: 34px; display: block; }
+  .coverpage .cover-footer .cf-caption {
+    display: table-cell; vertical-align: middle; text-align: right;
+    font-size: 10px; color: #5b6472; line-height: 1.5;
+  }
+
+  /* ---------- Section headings ---------- */
+  .section-head {
+    page-break-inside: avoid;
+  }
+  h2.section {
+    font-size: 19px;
+    color: #0f3460;
+    border-bottom: 2.5px solid #1f8a9e;
+    padding-bottom: 7px;
+    margin: 34px 0 16px 0;
+    page-break-before: auto;
+    page-break-after: avoid;
+    padding-top: 6px;
+  }
+  h2.section .num {
+    display: inline-block;
+    background: #0f3460;
+    color: #fff;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    border-radius: 50%;
+    font-size: 12px;
+    margin-right: 9px;
+    vertical-align: middle;
+  }
+  h3.sub {
+    font-size: 14.5px;
+    color: #16537e;
+    margin: 22px 0 8px 0;
+  }
+  p { margin: 8px 0; }
+  .lead {
+    font-size: 13.5px;
+    color: #374151;
+    background: #f3f8fa;
+    border-left: 4px solid #1f8a9e;
+    padding: 12px 16px;
+    margin: 0 0 18px 0;
+  }
+
+  /* ---------- Four-panel interface overview ---------- */
+  .panels { display: table; width: 100%; border-spacing: 10px 0; margin: 14px 0 6px 0; }
+  .panel-row { display: table-row; }
+  .panel {
+    display: table-cell;
+    width: 25%;
+    background: #f7fafb;
+    border: 1px solid #d7e5ea;
+    border-top: 3px solid #1f8a9e;
+    border-radius: 3px;
+    padding: 12px 13px;
+    vertical-align: top;
+  }
+  .panel .ptitle {
+    font-weight: bold;
+    color: #0f3460;
+    font-size: 12.5px;
+    margin-bottom: 5px;
+  }
+  .panel .ptext { font-size: 11.5px; color: #445; }
+
+  /* ---------- Install cards ---------- */
+  .install-card {
+    border: 1px solid #dbe3e7;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .install-head {
+    padding: 9px 14px;
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: bold;
+  }
+  .install-head .tag {
+    float: right;
+    font-weight: normal;
+    font-size: 10px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 3px;
+    padding: 2px 7px;
+  }
+  .install-mac    { background: #3b4a5a; }
+  .install-win    { background: #2f6fb5; }
+  .install-linux  { background: #c1731a; }
+  .install-body { padding: 12px 16px 14px 16px; background: #fff; }
+  .install-body ol { margin: 6px 0 6px 18px; padding: 0; }
+  .install-body li { margin-bottom: 5px; }
+  .note {
+    font-size: 11px;
+    color: #5b4400;
+    background: #fff6de;
+    border: 1px solid #f0dfa0;
+    border-radius: 3px;
+    padding: 7px 10px;
+    margin-top: 8px;
+  }
+  .build-block {
+    font-size: 11.3px;
+    background: #f3f8fa;
+    border: 1px solid #cfe0e6;
+    border-radius: 3px;
+    padding: 10px 12px;
+    margin-top: 10px;
+  }
+  .build-block .bt {
+    font-weight: bold;
+    color: #0f3460;
+    margin-bottom: 5px;
+  }
+  .build-block ol { margin: 4px 0 4px 18px; padding: 0; }
+  .build-block li { margin-bottom: 3px; }
+  code, .code {
+    font-family: 'DejaVu Sans Mono', monospace;
+    background: #eef2f4;
+    border: 1px solid #dbe3e7;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11.5px;
+    color: #0f3460;
+  }
+  .code-block {
+    font-family: 'DejaVu Sans Mono', monospace;
+    background: #10233a;
+    color: #d9f0f5;
+    border-radius: 4px;
+    padding: 9px 12px;
+    font-size: 11.3px;
+    margin: 7px 0;
+    white-space: pre-wrap;
+  }
+
+  /* ---------- Shortcuts / data tables ---------- */
+  table.shortcuts {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 20px 0;
+    font-size: 11.8px;
+  }
+  table.shortcuts th {
+    background: #0f3460;
+    color: #fff;
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+  }
+  table.shortcuts tr { page-break-inside: avoid; }
+  table.shortcuts td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #e3e9eb;
+    vertical-align: top;
+  }
+  table.shortcuts tr:nth-child(even) td { background: #f6fafb; }
+  .key {
+    display: inline-block;
+    background: #eef2f4;
+    border: 1px solid #c9d4d8;
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-family: 'DejaVu Sans Mono', monospace;
+    font-size: 11px;
+    color: #0f3460;
+    white-space: nowrap;
+  }
+
+  /* ---------- Workflow blocks ---------- */
+  .flow-block { margin-bottom: 16px; page-break-inside: avoid; }
+  .flow-block .ftitle {
+    font-weight: bold;
+    color: #0f3460;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  ul.tight { margin: 6px 0; padding-left: 20px; }
+  ul.tight li { margin-bottom: 4px; }
+
+  /* ---------- Authors & credits ---------- */
+  .credits-box {
+    border: 1px solid #dbe3e7;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 10px 0 10px 0;
+    page-break-inside: avoid;
+  }
+  .credits-head {
+    background: #0f3460;
+    color: #fff;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  table.people { width: 100%; border-collapse: collapse; }
+  table.people td {
+    padding: 7px 16px;
+    border-bottom: 1px solid #eef2f4;
+    font-size: 12px;
+  }
+  table.people tr:last-child td { border-bottom: none; }
+  table.people .pname { font-weight: bold; color: #16537e; width: 34%; }
+  table.people .prole { color: #444; }
+  table.people .pname sup { color: #16537e; font-weight: bold; margin-left: 1px; }
+
+  .affiliations {
+    padding: 5px 16px 6px 16px;
+    font-size: 10.5px;
+    color: #5b6472;
+    border-top: 1px solid #eef2f4;
+    background: #fafbfc;
+  }
+  .affiliations sup { color: #16537e; font-weight: bold; }
+  .affiliations .aff-sep { display: inline-block; width: 18px; }
+
+  .ai-box {
+    border: 1px solid #cfe0e6;
+    background: #f3f9fb;
+    border-radius: 4px;
+    padding: 9px 16px;
+    font-size: 11.8px;
+    color: #26424c;
+    margin-top: 4px;
+  }
+  .ai-box .aihead {
+    font-weight: bold;
+    color: #0f3460;
+    margin-bottom: 5px;
+    font-size: 12.5px;
+  }
+
+  .footer-note {
+    margin-top: 4px;
+    font-size: 10px;
+    color: #8a97a0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="coverpage">
+  <div class="top-rule"></div>
+
+  <svg class="illustration" viewBox="0 0 460 460" xmlns="http://www.w3.org/2000/svg">
+    <!-- Abstract facade panel -->
+    <rect x="30" y="30" width="380" height="380" rx="14" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.4" stroke-width="2"/>
+    <!-- Detachment outline (dashed polygon) -->
+    <polygon points="300,90 372,120 360,190 288,178" fill="#ffffff" fill-opacity="0.06" stroke="#22d3ee" stroke-width="2.5" stroke-dasharray="6,5"/>
+    <!-- Crack path -->
+    <polyline points="70,360 118,300 100,255 150,230 138,175 190,150 178,100 235,70"
+      fill="none" stroke="#ffc700" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Crack node markers, matching the app's own tracing markers -->
+    <circle cx="70" cy="360" r="7" fill="#ec4899"/>
+    <circle cx="100" cy="255" r="6" fill="#ffffff"/>
+    <circle cx="138" cy="175" r="6" fill="#ffffff"/>
+    <circle cx="178" cy="100" r="6" fill="#ffffff"/>
+    <circle cx="235" cy="70" r="7" fill="#ec4899"/>
+  </svg>
+
+  <div class="logo-row">
+    <span class="logo-chip"><img src="logos/inaf.png"></span>
+    <span class="logo-chip"><img src="logos/echotwin_full.png"></span>
+  </div>
+
+  <div class="content">
+    <div class="eyebrow">ECHO&#8209;TWIN Project &nbsp;&middot;&nbsp; INAF</div>
+    <h1><span class="l1">Crack &amp; Detachment</span><br><span class="l2">Segmentation</span></h1>
+    <div class="subtitle">User Manual &mdash; interface guide, installation instructions, keyboard shortcuts, and application workflow.</div>
+    <div class="intro">
+      This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
+    </div>
+    <div class="meta-line">Version 1.0.1</div>
+  </div>
+
+  <div class="features">
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>A*-guided tracing</b> &mdash; assisted, pixel-accurate crack &amp; detachment outlining.</div></div>
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>SIFT-based projection</b> &mdash; imports and aligns cracks across photos of the same building.</div></div>
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>Automatic building grouping</b> &mdash; and batch shape-compatibility checks across a group.</div></div>
+  </div>
+
+  <div class="badge-row">
+    <span class="badge">macOS</span>
+    <span class="badge">Windows</span>
+    <span class="badge">Linux</span>
+  </div>
+
+  <div class="cover-footer">
+    <div class="cf-logos"><img src="logos/funding_strip.png"></div>
+    <div class="cf-caption">Istituto Nazionale di Astrofisica &mdash; ECHO&#8209;TWIN Project<br>User Manual</div>
+  </div>
+</div>
+
+<div class="page-margin">
+
+<p>Welcome to the guide for the Crack &amp; Detachment Segmentation application. This document covers the user interface (GUI) structure, how to install the software, the main commands, and the general operation of the tool.</p>
+
+<!-- ============ 1. INTERFACE OVERVIEW ============ -->
+<div class="section-head">
+<h2 class="section"><span class="num">1</span>Interface Overview</h2>
+
+<p>The user interface consists of three main sections that allow you to operate in a single desktop window:</p>
+</div>
+
+<div class="panels">
+  <div class="panel-row">
+    <div class="panel">
+      <div class="ptitle">Toolbar &amp; Menus</div>
+      <div class="ptext">Located at the top. Contains drop-down menus (File, Edit, Tools, etc.) and quick-access buttons for common operations &mdash; image navigation, saving, importing. Scrolls horizontally (mouse wheel/trackpad) if the window is too narrow to show every button at once.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">Workspace (Canvas)</div>
+      <div class="ptext">The central area where the building photograph is displayed, and where you trace the outlines of cracks and detachments.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">Shortcuts Sidebar</div>
+      <div class="ptext">To the right of the canvas. Clickable buttons for the commands not already on the toolbar (tool selection, view toggles, calibration) &mdash; each triggers the action directly, just like a toolbar click. Scrolls vertically if the window is too short to show every button at once.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">Status Bar</div>
+      <div class="ptext">Located at the bottom, with a scrollbar. Shows real-time console log messages, warnings, and operation status (e.g. successful PNG masks or JSON exports).</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. INSTALLATION ============ -->
+<div class="section-head">
+<h2 class="section"><span class="num">2</span>Installation</h2>
+
+<p>Pre-built, self-contained packages are available for macOS, Windows, and Linux &mdash; no separate Python installation is required on the target machine. Alternatively, each platform can also be built directly from the source code using the scripts in the <span class="code">packaging</span> folder (<span class="code">build_mac.sh</span>, <span class="code">build_linux.sh</span>, <span class="code">build_windows.bat</span>) &mdash; see the &ldquo;Building from source&rdquo; box under each platform below.</p>
+</div>
+
+<div class="install-card">
+  <div class="install-head install-mac">macOS <span class="tag">.dmg</span></div>
+  <div class="install-body">
+    <ol>
+      <li>Double-click <span class="code">CrackSegmentation.dmg</span> in Finder to open it (or, from a terminal, run <span class="code">open CrackSegmentation.dmg</span>).</li>
+      <li>A Finder window opens showing the app and a shortcut to the Applications folder. Drag <b>CrackSegmentation</b> onto the Applications shortcut.</li>
+      <li>Eject the disk image, then launch the app from Applications or Launchpad as usual.</li>
+    </ol>
+    <div class="note">Do <b>not</b> run the .dmg with <span class="code">./CrackSegmentation.dmg</span> from a terminal &mdash; a .dmg is a disk image, not a script.<br>
+    On first launch, macOS Gatekeeper may block the app because it isn&rsquo;t signed with a paid Apple Developer certificate. Allow it once via <b>System Settings &rsaquo; Privacy &amp; Security &rsaquo; &ldquo;Open Anyway&rdquo;</b>, or right-click the app and choose <b>Open</b>.</div>
+    <div class="build-block">
+      <div class="bt">Building from source instead</div>
+      <ol>
+        <li>Install Python 3 (the python.org installer already includes Tkinter; with Homebrew, also run <span class="code">brew install python-tk</span>).</li>
+        <li>Open Terminal in the extracted source&rsquo;s <span class="code">packaging</span> folder.</li>
+        <li>Run <span class="code">./build_mac.sh</span> (first time: <span class="code">chmod +x build_mac.sh</span>).</li>
+        <li>Result: <span class="code">packaging/dist/CrackSegmentation.app</span> and <span class="code">packaging/dist/CrackSegmentation.dmg</span>.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div class="install-card">
+  <div class="install-head install-win">Windows <span class="tag">.exe</span></div>
+  <div class="install-body">
+    <ol>
+      <li>Run <span class="code">CrackSegmentation-Setup.exe</span>.</li>
+      <li>Follow the installer wizard (choose an install location, create a Start Menu shortcut).</li>
+      <li>Launch <b>Crack Segmentation</b> from the Start Menu once installation completes.</li>
+    </ol>
+    <div class="note">Windows SmartScreen may flag the installer as unrecognized, since it isn&rsquo;t signed with a paid code-signing certificate. This is a standard warning for independently built software, not a sign of a problem &mdash; click <b>More info &rsaquo; Run anyway</b> to continue.</div>
+    <div class="build-block">
+      <div class="bt">Building from source instead</div>
+      <ol>
+        <li>Install Python 3, checking &ldquo;Add python.exe to PATH&rdquo; in the installer (or run <span class="code">winget install Python.Python.3.12 --source winget</span>), then close and reopen the terminal.</li>
+        <li>Optional, for a real Setup.exe: install <a href="https://jrsoftware.org/isdl.php">Inno Setup</a> first.</li>
+        <li>Open Command Prompt/PowerShell in the extracted source&rsquo;s <span class="code">packaging</span> folder and run <span class="code">build_windows.bat</span>.</li>
+        <li>Result: <span class="code">packaging\dist\CrackSegmentation-Setup.exe</span> (with Inno Setup) or <span class="code">packaging\dist\CrackSegmentation\CrackSegmentation.exe</span> standalone (without it).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div class="install-card">
+  <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
+  <div class="install-body">
+    <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.0.1_amd64.deb</div>
+    <p>Alternatively:</p>
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.1_amd64.deb
+sudo apt-get install -f</div>
+    <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
+    <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
+    <div class="build-block">
+      <div class="bt">Building from source instead</div>
+      <ol>
+        <li>Install Tkinter and venv support: <span class="code">sudo apt install python3-tk python3-venv</span>.</li>
+        <li>Open a terminal in the extracted source&rsquo;s <span class="code">packaging</span> folder.</li>
+        <li>Run <span class="code">chmod +x build_linux.sh &amp;&amp; ./build_linux.sh</span> &mdash; it builds inside an isolated <span class="code">.venv</span> it creates automatically, without touching system Python packages.</li>
+        <li>Result: <span class="code">packaging/dist/cracksegmentation_&lt;version&gt;_amd64.deb</span> &mdash; install it the same way as above.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3. TESTED CONFIGURATIONS ============ -->
+<div class="section-head">
+<h2 class="section"><span class="num">3</span>Tested Configurations</h2>
+
+<p>The application has been verified to launch and run correctly on the following real-world machines:</p>
+</div>
+
+<table class="shortcuts">
+<tr><th style="width:16%;">OS</th><th style="width:30%;">Device</th><th style="width:28%;">Processor</th><th style="width:12%;">RAM</th><th>Notes</th></tr>
+<tr><td>macOS Tahoe</td><td>MacBook Pro (MacBookPro17,1)</td><td>Apple M1 (8-core: 4P+4E)</td><td>8 GB</td><td>Model no. MYD92T/A</td></tr>
+<tr><td>Windows 11 Home</td><td>HP Laptop 15s-fq5xxx</td><td>Intel Core i7-1255U @ 1.70&nbsp;GHz</td><td>16 GB</td><td>64-bit, x64</td></tr>
+<tr><td>Ubuntu 24.04.4 LTS</td><td>Victus by HP Gaming Laptop 16-r1xxx</td><td>Intel Core i7-14700HX</td><td>16 GB</td><td>NVIDIA GeForce RTX 4050 Max-Q (AD107M)</td></tr>
+</table>
+
+<!-- ============ 4. COMMANDS ============ -->
+<div class="section-head">
+<h2 class="section"><span class="num">4</span>Main Commands &amp;<br>Keyboard Shortcuts</h2>
+
+<p>The software is heavily optimized for quick keyboard use, allowing you to switch between tools without interrupting your workflow.</p>
+</div>
+
+<table class="shortcuts">
+<tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
+<tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Activates the mode for assisted crack tracing.</td></tr>
+<tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Activates the mode for drawing polygons for plaster/material detachment areas.</td></tr>
+<tr><td>Save &amp; Process Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Saves the work (exports JSON, visual masks, binary masks) and moves directly to the next photo.</td></tr>
+<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Imports cracks identified in previous photos of the same building, leveraging SIFT similarity and homographies to project them onto the current perspective.</td></tr>
+<tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Batch recalculates (via A* algorithm) the position of newly imported cracks, anchoring them to the real, evident edges in the new photo.</td></tr>
+<tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Allows manual, elastic repositioning of an imported crack that hasn&rsquo;t aligned correctly.</td></tr>
+<tr><td>Modify Crack Thickness</td><td><span class="key">A</span></td><td>Activates the mode to vary the thickness (pixels/side) of single crack segments. Use <span class="key">+</span> and <span class="key">-</span> to widen or narrow the mask.</td></tr>
+<tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Manually assigns a unique code to the current building, useful for tracking across multiple frames.</td></tr>
+<tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Automatically removes cracks that don&rsquo;t match in shape and path between different photos of the same group.</td></tr>
+<tr><td>Scale Calibration</td><td><span class="key">K</span></td><td>Starts the mode to manually calibrate the measurement scale in centimeters relative to image pixels (Pixel-to-CM).</td></tr>
+<tr><td>Simple Navigation</td><td><span class="key">&#8592;</span> / <span class="key">&#8594;</span></td><td>Scrolls to the next or previous image in the queue without saving.</td></tr>
+<tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
+</table>
+
+<h3 class="sub">Visual Mask Management</h3>
+<p>While tracing cracks and defects, transparency/overlay visibility can be managed to avoid obscuring the view:</p>
+<ul class="tight">
+  <li><span class="key">N</span> &nbsp;Shows or hides the blue crack-thickness band.</li>
+  <li><span class="key">Space</span> &nbsp;Temporarily hides the control markers.</li>
+  <li><span class="key">J</span> &nbsp;Opens/closes the status info panel overlay, including a per-crack reliability score (how much of each traced line is corroborated by real crack-like texture in the photo).</li>
+  <li><span class="key">?</span> &nbsp;Shows the on-screen user manual.</li>
+</ul>
+
+<!-- ============ 5. WORKFLOW ============ -->
+<div class="section-head">
+<h2 class="section"><span class="num">5</span>Workflow &amp; Application Logic</h2>
+
+<div class="flow-block">
+  <div class="ftitle">Session Start</div>
+  <p>On launch, an initial pop-up lets you choose to work on new images (taken from the default <span class="code">Images</span> folder) or reload previously processed images (from <span class="code">already processed images</span>) to make edits and corrections. This choice isn&rsquo;t final: the <b>Switch Mode</b> sidebar button/menu item lets you swap between the two data sources at any later point in the session, without restarting the application.</p>
+</div>
+</div>
+
+<div class="flow-block">
+  <div class="ftitle">Automatic Import and Tracing (A* Retrace)</div>
+  <p>When a building is covered by multiple frames, the application associates them using SIFT similarity. Cracks traced in one view can be imported into another (<span class="key">W</span> / <span class="key">L</span>). Since the perspective changes, press <span class="key">V</span> to let the A* pathfinding algorithm automatically readjust and &ldquo;paste&rdquo; the imported lines onto the physical edges detected in the current photo, discarding gross distortions.</p>
+</div>
+
+<div class="flow-block">
+  <div class="ftitle">Batch Crack Cleaning and Compatibility</div>
+  <p>One of the most advanced features is handled by the <span class="code">compare_and_filter_cracks.py</span> module (runnable via <span class="key">G</span> from within the GUI, or as a standalone script). It scans the exported cracks across photos of the same building; if a crack differs too much from one photo to another &mdash; measured by the sinuosity index (how &ldquo;wavy&rdquo; the path is relative to a straight line between its endpoints, a metric invariant to the photo&rsquo;s scale/distance) &mdash; it is discarded and removed from the final JSONs to keep the data clean.</p>
+</div>
+
+<!-- ============ 6. AUTHORS & CREDITS ============ -->
+<div class="section-head">
+<h2 class="section"><span class="num">6</span>Authors &amp; Credits</h2>
+
+<p>This software was developed within the framework of the <b>ECHO&#8209;TWIN</b> project by the INAF (Istituto Nazionale di Astrofisica) Research Group.</p>
+</div>
+
+<div class="credits-box">
+  <div class="credits-head">Research Team</div>
+  <table class="people">
+    <tr><td class="pname">Roberto Spina<sup>1,2</sup></td><td class="prole">Code Architecture, Software Design &amp; Lead Development</td></tr>
+    <tr><td class="pname">Fabio Vitello<sup>1</sup></td><td class="prole">Project Coordination &amp; Supervision</td></tr>
+    <tr><td class="pname">Eva Sciacca<sup>1</sup></td><td class="prole">Project Coordination &amp; Supervision</td></tr>
+    <tr><td class="pname">Leonardo Pelonero<sup>1</sup></td><td class="prole">General Support</td></tr>
+    <tr><td class="pname">Salvatore Scavo<sup>1</sup></td><td class="prole">General Support</td></tr>
+  </table>
+  <div class="affiliations"><sup>1</sup>&nbsp;INAF &ndash; Catania Astrophysical Observatory<span class="aff-sep"></span><sup>2</sup>&nbsp;Order of Geologists of Sicily (National Register)</div>
+</div>
+
+<div class="ai-box">
+  <div class="aihead">AI Disclosure</div>
+  This application utilizes artificial intelligence models for certain stages of the workflow, specifically for analysis, technical content generation, and development support. The AI components do not replace scientific validation nor do they influence results in a deterministic manner: they are used as assistance tools, not as sources of truth.
+</div>
+
+<div class="footer-note">Crack &amp; Detachment Segmentation &mdash; User Manual &mdash; ECHO&#8209;TWIN Project, INAF</div>
+
+</div>
+</body>
+</html>

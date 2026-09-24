@@ -2,16 +2,36 @@
 """
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 
 def resolve_script_dir():
-    """Returns the app's data folder (Images, segmentated images, already processed images, CSV report): next to the script when run from source, or ~/Documents/CrackSegmentation when packaged/frozen.
+    """Returns the app's data folder (Images, segmentated images, already processed images, CSV report): next to the script when run from source, or a per-user data folder when packaged/frozen -- normally ~/Documents/CrackSegmentation, falling back to %LOCALAPPDATA%/~/CrackSegmentation or a temp folder if that isn't writable (e.g. a broken OneDrive redirect of Documents).
     """
     if getattr(sys, 'frozen', False):
-        base = Path.home() / "Documents" / "CrackSegmentation"
-        base.mkdir(parents=True, exist_ok=True)
-        return base
+        candidates = [Path.home() / "Documents" / "CrackSegmentation"]
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if local_appdata:
+            candidates.append(Path(local_appdata) / "CrackSegmentation")
+        candidates.append(Path.home() / "CrackSegmentation")
+
+        last_error = None
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                return candidate
+            except OSError as exc:
+                last_error = exc
+                print(f"[WARN] Could not use {candidate} as the data folder ({exc}); trying the next option...")
+
+        # Last resort: a temp folder, so the app can still start instead of
+        # crashing outright. Data here may not survive a reboot, but it
+        # beats a hard crash on every launch.
+        fallback = Path(tempfile.gettempdir()) / "CrackSegmentation"
+        fallback.mkdir(parents=True, exist_ok=True)
+        print(f"[WARN] Falling back to a temporary folder for data: {fallback} (previous attempt failed: {last_error})")
+        return fallback
     return Path(__file__).resolve().parent
 
 

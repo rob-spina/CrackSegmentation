@@ -20,6 +20,39 @@ It produces [LabelMe](https://github.com/wkentaro/labelme)-compatible annotation
 - **Measurements**: crack length and detachment area once the image scale is calibrated.
 - **Embedded PDF user manual** inside the main window (optional, requires PyMuPDF).
 
+## Downloads
+
+Pre-built, self-contained packages are available on the [Releases page](https://github.com/rob-spina/CrackSegmentation/releases) — no separate Python installation required on the target machine.
+
+**macOS** — `CrackSegmentation.dmg`
+Open it in Finder, drag `CrackSegmentation` onto the Applications shortcut, eject, then launch from Applications/Launchpad. Don't run the `.dmg` itself as a script. It's unsigned (no paid Apple Developer certificate): if Gatekeeper blocks the first launch, allow it via **System Settings › Privacy & Security › "Open Anyway"**, or right-click the app and choose **Open**.
+
+**Windows** — `CrackSegmentation-Setup.exe`
+Run the installer and follow the wizard. It's unsigned: if SmartScreen flags it, click **More info › Run anyway** — expected for independently built software, not a sign of a problem.
+
+**Linux (Debian/Ubuntu, amd64)** — `cracksegmentation_*_amd64.deb`
+```bash
+sudo apt install ./cracksegmentation_*_amd64.deb
+# or: sudo dpkg -i ./cracksegmentation_*_amd64.deb && sudo apt-get install -f
+```
+Then launch via the Applications menu or by typing `cracksegmentation` in a terminal. Unsigned: your system may warn about an unknown source, which is expected for a locally built package.
+
+**Linux (other distributions, amd64)** — `CrackSegmentation-linux-x86_64.tar.gz`
+Portable build, no package manager required — works on Fedora, openSUSE, Arch, and others.
+```bash
+tar -xzvf CrackSegmentation-linux-x86_64.tar.gz
+./CrackSegmentation/CrackSegmentation
+```
+
+Prefer running from source, or need another platform? See Installation below — each platform can also be built directly from source using the scripts in `packaging/` (`build_mac.sh`, `build_linux.sh`, `build_windows.bat`).
+
+**Where to put your photos (pre-built packages only).** Unlike running from source (where `Images/` lives next to the script — see Quick start below), a pre-built package creates its data folder automatically on first launch, normally at:
+```
+Documents/CrackSegmentation/Images        (macOS/Linux)
+Documents\CrackSegmentation\Images        (Windows)
+```
+Just drop your photos in there and (re)launch the app. If `Documents` isn't writable on your system (e.g. a broken OneDrive/cloud-sync redirect on Windows), the app automatically falls back to a per-user app-data folder instead (`%LOCALAPPDATA%\CrackSegmentation` on Windows) — the exact path it's using is always shown in full in the "No valid file found in: ..." message if the folder is still empty.
+
 ## Installation
 
 Requires Python 3.10+ and Tkinter (bundled with most Python distributions; on Debian/Ubuntu: `sudo apt install python3-tk`).
@@ -125,11 +158,15 @@ CrackSegmentation/
 ├── compare_and_filter_cracks.py       # cross-photo crack consistency filter
 ├── crack_segmentation_evaluator.py    # segmentation quality evaluator
 ├── tests_support/                     # test doubles (fake_tkinter.py, fake_fitz.py, ...)
+├── docs/
+│   └── manual_source/                 # HTML source of the PDF manual, see below
 ├── .github/                           # CI workflow, issue and pull request templates
 ├── CONTRIBUTING.md
 ├── requirements.txt
 └── requirements-optional.txt
 ```
+
+The PDF manual (`Crack_Segmentation_User_Manual.pdf`, in the repo root) is generated from `docs/manual_source/manual.html` — see [`docs/manual_source/README.md`](docs/manual_source/README.md) for how to edit it and regenerate the PDF.
 
 ## Notes
 
@@ -146,11 +183,13 @@ This software was developed within the framework of the **ECHO-TWIN** project by
 
 | Name | Contribution |
 |------|--------------|
-| **Roberto Spina** | Code Architecture, Software Design & Lead Development |
-| **Fabio Vitello** | Project Coordination & Supervision |
-| **Eva Sciacca** | Project Coordination & Supervision |
-| **Leonardo Pelonero** | General Support |
-| **Salvatore Scavo** | General Support |
+| **Roberto Spina** <sup>1,2</sup> | Code Architecture, Software Design & Lead Development |
+| **Fabio Vitello** <sup>1</sup> | Project Coordination & Supervision |
+| **Eva Sciacca** <sup>1</sup> | Project Coordination & Supervision |
+| **Leonardo Pelonero** <sup>1</sup> | General Support |
+| **Salvatore Scavo** <sup>1</sup> | General Support |
+
+<sup>1</sup> INAF – Catania Astrophysical Observatory &nbsp;&nbsp; <sup>2</sup> Order of Geologists of Sicily (National Register)
 
 **AI Disclosure.** This application utilizes artificial intelligence models for certain stages of the workflow, specifically for analysis, technical content generation, and development support. The AI components do not replace scientific validation nor do they influence results in a deterministic manner: they are used as assistance tools, not as sources of truth.
 
