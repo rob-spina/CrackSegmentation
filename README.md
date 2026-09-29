@@ -198,3 +198,4 @@ This software was developed within the framework of the **ECHO-TWIN** project by
 Released under the [MIT License](LICENSE).
 
 The optional dependency [PyMuPDF](https://github.com/pymupdf/PyMuPDF) is distributed by Artifex under AGPL-3.0 or a commercial license. It is not included in this repository and is not required to run the tool. If you redistribute a build that bundles it, check that the AGPL terms are met.
+
