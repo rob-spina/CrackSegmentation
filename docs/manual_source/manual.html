@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.0.1</div>
+    <div class="meta-line">Version 1.0.2</div>
   </div>
 
   <div class="features">
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.0.1_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.0.2_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.1_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.2_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -604,7 +604,7 @@ sudo apt-get install -f</div>
 
 <div class="flow-block">
   <div class="ftitle">Session Start</div>
-  <p>On launch, an initial pop-up lets you choose to work on new images (taken from the default <span class="code">Images</span> folder) or reload previously processed images (from <span class="code">already processed images</span>) to make edits and corrections. This choice isn&rsquo;t final: the <b>Switch Mode</b> sidebar button/menu item lets you swap between the two data sources at any later point in the session, without restarting the application.</p>
+  <p>On launch, an initial pop-up lets you choose to work on new images (taken from the default <span class="code">Images</span> folder) or reload previously processed images (from <span class="code">already processed images</span>) to make edits and corrections. This choice isn&rsquo;t final: the <b>Switch Mode</b> sidebar button/menu item lets you swap between the two data sources at any later point in the session, without restarting the application. When the last image of the queue has been saved or skipped, a dialog tells you the images are finished (and how many skipped images are still in <span class="code">Images</span>) and asks whether to switch to the other mode or exit the application.</p>
 </div>
 </div>
 

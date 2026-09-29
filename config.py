@@ -97,6 +97,9 @@ class Config:
         # loop rebuilds image_queue for the other mode instead of just
         # advancing to the next position when this is set.
         self.switch_mode_requested = False
+        # True once a Mode 1 save removed the current image from image_queue;
+        # the next image has already shifted into queue_pos, so don't advance.
+        self.queue_item_consumed = False
 
     def _init_shapes_and_history(self):
         """The saved cracks/detachments themselves, plus per-session

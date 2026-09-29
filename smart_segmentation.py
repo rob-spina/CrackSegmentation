@@ -1309,6 +1309,7 @@ class CrackSegmentation:
                 shutil.move(self.cfg.CURRENT_IMAGE_PATH, dest_img_path)
             if self.cfg.CURRENT_IMAGE_PATH in self.cfg.image_queue:
                 self.cfg.image_queue.remove(self.cfg.CURRENT_IMAGE_PATH)
+                self.cfg.queue_item_consumed = True
         else:
             print(f"[MODE 2] JSON file overwritten at: {self.cfg.JSON_OUTPUT_PATH}")
 
@@ -3996,9 +3997,8 @@ class CrackSegmentation:
         corroborated = sum(1 for i in range(n) if left_offsets[i] > 0 or right_offsets[i] > 0)
         return 100.0 * corroborated / n
 
-    def _build_crack_reliability_lines(self):
-        """One "Crack N: XX%" entry per active crack with a computable
-        reliability score, grouped a few per line for the info panel."""
+    def _build_crack_reliability_entries(self):
+        """One "Crack N: XX%" entry per active crack with a computable reliability score."""
         entries = []
         for i, f in enumerate(self.cfg.saved_cracks, start=1):
             if not f.get('active', True):
@@ -4006,8 +4006,32 @@ class CrackSegmentation:
             pct = self._compute_crack_reliability(f.get('path'))
             if pct is not None:
                 entries.append(f"Crack {i}: {pct:.0f}%")
-        per_line = 5
-        return [" | ".join(entries[i:i + per_line]) for i in range(0, len(entries), per_line)]
+        return entries
+
+    @staticmethod
+    def _hud_text_width(text, hm):
+        return cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], hm['f_thick'])[0][0]
+
+    def _build_crack_reliability_lines(self, max_text_width, hm):
+        """Packs the reliability entries into " | "-separated lines, each no
+        wider than max_text_width pixels (one entry per line at minimum)."""
+        lines, current = [], ""
+        for entry in self._build_crack_reliability_entries():
+            candidate = f"{current} | {entry}" if current else entry
+            if current and self._hud_text_width(candidate, hm) > max_text_width:
+                lines.append(current)
+                candidate = entry
+            current = candidate
+        if current:
+            lines.append(current)
+        return lines
+
+    def _info_panel_right_edge(self, win_out, text_lines, hm):
+        """Panel grows horizontally to fit its widest line (never narrower than
+        the original 760 px), capped at the window's right edge."""
+        max_right = win_out.shape[1] - 8
+        widest = max((self._hud_text_width(t, hm) for t in text_lines), default=0)
+        return min(max_right, max(760, 15 + widest + 15))
 
     def _draw_info_overlay(self, win_out, status, metrics_str, hm):
         """Draws the FILE/Cracks-Length status panel, toggled by [J], off
@@ -4018,12 +4042,14 @@ class CrackSegmentation:
             return
         line_h = hm['line_h']
         building_line = 1 if self.cfg.CURRENT_IMAGE_PATH is not None else 0
-        reliability_lines = self._build_crack_reliability_lines()
+        # Reliability lines wrap to the full window width (minus margins), not a fixed count per line.
+        reliability_lines = self._build_crack_reliability_lines(win_out.shape[1] - 8 - 30, hm)
         extra_lines = building_line + len(reliability_lines) + (1 if reliability_lines else 0)  # +1 for the label line
         base_bottom = 205 if self.cfg.hud_large_size else 160
         panel_bottom = base_bottom + line_h * extra_lines
+        panel_right = self._info_panel_right_edge(win_out, [status, metrics_str] + reliability_lines, hm)
         overlay_info = win_out.copy()
-        cv2.rectangle(overlay_info, (8, 6), (760, panel_bottom), (35, 30, 25), -1)
+        cv2.rectangle(overlay_info, (8, 6), (panel_right, panel_bottom), (35, 30, 25), -1)
         cv2.addWeighted(overlay_info, 0.55, win_out, 0.45, 0, win_out)
         cv2.putText(win_out, status, (15, hm['y_pos1']), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (235, 235, 235), hm['f_thick'], cv2.LINE_AA)
         cv2.putText(win_out, metrics_str, (15, hm['y_pos2']), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 220, 255), hm['f_thick'], cv2.LINE_AA)
@@ -4559,12 +4585,14 @@ class CrackSegmentation:
                 next_file_triggered = self.process_keypress(key_raw)
 
     def _advance_queue_position(self, queue_pos):
-        """Chooses which direction to move for the next iteration: backward only for the Previous Image action, forward otherwise."""
+        """Chooses which direction to move for the next iteration: backward only for the Previous Image action, forward otherwise.
+        A Mode 1 save already removed the image from the queue, so the next one is at queue_pos."""
         if self.cfg.navigate_direction == "previous":
             queue_pos = max(0, queue_pos - 1)
-        else:
+        elif not self.cfg.queue_item_consumed:
             queue_pos += 1
         self.cfg.navigate_direction = None
+        self.cfg.queue_item_consumed = False
         return queue_pos
 
     def _advance_or_switch_mode(self, queue_pos, total_files):
@@ -4574,6 +4602,7 @@ class CrackSegmentation:
         continue run()'s outer loop with."""
         if self.cfg.switch_mode_requested:
             self.cfg.switch_mode_requested = False
+            self.cfg.queue_item_consumed = False
             target_mode = "2" if self.cfg.modalita_scelta == "1" else "1"
             if self._rebuild_queue_for_mode(target_mode):
                 queue_pos = 0
@@ -4609,18 +4638,61 @@ class CrackSegmentation:
             self._wait_key(1)
         print("Workspace safely closed. Exiting.")
 
+    def _queue_end_message(self, finished_mode, target_mode, skipped_count):
+        """Text shown when the queue runs out, offering the other mode or exit."""
+        if finished_mode == "1":
+            lines = ["All images in the 'Images' folder have been processed."]
+            if skipped_count:
+                lines.append(f"{skipped_count} skipped image(s) are still in the 'Images' folder.")
+        else:
+            lines = ["You have reached the last already-segmented image."]
+        target_label = "review the already segmented images" if target_mode == "2" else "load new images"
+        lines.append(f"\nSwitch to Mode {target_mode} ({target_label})?")
+        lines.append("Yes = switch mode, No = exit the application.")
+        return "\n".join(lines)
+
+    def _prompt_queue_exhausted(self, finished_mode, target_mode, skipped_count):
+        """Asks whether to switch to target_mode once the queue is exhausted. Returns True to switch, False to exit. A GUI wrapper overrides this with a dialog.
+        """
+        print("\n" + self._queue_end_message(finished_mode, target_mode, skipped_count))
+        try:
+            answer = input(f"Type {target_mode} to switch to mode {target_mode}, or ENTER to exit: ")
+            return answer.strip() == target_mode
+        except Exception:
+            return False
+
+    def _notify_mode_switch_unavailable(self, target_mode):
+        """Tells the operator the other mode has nothing to show. A GUI wrapper overrides this with a dialog."""
+        print(f"[INFO] No images available for mode {target_mode}. Exiting.")
+
+    def _offer_mode_switch_at_queue_end(self):
+        """End of queue: asks to switch to the other mode or exit, instead of closing abruptly. Returns True if a new queue was loaded."""
+        finished_mode = self.cfg.modalita_scelta
+        target_mode = "2" if finished_mode == "1" else "1"
+        skipped_count = len(self.cfg.image_queue) if finished_mode == "1" else 0
+        if not self._prompt_queue_exhausted(finished_mode, target_mode, skipped_count):
+            return False
+        if self._rebuild_queue_for_mode(target_mode) and self.cfg.modalita_scelta == target_mode:
+            return True
+        self._notify_mode_switch_unavailable(target_mode)
+        return False
+
+    def _process_queue(self, queue_pos, total_files):
+        """Walks image_queue until queue_pos runs off either end."""
+        # A manually-advanced index (not a for-loop) so Previous Image can move queue_pos backward.
+        while 0 <= queue_pos < len(self.cfg.image_queue):
+            index = queue_pos + 1
+            self._start_image_session(queue_pos, index, total_files)
+            self._reset_per_image_timer_state()
+            self._run_single_image_loop(index, total_files)
+            queue_pos, total_files = self._advance_or_switch_mode(queue_pos, total_files)
+
     def run(self):
         try:
             total_files = self._initialize_run_session()
-
-            # A manually-advanced index (not a for-loop) so Previous Image can move queue_pos backward.
-            queue_pos = 0
-            while 0 <= queue_pos < len(self.cfg.image_queue):
-                index = queue_pos + 1
-                self._start_image_session(queue_pos, index, total_files)
-                self._reset_per_image_timer_state()
-                self._run_single_image_loop(index, total_files)
-                queue_pos, total_files = self._advance_or_switch_mode(queue_pos, total_files)
+            self._process_queue(0, total_files)
+            while self._offer_mode_switch_at_queue_end():
+                self._process_queue(0, len(self.cfg.image_queue))
 
             print("\n--- PIPELINE EXHAUSTED ---")
 

@@ -909,6 +909,18 @@ class GuiCrackSegmentation(CrackSegmentation):
             parent=self._tk_root,
         )
 
+    def _prompt_queue_exhausted(self, finished_mode, target_mode, skipped_count):
+        # Modal Yes/No instead of the terminal prompt: Yes switches mode, No exits.
+        message = self._queue_end_message(finished_mode, target_mode, skipped_count)
+        return bool(messagebox.askyesno("Crack Detector - Images finished", message, parent=self._tk_root))
+
+    def _notify_mode_switch_unavailable(self, target_mode):
+        messagebox.showinfo(
+            "Crack Detector",
+            f"No images available for Mode {target_mode}.\n\nThe application will now close.",
+            parent=self._tk_root,
+        )
+
     def _confirm_crack_filter_removal(self, bldg_tag, json_paths, incompatible):
         # Replaces the default's invisible cv2 popup with a real, modal Tk dialog.
         message = (

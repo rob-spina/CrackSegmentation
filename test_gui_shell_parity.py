@@ -114,6 +114,10 @@ class _MockedHighGui:
         p_rect = mock.patch("cv2.getWindowImageRect", return_value=(0, 0, 1920, 1080))
         p_rect.start()
         self._patches.append(p_rect)
+        # The headless end-of-queue prompt reads stdin: answer "exit" so run() never blocks.
+        p_end = mock.patch.object(CrackSegmentation, "_prompt_queue_exhausted", return_value=False)
+        p_end.start()
+        self._patches.append(p_end)
         return self
 
     def __exit__(self, *exc):
@@ -321,32 +325,56 @@ class TestCrackReliabilityMetric(unittest.TestCase):
         path = [(10, 25), (15, 25), (20, 25), (25, 25), (30, 25)]
         self.assertEqual(app._compute_crack_reliability(path), 0.0)
 
-    def test_reliability_lines_skip_inactive_cracks_and_group_by_five(self):
+    def _app_with_active_cracks(self, n_active, with_inactive_second=True):
         app = make_app()
         app.cfg.binary_mask = np.full((50, 50), 255, dtype=np.uint8)
         app.cfg.CRACK_AUTO_EDGE_MAX_OFFSET_PX = 3
         straight_path = [(10, 25), (15, 25), (20, 25), (25, 25)]
-        app.cfg.saved_cracks = [
-            {'path': straight_path, 'active': True},
-            {'path': straight_path, 'active': False},  # skipped
-            {'path': straight_path, 'active': True},
-            {'path': straight_path, 'active': True},
-            {'path': straight_path, 'active': True},
-            {'path': straight_path, 'active': True},
-            {'path': straight_path, 'active': True},
-        ]
-        lines = app._build_crack_reliability_lines()
-        self.assertEqual(len(lines), 2, "6 active cracks at 5 per line must produce 2 lines")
-        self.assertEqual(lines[0].count("Crack"), 5)
-        self.assertEqual(lines[1].count("Crack"), 1)
+        cracks = [{'path': straight_path, 'active': True} for _ in range(n_active)]
+        if with_inactive_second:
+            cracks.insert(1, {'path': straight_path, 'active': False})  # skipped
+        app.cfg.saved_cracks = cracks
+        return app
+
+    def test_reliability_lines_skip_inactive_cracks(self):
+        app = self._app_with_active_cracks(6)
+        hm = app._compute_hud_font_metrics()
+        lines = app._build_crack_reliability_lines(10000, hm)
+        self.assertEqual(len(lines), 1, "everything fits on one line when the width allows it")
+        self.assertEqual(lines[0].count("Crack"), 6)
         # Inactive crack (index 2 in saved_cracks) must not appear at all.
-        self.assertNotIn("Crack 2:", lines[0] + lines[1])
+        self.assertNotIn("Crack 2:", lines[0])
+
+    def test_reliability_lines_wrap_to_the_available_width(self):
+        # USER REPORT (v1.0.1): with many cracks the reliability lines ran
+        # past the right edge of the [J] glass panel.
+        for large in (False, True):
+            app = self._app_with_active_cracks(40)
+            app.cfg.hud_large_size = large
+            hm = app._compute_hud_font_metrics()
+            max_w = 1200 - 8 - 30
+            lines = app._build_crack_reliability_lines(max_w, hm)
+            self.assertEqual(sum(line.count("Crack") for line in lines), 40)
+            for line in lines:
+                self.assertLessEqual(app._hud_text_width(line, hm), max_w, f"line overflows (large={large}): {line}")
+
+    def test_info_panel_widens_to_fit_its_text_but_stays_inside_the_window(self):
+        app = self._app_with_active_cracks(40)
+        hm = app._compute_hud_font_metrics()
+        win_out = np.zeros((900, 1200, 3), dtype=np.uint8)
+        lines = app._build_crack_reliability_lines(1200 - 8 - 30, hm)
+        right = app._info_panel_right_edge(win_out, ["status", "metrics"] + lines, hm)
+        widest = max(app._hud_text_width(line, hm) for line in lines)
+        self.assertGreater(right, 760, "many cracks must widen the panel beyond the old fixed 760 px")
+        self.assertGreaterEqual(right, 15 + widest)
+        self.assertLessEqual(right, 1200 - 8)
+        self.assertEqual(app._info_panel_right_edge(win_out, ["short"], hm), 760, "few cracks keep the original width")
 
     def test_reliability_lines_empty_when_there_are_no_cracks(self):
         app = make_app()
         app.cfg.binary_mask = np.full((50, 50), 255, dtype=np.uint8)
         app.cfg.saved_cracks = []
-        self.assertEqual(app._build_crack_reliability_lines(), [])
+        self.assertEqual(app._build_crack_reliability_lines(1000, app._compute_hud_font_metrics()), [])
 
     def test_building_status_line_is_positioned_before_the_reliability_section(self):
         # USER REQUEST: "Building" must appear ABOVE "Crack Reliability" in
@@ -1518,9 +1546,10 @@ class TestRunEndToEndHeadless(unittest.TestCase):
             app = CrackSegmentation(cfg)
 
             # img_00 (skip forward, no save) -> img_01 (go back, no save) -> img_00 (save)
+            # -> img_01 again (skip forward, no save). The save must NOT skip img_01.
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
                  mock.patch.object(app, "render_scene"), \
-                 _MockedHighGui(key_sequence=[4, 5, ord('s')]):
+                 _MockedHighGui(key_sequence=[4, 5, ord('s'), 4]):
                 app.run()
 
             json_files = [f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")] \
@@ -1566,6 +1595,93 @@ class TestRunEndToEndHeadless(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
             _cleanup_real_module_dir_artifacts()
+
+
+class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
+    """USER REPORT (v1.0.1): a Mode 1 save removes the image from the queue
+    AND advanced queue_pos, silently skipping every other image; running off
+    the end closed the app instead of offering Mode 2 or exit."""
+
+    def _run_recording(self, tmpdir, keys, prompt_answers=(False,)):
+        cfg = Config()
+        cfg.SCRIPT_DIR = tmpdir
+        app = CrackSegmentation(cfg)
+        seen = []
+        original_start = app._start_image_session
+
+        def _record_and_start(queue_pos, index, total_files):
+            seen.append((app.cfg.modalita_scelta, os.path.basename(app.cfg.image_queue[queue_pos])))
+            return original_start(queue_pos, index, total_files)
+
+        with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
+             mock.patch.object(app, "render_scene"), \
+             mock.patch.object(app, "_start_image_session", side_effect=_record_and_start), \
+             _MockedHighGui(key_sequence=keys), \
+             mock.patch.object(app, "_prompt_queue_exhausted", side_effect=list(prompt_answers)) as prompt, \
+             mock.patch.object(app, "_notify_mode_switch_unavailable") as notify:
+            app.run()
+        return app, seen, prompt, notify
+
+    def test_saving_every_image_visits_each_one_in_order(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_test_q_all_")
+        try:
+            make_synthetic_image_folder(tmpdir, n_images=5)
+            _, seen, prompt, _ = self._run_recording(tmpdir, [ord('q')] * 5)
+            self.assertEqual([name[:6] for _, name in seen], ["img_00", "img_01", "img_02", "img_03", "img_04"])
+            self.assertEqual(os.listdir(os.path.join(tmpdir, "Images")), [], "every image was saved, none should remain")
+            prompt.assert_called_once_with("1", "2", 0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            _cleanup_real_module_dir_artifacts()
+
+    def test_skip_then_save_leaves_only_the_skipped_image_for_the_next_session(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_test_q_skip_")
+        try:
+            make_synthetic_image_folder(tmpdir, n_images=5)
+            _, seen, prompt, _ = self._run_recording(tmpdir, [4] + [ord('q')] * 4)
+            self.assertEqual([name[:6] for _, name in seen], ["img_00", "img_01", "img_02", "img_03", "img_04"])
+            left = os.listdir(os.path.join(tmpdir, "Images"))
+            self.assertEqual(len(left), 1)
+            self.assertTrue(left[0].startswith("img_00"), f"only the skipped image should remain, got {left}")
+            prompt.assert_called_once_with("1", "2", 1)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            _cleanup_real_module_dir_artifacts()
+
+    def test_queue_end_switches_to_mode_2_when_the_operator_accepts(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_test_q_end_m2_")
+        try:
+            make_synthetic_image_folder(tmpdir, n_images=1)
+            TestSwitchModeAtRuntime._make_mode2_source(None, tmpdir, base_name="already_seg")
+            app, seen, prompt, notify = self._run_recording(tmpdir, [ord('q'), 4], prompt_answers=(True, False))
+            self.assertEqual(seen[0][0], "1")
+            self.assertEqual(seen[1][0], "2")
+            self.assertIn("already_seg", seen[1][1])
+            self.assertEqual(prompt.call_count, 2, "Mode 2's own end of queue asks again (offering Mode 1)")
+            self.assertEqual(prompt.call_args_list[1][0][:2], ("2", "1"))
+            notify.assert_not_called()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            _cleanup_real_module_dir_artifacts()
+
+    def test_queue_end_notifies_and_exits_when_mode_2_has_nothing(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_test_q_end_empty_")
+        try:
+            make_synthetic_image_folder(tmpdir, n_images=1)
+            _, seen, prompt, notify = self._run_recording(tmpdir, [ord('q')], prompt_answers=(True,))
+            self.assertEqual(len(seen), 1)
+            prompt.assert_called_once()
+            notify.assert_called_once_with("2")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            _cleanup_real_module_dir_artifacts()
+
+    def test_queue_end_message_mentions_skipped_images(self):
+        app = make_app()
+        message = app._queue_end_message("1", "2", 3)
+        self.assertIn("3 skipped image(s)", message)
+        self.assertIn("Mode 2", message)
+        self.assertNotIn("skipped", app._queue_end_message("1", "2", 0))
 
 
 if __name__ == "__main__":
