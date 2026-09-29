@@ -43,7 +43,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           tar -C packaging/dist -czf "CrackSegmentation-${VERSION:-dev}-linux-x86_64.tar.gz" CrackSegmentation
-          cp packaging/dist/*.deb .
+          cp packaging/dist/*.deb "cracksegmentation_${VERSION:-dev}_amd64.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: linux
