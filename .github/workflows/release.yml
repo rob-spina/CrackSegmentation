@@ -44,7 +44,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           tar -C packaging/dist -czf "CrackSegmentation-${VERSION:-dev}-linux-x86_64.tar.gz" CrackSegmentation
           cp packaging/dist/*.deb "cracksegmentation_${VERSION:-dev}_amd64.deb"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: |
@@ -70,7 +70,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mv packaging/dist/CrackSegmentation.dmg "CrackSegmentation-${VERSION:-dev}-macos-arm64.dmg"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: CrackSegmentation-*-macos-arm64.dmg
@@ -99,7 +99,7 @@ jobs:
           if (-not $version) { $version = "dev" }
           Compress-Archive -Path packaging\dist\CrackSegmentation -DestinationPath "CrackSegmentation-$version-windows-portable.zip"
           Copy-Item packaging\dist\CrackSegmentation-Setup.exe "CrackSegmentation-$version-windows-Setup.exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: |
