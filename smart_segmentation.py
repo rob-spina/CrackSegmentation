@@ -265,6 +265,7 @@ class CrackSegmentation:
             self.cfg.OUTPUT_FOLDER = previous_output_folder
             return False
 
+        self.cfg.queue_items_done = 0
         print(f"[SWITCH MODE] Now in mode {self.cfg.modalita_scelta} -- found {len(self.cfg.image_queue)} file(s).")
         return True
 
@@ -274,6 +275,7 @@ class CrackSegmentation:
         scelta = self._prompt_mode_choice()
 
         self.cfg.modalita_scelta = scelta
+        self.cfg.queue_items_done = 0
         VALID_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
         self.cfg.image_queue = []
 
@@ -1014,6 +1016,7 @@ class CrackSegmentation:
             start_time = time.time()
             TIMEOUT_LIMIT = 3.0
             self.cfg.pathfinding_timeout_triggered = False
+            self.cfg.banner_first_seen.pop('pathfinding_timeout_triggered', None)
 
             roi_bounds, local_start, local_end, local_mask = self._compute_pathfinding_roi(p1, p2, tool_mode)
             roi_x_min, roi_y_min, roi_x_max, roi_y_max = roi_bounds
@@ -1367,13 +1370,33 @@ class CrackSegmentation:
         img2 = cv2.cvtColor(img2_original, cv2.COLOR_BGR2GRAY)
         return img1, img2_original, img2
 
-    def _find_good_sift_matches(self, img1, img2):
-        """SIFT-detects and FLANN-matches features, keeping only
-        matches passing the Lowe ratio test. None if too little detail."""
+    def _build_warp_source_mask(self, img_shape, shapes):
+        """Mask of the source photo's region around its annotated shapes (convex hull plus a small margin).
+        Roof tiles, vegetation and background lie on other planes: features there pull the homography off the facade.
+        None if there are no points (the whole image is used)."""
+        all_points = [pt for shape in shapes for pt in shape.get("points", [])]
+        if len(all_points) < 3:
+            return None
+        h, w = img_shape[:2]
+        hull = cv2.convexHull(np.array(all_points, dtype=np.float32)).astype(np.int32)
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillConvexPoly(mask, hull, 255)
+        margin = int(self.cfg.WARP_SOURCE_MASK_MARGIN * max(h, w))
+        if margin > 0:
+            # Grown on a 1/8-scale copy: same result, far cheaper than a huge kernel at full resolution.
+            small = cv2.resize(mask, (max(1, w // 8), max(1, h // 8)), interpolation=cv2.INTER_NEAREST)
+            k = max(1, margin // 8)
+            small = cv2.dilate(small, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1)))
+            mask = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+        return mask
+
+    def _find_good_sift_matches(self, img1, img2, src_mask=None):
+        """SIFT-detects and FLANN-matches features (source features only inside src_mask, if given),
+        keeping only matches passing the Lowe ratio test. None if too little detail."""
         sift = cv2.SIFT_create(nfeatures=5000, contrastThreshold=0.015, edgeThreshold=12)
-        kp1, des1 = sift.detectAndCompute(img1, None)
+        kp1, des1 = sift.detectAndCompute(img1, src_mask)
         kp2, des2 = sift.detectAndCompute(img2, None)
-        if des1 is None or des2 is None:
+        if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
             return None
 
         FLANN_INDEX_KDTREE = 1
@@ -1386,23 +1409,32 @@ class CrackSegmentation:
         for m_match in matches:
             if len(m_match) == 2:
                 m, n = m_match[0], m_match[1]
-                if m.distance < 0.7 * n.distance:
+                if m.distance < 0.75 * n.distance:
                     good_matches.append(m)
         return kp1, kp2, good_matches
 
+    def _is_homography_degenerate(self, H_matrix):
+        """True if the homography flips or scales the image implausibly (a sign of a wrong fit)."""
+        det = float(np.linalg.det(H_matrix[:2, :2]))
+        return not (self.cfg.HOMOGRAPHY_MIN_AREA_SCALE <= det <= self.cfg.HOMOGRAPHY_MAX_AREA_SCALE)
+
     def _compute_warp_homography(self, kp1, kp2, good_matches):
-        """RANSAC-fits a homography from the good matches. None if the
-        fit itself failed."""
+        """Robustly fits a homography (MAGSAC) from the good matches. None if the fit itself failed;
+        low_confidence_match is True when the fit is too weak or implausible to trust."""
         src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        H_matrix, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 2.5, maxIters=2000, confidence=0.99)
+        try:
+            H_matrix, mask = cv2.findHomography(src_pts, dst_pts, cv2.USAC_MAGSAC, 4.0, maxIters=5000, confidence=0.999)
+        except cv2.error:
+            return None
         if H_matrix is None:
             return None
         num_inliers = int(np.sum(mask)) if mask is not None else 0
         inlier_ratio = num_inliers / max(1, len(good_matches))
-        low_confidence_match = (num_inliers < self.cfg.HOMOGRAPHY_MIN_INLIERS) or (inlier_ratio < self.cfg.HOMOGRAPHY_MIN_INLIER_RATIO)
+        low_confidence_match = (num_inliers < self.cfg.HOMOGRAPHY_MIN_INLIERS) or (inlier_ratio < self.cfg.HOMOGRAPHY_MIN_INLIER_RATIO) \
+            or self._is_homography_degenerate(H_matrix)
         if low_confidence_match:
-            print(f"[WARP QUALITY] Low-confidence alignment: {num_inliers}/{len(good_matches)} valid matches ({inlier_ratio:.0%}).")
+            print(f"[WARP QUALITY] Unreliable alignment: {num_inliers}/{len(good_matches)} valid matches ({inlier_ratio:.0%}).")
         return H_matrix, num_inliers, inlier_ratio, low_confidence_match
 
     def _load_and_retarget_json_payload(self, original_json_path, new_img_path, h2, w2):
@@ -1496,31 +1528,53 @@ class CrackSegmentation:
                 current_workspace_shapes.append({"label": "detachment", "points": [[float(pt[0]), float(pt[1])] for pt in d['path']], "group_id": None, "shape_type": "polygon", "flags": {}})
         return current_workspace_shapes
 
-    def _report_warp_outcome(self, output_json_path, n_rejected_implausible, low_confidence_match, num_inliers, n_good_matches):
-        """Implausible-crack rejections take priority over a
-        low-confidence-match warning in the final status banner."""
-        print(f"[SUCCESS] Sequential alignment completed for: {os.path.basename(output_json_path)}")
+    def _report_warp_outcome(self, output_json_path, n_rejected_implausible, num_inliers, n_good_matches):
+        """Shows the WARP SYNC banner with the match quality; any implausible-crack rejections get their own warning."""
+        print(f"[SUCCESS] Sequential alignment completed for: {os.path.basename(output_json_path)} "
+              f"({num_inliers}/{n_good_matches} matches)")
+        self.cfg.warp_banner_message = f"WARP SYNC: aligned ({num_inliers}/{n_good_matches} matches)"
         self.cfg.warp_jitter_triggered = True
         if n_rejected_implausible > 0:
-            plural = n_rejected_implausible > 1
-            crack_word = "cracks" if plural else "crack"
-            discarded_word = "discarded" if plural else "discarded"
+            crack_word = "cracks" if n_rejected_implausible > 1 else "crack"
             self._signal_import_warning(
-                f"IMPORT: {n_rejected_implausible} {crack_word} {discarded_word} (implausible projection) -- "
+                f"IMPORT: {n_rejected_implausible} {crack_word} discarded (implausible projection) -- "
                 f"retrace them by hand, or try again with a different source photo."
             )
             print(f"[WARP PLAUSIBILITY] {n_rejected_implausible} crack(s) discarded: the projection altered "
                   f"their length beyond plausible limits (likely an imprecise local homography in that area).")
-        elif low_confidence_match:
-            self._signal_import_warning(f"IMPORT: low-confidence alignment ({num_inliers}/{n_good_matches} matches) - press [V] to retrace the cracks onto the real edge, or correct them individually with [T].")
         else:
             self.cfg.import_warning_triggered = False
+
+    def _align_source_to_target(self, img1, img2, source_shapes):
+        """SIFT + homography from the source photo (around its shapes) to the target photo.
+        Returns (H_matrix, num_inliers, n_good_matches), or None after signaling why it failed."""
+        src_mask = self._build_warp_source_mask(img1.shape, source_shapes)
+        sift_result = self._find_good_sift_matches(img1, img2, src_mask)
+        if sift_result is None:
+            self._signal_import_warning("IMPORT FAILED: no recognizable detail in the images for alignment.")
+            return None
+        kp1, kp2, good_matches = sift_result
+        if len(good_matches) < 8:
+            self._signal_import_warning("IMPORT FAILED: view too different from the previous photo, not enough matches.")
+            return None
+        homography_result = self._compute_warp_homography(kp1, kp2, good_matches)
+        if homography_result is None:
+            self._signal_import_warning("IMPORT FAILED: view too different from the previous photo, alignment impossible.")
+            return None
+        H_matrix, num_inliers, _, low_confidence_match = homography_result
+        if low_confidence_match:
+            self._signal_import_warning(
+                f"IMPORT NOT PERFORMED: unreliable alignment ({num_inliers}/{len(good_matches)} matches) -- "
+                f"trace by hand or use a closer source photo.")
+            return None
+        return H_matrix, num_inliers, len(good_matches)
 
     def warp_and_adapt_json_to_new_image(self, base_img_path, new_img_path, original_json_path, output_json_path):
         """Uses robust SIFT matching and precise perspective
         transformation to project shapes."""
         try:
             self.cfg.warp_jitter_triggered = False
+            self.cfg.banner_first_seen.pop('warp_jitter_triggered', None)
             images = self._read_grayscale_and_color(base_img_path, new_img_path)
             if images is None:
                 self._signal_import_warning("IMPORT FAILED: previous or current image is unreadable.")
@@ -1528,28 +1582,18 @@ class CrackSegmentation:
             img1, img2_original, img2 = images
             h2, w2 = img2_original.shape[:2]
 
-            sift_result = self._find_good_sift_matches(img1, img2)
-            if sift_result is None:
-                self._signal_import_warning("IMPORT FAILED: no recognizable detail in the images for alignment.")
-                return False
-            kp1, kp2, good_matches = sift_result
-            if len(good_matches) < 8:
-                self._signal_import_warning("IMPORT FAILED: view too different from the previous photo, not enough matches.")
-                return False
-
-            homography_result = self._compute_warp_homography(kp1, kp2, good_matches)
-            if homography_result is None:
-                self._signal_import_warning("IMPORT FAILED: view too different from the previous photo, alignment impossible.")
-                return False
-            H_matrix, num_inliers, inlier_ratio, low_confidence_match = homography_result
-
             json_payload = self._load_and_retarget_json_payload(original_json_path, new_img_path, h2, w2)
+            alignment = self._align_source_to_target(img1, img2, json_payload.get("shapes", []))
+            if alignment is None:
+                return False
+            H_matrix, num_inliers, n_good_matches = alignment
+
             projected_shapes, n_rejected_implausible = self._project_all_shapes(json_payload.get("shapes", []), H_matrix, w2, h2)
             json_payload["shapes"] = projected_shapes + self._collect_current_session_shapes()
             with open(output_json_path, 'w', encoding='utf-8') as f:
                 json.dump(json_payload, f, ensure_ascii=False, indent=2)
 
-            self._report_warp_outcome(output_json_path, n_rejected_implausible, low_confidence_match, num_inliers, len(good_matches))
+            self._report_warp_outcome(output_json_path, n_rejected_implausible, num_inliers, n_good_matches)
             return True
         except Exception as error_msg:
             print(f"[WARP RUNTIME ERROR] Projection interrupted: {error_msg}")
@@ -2667,6 +2711,8 @@ class CrackSegmentation:
             self._toggle_crack_overlay()
         elif key_clean in [ord('j'), ord('J')]:
             self._toggle_info_overlay()
+        elif key_clean == ord('.'):
+            self._dismiss_all_banners()
         else:
             return False
         return True
@@ -3887,9 +3933,23 @@ class CrackSegmentation:
         cv2.putText(win_out, "ENTER confirms -- BACKSPACE deletes digit/exits -- [B] cancels",
                     (30, 305), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
-    def _draw_one_crack_marker(self, win_out, f, marker_dim):
+    def _draw_crack_number_in_marker(self, win_out, wx, wy, marker_dim, number, active):
+        """Writes the crack's number (same numbering as the Crack Reliability panel) inside its start marker:
+        dark digits on a yellow fill if active, yellow digits on a dark fill if soft-deleted."""
+        inner = marker_dim - 3
+        fill, ink = ((0, 255, 255), (0, 0, 0)) if active else ((40, 40, 40), (0, 255, 255))
+        cv2.rectangle(win_out, (wx - inner, wy - inner), (wx + inner, wy + inner), fill, -1)
+        text = str(number)
+        scale, thick = 0.7, 2
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+        if tw > 2 * inner - 4:
+            scale *= (2 * inner - 4) / tw
+            (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+        cv2.putText(win_out, text, (wx - tw // 2, wy + th // 2), cv2.FONT_HERSHEY_SIMPLEX, scale, ink, thick, cv2.LINE_AA)
+
+    def _draw_one_crack_marker(self, win_out, f, marker_dim, number=None):
         """Draws one crack's two endpoint markers (filled if soft-
-        deleted, crosshair if active)."""
+        deleted, crosshair if active); the start marker carries the crack's number."""
         symbol = "-" if f.get('active', True) else "+"
         for k_p in ['start', 'end']:
             if k_p not in f:
@@ -3899,7 +3959,9 @@ class CrackSegmentation:
             if not (0 <= wx < 1200 and 0 <= wy < 900):
                 continue
             cv2.rectangle(win_out, (wx-marker_dim, wy-marker_dim), (wx+marker_dim, wy+marker_dim), (0, 255, 255), 2)
-            if symbol == "-":
+            if k_p == 'start' and number is not None:
+                self._draw_crack_number_in_marker(win_out, wx, wy, marker_dim, number, symbol == "-")
+            elif symbol == "-":
                 inner_dim = int(marker_dim * 0.4)
                 cv2.rectangle(win_out, (wx-inner_dim, wy-inner_dim), (wx+inner_dim, wy+inner_dim), (0, 255, 255), -1)
             elif symbol == "+":
@@ -3907,9 +3969,9 @@ class CrackSegmentation:
                 cv2.line(win_out, (wx, wy-marker_dim+5), (wx, wy+marker_dim-5), (0, 255, 255), 2)
 
     def _draw_crack_markers(self, win_out, marker_dim):
-        """Draws every saved crack's start/end markers."""
-        for f in self.cfg.saved_cracks:
-            self._draw_one_crack_marker(win_out, f, marker_dim)
+        """Draws every saved crack's start/end markers, numbered from 1 like the Crack Reliability panel."""
+        for number, f in enumerate(self.cfg.saved_cracks, start=1):
+            self._draw_one_crack_marker(win_out, f, marker_dim, number)
 
     def _draw_temp_crack_start_marker(self, win_out, marker_dim):
         """Draws the marker at an in-progress crack's start point,
@@ -3941,7 +4003,7 @@ class CrackSegmentation:
 
         s_scale = 0.9 if self.cfg.hud_large_size else 0.45
         s_thick = 2 if self.cfg.hud_large_size else 1
-        cv2.putText(win_out, f"SNAPPED: Crack #{self.cfg.hover_extension_index}", (wx_snap + 15, wy_snap - 10), cv2.FONT_HERSHEY_SIMPLEX, s_scale, pulsing_color, s_thick, cv2.LINE_AA)
+        cv2.putText(win_out, f"SNAPPED: Crack #{self.cfg.hover_extension_index + 1}", (wx_snap + 15, wy_snap - 10), cv2.FONT_HERSHEY_SIMPLEX, s_scale, pulsing_color, s_thick, cv2.LINE_AA)
 
     def _draw_tool_markers(self, win_out, marker_dim):
         """Draws every marker/indicator gated by [Space]/show_markers,
@@ -4091,14 +4153,34 @@ class CrackSegmentation:
                 cv2.putText(win_out, "STOPWATCH PAUSED", (870 if self.cfg.hud_large_size else 945, 32), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale_btm'], (255, 255, 255), hm['f_thick_btm'], cv2.LINE_AA)
             return None
 
+    def _banner_still_visible(self, flag_name):
+        """True while cfg.<flag_name> is set and younger than BANNER_AUTOHIDE_SECONDS; clears the flag once it expires."""
+        if not getattr(self.cfg, flag_name):
+            self.cfg.banner_first_seen.pop(flag_name, None)
+            return False
+        first_seen = self.cfg.banner_first_seen.setdefault(flag_name, time.time())
+        if time.time() - first_seen > self.cfg.BANNER_AUTOHIDE_SECONDS:
+            setattr(self.cfg, flag_name, False)
+            self.cfg.banner_first_seen.pop(flag_name, None)
+            return False
+        return True
+
+    def _dismiss_all_banners(self):
+        """[.]: hides every on-screen status banner at once (TIMEOUT, WARP SYNC, import warning, export complete)."""
+        self.cfg.pathfinding_timeout_triggered = False
+        self.cfg.warp_jitter_triggered = False
+        self.cfg.import_warning_triggered = False
+        self.cfg.save_timestamp = 0.0
+        self.cfg.banner_first_seen.clear()
+
     def _draw_timeout_and_warp_banners(self, win_out, hm):
         """Draws the A* timeout and homography-warp status banners."""
-        if self.cfg.pathfinding_timeout_triggered:
+        if self._banner_still_visible('pathfinding_timeout_triggered'):
             cv2.rectangle(win_out, (720, 15), (1180, 75), (20, 20, 160), -1)
             cv2.putText(win_out, "TIMEOUT: Path Unreachable", (745, 52), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (255, 255, 255), hm['f_thick'], cv2.LINE_AA)
-        if self.cfg.warp_jitter_triggered:
+        if self._banner_still_visible('warp_jitter_triggered'):
             cv2.rectangle(win_out, (720, 85), (1180, 145), (30, 105, 210), -1)
-            cv2.putText(win_out, "WARP SYNC: Prospect Matched", (735, 122), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale_btm'], (255, 255, 255), hm['f_thick_btm'], cv2.LINE_AA)
+            cv2.putText(win_out, self.cfg.warp_banner_message, (735, 122), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale_btm'], (255, 255, 255), hm['f_thick_btm'], cv2.LINE_AA)
 
     def _draw_import_warning_banner(self, win_out, hm):
         """Draws a failed W/L import banner for 6 seconds, then
@@ -4161,7 +4243,8 @@ class CrackSegmentation:
             "[H] : Enlarge/Shrink text interface",
             "[Space] : Show/Hide on-screen markers",
             "[N] : Show/Hide blue fill of segmented cracks",
-            "[J] : Show/Hide FILE/Cracks Length/BUILDING status text"
+            "[J] : Show/Hide FILE/Cracks Length/BUILDING status text",
+            "[.] : Hide all on-screen messages (they also hide after 15 s)"
         ]
 
     def _draw_help_menu_command_list(self, win_out, comandi):
@@ -4589,7 +4672,9 @@ class CrackSegmentation:
         A Mode 1 save already removed the image from the queue, so the next one is at queue_pos."""
         if self.cfg.navigate_direction == "previous":
             queue_pos = max(0, queue_pos - 1)
-        elif not self.cfg.queue_item_consumed:
+        elif self.cfg.queue_item_consumed:
+            self.cfg.queue_items_done += 1
+        else:
             queue_pos += 1
         self.cfg.navigate_direction = None
         self.cfg.queue_item_consumed = False
@@ -4677,11 +4762,17 @@ class CrackSegmentation:
         self._notify_mode_switch_unavailable(target_mode)
         return False
 
+    def _queue_display_position(self, queue_pos):
+        """(n, N) for the HUD's "FILE: n/N": images already saved this pass
+        count as done, so n keeps rising even though Mode 1 removes them from the queue."""
+        done = self.cfg.queue_items_done
+        return done + queue_pos + 1, done + len(self.cfg.image_queue)
+
     def _process_queue(self, queue_pos, total_files):
         """Walks image_queue until queue_pos runs off either end."""
         # A manually-advanced index (not a for-loop) so Previous Image can move queue_pos backward.
         while 0 <= queue_pos < len(self.cfg.image_queue):
-            index = queue_pos + 1
+            index, total_files = self._queue_display_position(queue_pos)
             self._start_image_session(queue_pos, index, total_files)
             self._reset_per_image_timer_state()
             self._run_single_image_loop(index, total_files)

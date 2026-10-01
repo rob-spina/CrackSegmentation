@@ -620,6 +620,7 @@ _VIEW_COMMANDS = [
     ("\U0001F4CD Toggle markers\tSpace", ord(' ')),
     ("\U0001F535 Toggle blue crack overlay\tN", ord('n')),
     ("\u2139 Toggle Info (file/length/building status)\tJ", ord('j')),
+    ("\U0001F515 Hide on-screen messages\t.", ord('.')),
     ("\U0001F5BC Toggle overlay in export\tM", ord('m')),
     ("\u23EF Pause/resume timer\tP", ord('p')),
     ("\u2753 Toggle user manual\t?", ord('?')),

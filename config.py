@@ -100,6 +100,9 @@ class Config:
         # True once a Mode 1 save removed the current image from image_queue;
         # the next image has already shifted into queue_pos, so don't advance.
         self.queue_item_consumed = False
+        # Images saved (and removed from image_queue) since the queue was last
+        # built -- keeps the HUD's "FILE: n/N" counting up in Mode 1.
+        self.queue_items_done = 0
 
     def _init_shapes_and_history(self):
         """The saved cracks/detachments themselves, plus per-session
@@ -151,6 +154,10 @@ class Config:
         self.image_load_time = 0.0             # Timestamp marker when image opens
         self.pathfinding_timeout_triggered = False  # Activates the red HUD warning overlay
         self.warp_jitter_triggered = False     # Triggers the HUD warning for Warp jitter
+        self.warp_banner_message = "WARP SYNC: aligned"
+        # Persistent banners (TIMEOUT, WARP SYNC) hide themselves after this many seconds; [.] hides them at once.
+        self.BANNER_AUTOHIDE_SECONDS = 15.0
+        self.banner_first_seen = {}            # banner flag name -> time it was first drawn
 
     def _init_import_warning_state(self):
         """On-screen warning shown when W/L crack-projection fails to import (no previous session, no building code assigned, or a poor perspective match)."""
@@ -165,9 +172,14 @@ class Config:
         self.MIN_DETACHMENT_AREA_CM2 = 2.0
 
     def _init_homography_thresholds(self):
-        """Quality thresholds for the W/L SIFT+homography crack projection -- below these the import still happens, with an on-screen low-confidence warning."""
+        """Quality thresholds for the W/L SIFT+homography crack projection -- below these the alignment is rejected and nothing is imported."""
         self.HOMOGRAPHY_MIN_INLIERS = 15
-        self.HOMOGRAPHY_MIN_INLIER_RATIO = 0.35
+        self.HOMOGRAPHY_MIN_INLIER_RATIO = 0.50
+        # Plausible range for the scale change |det| of the homography's linear part between two shots.
+        self.HOMOGRAPHY_MIN_AREA_SCALE = 0.2
+        self.HOMOGRAPHY_MAX_AREA_SCALE = 5.0
+        # SIFT features are taken only around the source cracks (the facade plane), grown by this fraction of the image size.
+        self.WARP_SOURCE_MASK_MARGIN = 0.02
 
     def _init_building_group_thresholds(self):
         """Thresholds for automatic building-group assignment by SIFT+homography photo similarity -- stricter than HOMOGRAPHY_MIN_INLIERS, since a false positive merges two unrelated buildings.

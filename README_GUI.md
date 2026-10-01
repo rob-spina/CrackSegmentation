@@ -635,7 +635,7 @@ cd packaging
 chmod +x build_linux.sh
 ./build_linux.sh
 # risultato: packaging/dist/CrackSegmentation/CrackSegmentation
-#            packaging/dist/cracksegmentation_1.0.2_amd64.deb   <- da distribuire
+#            packaging/dist/cracksegmentation_1.0.3_amd64.deb   <- da distribuire
 ```
 A differenza di Mac e Windows, Python su Linux **non include Tkinter di
 default** -- va installato a parte col pacchetto di sistema
@@ -647,7 +647,7 @@ multiarray failed to import`, che capita quando un `matplotlib` installato
 via `apt` resta incompatibile con la versione di `numpy` installata via
 `pip` nello stesso Python di sistema (bug reale riscontrato su Ubuntu).
 Il `.deb` si installa con
-`sudo apt install ./cracksegmentation_1.0.2_amd64.deb`, aggiunge una voce
+`sudo apt install ./cracksegmentation_1.0.3_amd64.deb`, aggiunge una voce
 "Crack Segmentation" al menu Applicazioni e un comando `cracksegmentation`
 lanciabile da terminale. Ho verificato la logica di generazione del `.deb`
 in questo ambiente con un build PyInstaller fittizio (`dpkg-deb` è
