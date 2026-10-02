@@ -123,18 +123,41 @@ class EmbeddedCanvas:
         x, y = self._canvas_xy(event)
         self.app.mouse_callback(cv2.EVENT_MOUSEMOVE, x, y, 0, None)
 
+    _WHEEL_SEQUENCES = ("<MouseWheel>", "<Button-4>", "<Button-5>",
+                        "<Shift-MouseWheel>", "<Shift-Button-4>", "<Shift-Button-5>")
+
     def _on_enter(self, event):
         self.canvas.focus_set()
         # bind_all (not a per-widget bind) makes wheel scrolling reliable across platforms.
-        self.canvas.bind_all("<MouseWheel>", self._on_wheel)
-        self.canvas.bind_all("<Button-4>", self._on_wheel)
-        self.canvas.bind_all("<Button-5>", self._on_wheel)
+        for sequence in self._WHEEL_SEQUENCES:
+            self.canvas.bind_all(sequence, self._on_wheel)
 
     def _on_leave(self, event):
         # Releases the global bindings once the mouse leaves this canvas.
-        self.canvas.unbind_all("<MouseWheel>")
-        self.canvas.unbind_all("<Button-4>")
-        self.canvas.unbind_all("<Button-5>")
+        for sequence in self._WHEEL_SEQUENCES:
+            self.canvas.unbind_all(sequence)
+
+    @staticmethod
+    def _wheel_units(event):
+        """Signed scroll amount, + = up/left. Windows sends multiples of 120 per notch,
+        macOS small values per trackpad step, X11 Button-4/5 events."""
+        num = getattr(event, "num", None)
+        if num == 4:
+            return 1.0
+        if num == 5:
+            return -1.0
+        delta = getattr(event, "delta", 0) or 0
+        units = delta / 120.0 if abs(delta) >= 120 else float(delta)
+        return max(-5.0, min(5.0, units))
+
+    def _pan_zoomed_view(self, event):
+        """Pans the zoomed photo by 2% of the view per wheel unit. False when not zoomed in."""
+        units = self._wheel_units(event)
+        if not units:
+            return False
+        sideways = bool(getattr(event, "state", 0) & 0x0001)  # Shift held (also macOS horizontal swipes)
+        fraction = -0.02 * units
+        return self.app.pan_view_by_fraction(fraction if sideways else 0.0, 0.0 if sideways else fraction)
 
     def _on_wheel(self, event):
         # While the on-screen [?] help guide is open, the wheel scrolls its
@@ -142,6 +165,9 @@ class EmbeddedCanvas:
         if getattr(self.app.cfg, "show_help_menu", False):
             scrolling_up = getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0
             self.app._pending_keys.append(0 if scrolling_up else 1)
+            return "break"
+        # Zoomed in: the wheel / two-finger trackpad pans the photo (Shift = sideways).
+        if self._pan_zoomed_view(event):
             return "break"
         # Otherwise, scroll the photo view itself (a plain tk.Canvas has
         # no built-in wheel-to-scroll behavior -- this is what wires it up).
@@ -293,6 +319,8 @@ _SIDEBAR_SHORTCUTS = [
     ("\U0001F535", "Toggle blue overlay", "N", ord('n')),
     ("\U0001F4CD", "Toggle markers", "Space", ord(' ')),
     ("\U0001F504", "Retrace cracks", "V", ord('v')),
+    ("\u2702", "Cut crack part", "1", ord('1')),
+    ("\U0001F517", "Join / re-route", "2", ord('2')),
     ("\U0001F9F2", "Snap / translate", "T", ord('t')),
     ("\u2194", "Width-edit mode", "A", ord('a')),
     ("\U0001F3F7", "Assign building", "B", ord('b')),
@@ -572,7 +600,7 @@ class _ModeChoiceDialog:
 
 _FILE_COMMANDS = [
     ("\U0001F4BE Save and go to next\tEnter", 13),
-    ("\U0001F4BE Save and go to next\tS", ord('s')),
+    ("\U0001F4BE Save (stay on this image)\tS", ord('s')),
     ("\U0001F4E5 Import from previous session (projection)\tW", ord('w')),
     ("\U0001F517 Import - automatic alignment\tL", ord('l')),
     # USER REQUEST: browse the queue without exporting/archiving anything --
@@ -599,6 +627,8 @@ _TOOL_COMMANDS = [
     ("\u270E Toggle edit mode\tE", ord('e')),
     ("\U0001F9F2 Automatic snap / translate\tT", ord('t')),
     ("\U0001F504 Retrace imported cracks onto real edge\tV", ord('v')),
+    ("\u2702 Cut a crack part (2 clicks)\t1", ord('1')),
+    ("\U0001F517 Join / re-route cracks (2 clicks)\t2", ord('2')),
     ("\U0001F50D Building-group compatibility check\tG", ord('g')),
     ("\U0001F3F7 Manually assign building group\tB", ord('b')),
 ]
@@ -904,9 +934,9 @@ class GuiCrackSegmentation(CrackSegmentation):
         # cv2.waitKey(0) -- a modal Tk dialog replaces it entirely.
         messagebox.showinfo(
             "Crack Detector",
-            "Saving this image will automatically proceed to the next "
-            "file in the queue.\n\nTo modify this image again later, "
-            "restart the program in Mode 2.",
+            "[S] saves and stays on this image; [Enter] saves and moves "
+            "to the next one.\n\nIn Mode 1 the photo is moved to "
+            "'already processed images': to modify it again later, use Mode 2.",
             parent=self._tk_root,
         )
 
@@ -960,6 +990,18 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _display_frame(self, window_name, frame):
         self._canvas.update_frame(frame)
+
+    def _visible_canvas_top(self):
+        """First frame row visible in the scrollable canvas, so the [J] panel stays on screen."""
+        try:
+            top = int(self._canvas.canvas.canvasy(0)) - int(self._canvas._content_offset[1])
+        except (tk.TclError, AttributeError, TypeError, ValueError):
+            return 0
+        return max(0, min(CANVAS_H - 200, top))
+
+    def _draw_bottom_hint_bar(self, win_out, hm):
+        # The GUI's menu bar, toolbar and status bar already show these commands.
+        return None
 
     def _toggle_help_menu(self):
         """GUI override: shows/hides the real PDF user manual instead of the text overlay render_scene() draws in headless mode."""

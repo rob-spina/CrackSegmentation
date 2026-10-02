@@ -146,6 +146,11 @@ class Config:
         }
         # Tracks only the exact points the user clicked while drawing
         self.user_clicked_nodes = []
+        # CUT [1] / JOIN [2] crack tools: mode is None, 'cut' or 'join'; first is the
+        # (crack_idx, point_idx) picked by the first of the two clicks.
+        self.crack_cut_join_state = {"mode": None, "first": None}
+        # Crack parts removed with CUT on the current photo: JOIN routes around them.
+        self.cut_exclusions = []
 
     def _init_timer_state(self):
         """--- STOPWATCH TIMER STATES ---"""

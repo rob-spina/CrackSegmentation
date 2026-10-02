@@ -281,7 +281,7 @@ class TestSwitchModeAtRuntime(unittest.TestCase):
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
                  mock.patch.object(app, "render_scene"), \
                  mock.patch.object(app, "_start_image_session", side_effect=_record_and_start), \
-                 _MockedHighGui(key_sequence=[6, ord('s')]):
+                 _MockedHighGui(key_sequence=[6, ord('q')]):
                 app.run()
 
 
@@ -604,13 +604,14 @@ class TestProcessKeypressDispatch(unittest.TestCase):
             march.assert_called_once()
             mchk.assert_called_once()
 
-    def test_s_saves_and_advances(self):
+    def test_s_saves_and_stays_on_the_image(self):
+        # USER REPORT (v1.0.3): [S] must save WITHOUT moving to the next image.
         app = make_app()
         with mock.patch.object(app, "export_labelme_format") as mexp, \
              mock.patch.object(app, "archive_current_session_to_processed") as march, \
              mock.patch.object(app, "run_post_save_group_crack_check") as mchk:
             result = app.process_keypress(ord('s'))
-        self.assertTrue(result)
+        self.assertFalse(result, "[S] must not advance to the next image")
         mexp.assert_called_once()
         march.assert_called_once()
         mchk.assert_called_once()
@@ -1491,7 +1492,7 @@ class TestRunEndToEndHeadless(unittest.TestCase):
 
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
                  mock.patch.object(app, "render_scene"), \
-                 _MockedHighGui(key_sequence=[ord('s')]):
+                 _MockedHighGui(key_sequence=[ord('q')]):
                 app.run()
 
             json_files = [f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")] \
@@ -1523,7 +1524,7 @@ class TestRunEndToEndHeadless(unittest.TestCase):
 
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
                  mock.patch.object(app, "render_scene"), \
-                 _MockedHighGui(key_sequence=[4, ord('s')]):
+                 _MockedHighGui(key_sequence=[4, ord('q')]):
                 app.run()
 
             json_files = sorted(f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")) \
@@ -1549,7 +1550,7 @@ class TestRunEndToEndHeadless(unittest.TestCase):
             # -> img_01 again (skip forward, no save). The save must NOT skip img_01.
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
                  mock.patch.object(app, "render_scene"), \
-                 _MockedHighGui(key_sequence=[4, 5, ord('s'), 4]):
+                 _MockedHighGui(key_sequence=[4, 5, ord('q'), 4]):
                 app.run()
 
             json_files = [f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")] \
@@ -1578,7 +1579,7 @@ class TestRunEndToEndHeadless(unittest.TestCase):
                 def _pump_extra_events(self):
                     if self._armed:
                         self._armed = False
-                        self._pending_keys.append(ord('s'))
+                        self._pending_keys.append(ord('q'))
                     return None
 
             app = FakePanelApp(cfg)

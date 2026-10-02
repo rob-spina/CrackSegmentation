@@ -2,6 +2,7 @@
 Interactive OpenCV tool for manual segmentation of cracks and detachments on building facade photos, with A*-guided tracing. Run: python3 fast_segmentation.py
 """
 import base64
+import copy
 import csv
 import heapq
 import json
@@ -71,15 +72,15 @@ class CrackSegmentation:
         popup_name = "Save Warning"
         popup_canvas = np.zeros((400, 300, 3), dtype=np.uint8)
         lines = [
-            "WARNING:",
-            "Saving this image will",
-            "automatically proceed",
-            "to the next file in",
-            "the queue.",
+            "SAVING:",
+            "[S] saves and stays on",
+            "this image; [Enter]",
+            "saves and moves on.",
             "",
-            "To modify this image",
-            "again later, restart",
-            "the program in",
+            "In Mode 1 the photo is",
+            "moved to 'already",
+            "processed images':",
+            "edit it later in",
             "Mode 2.",
             "",
             "Press any key to close",
@@ -913,6 +914,9 @@ class CrackSegmentation:
                 x_min = max(0, min(self.cfg.zoom_center[0] - w // 2, self.cfg.W_img - w))
                 y_min = max(0, min(self.cfg.zoom_center[1] - h // 2, self.cfg.H_img - h))
                 self.cfg.zoom_box = [x_min, y_min, x_min + w, y_min + h]
+                # Keeps the centre on the real view: past an edge it used to keep drifting, so panning
+                # back the other way did nothing for several presses.
+                self.cfg.zoom_center = [x_min + w // 2, y_min + h // 2]
         except Exception as e:
             self.cfg.zoom_box = [0, 0, self.cfg.W_img, self.cfg.H_img]
             print(f"[VIEWPORT EXCEPTION] Fallback zoom anomaly: {e}", file=sys.stderr)
@@ -1200,11 +1204,21 @@ class CrackSegmentation:
             json.dump(labelme_data, f, ensure_ascii=False, indent=2)
         print(f"[SUCCESS] JSON configuration generated at: {self.cfg.JSON_OUTPUT_PATH}")
 
+    def _segmented_output_path(self, suffix, ext):
+        """Path in 'segmentated images' for an export of the current photo (overlay or masks), in BOTH modes.
+        Named after the photo's CURRENT name, so a building-group rename made after loading is honoured."""
+        folder = os.path.join(str(self.cfg.SCRIPT_DIR), self.cfg.folder_seg_img)
+        os.makedirs(folder, exist_ok=True)
+        img_name = os.path.splitext(os.path.basename(self.cfg.CURRENT_IMAGE_PATH))[0]
+        return os.path.join(folder, f"{img_name}{suffix}{ext}")
+
     def _export_segmented_preview_image(self):
         """Writes the colored crack/detachment overlay PNG, if enabled
         ([M])."""
         if not self.cfg.SAVE_SEG_IMAGE:
             return
+        # Mode 2 used to write this next to the JSON ('already processed images'), leaving the real one stale.
+        self.cfg.EXPORT_IMAGE_PATH = self._segmented_output_path("-seg", os.path.splitext(self.cfg.CURRENT_IMAGE_PATH)[1])
         segmented_img = self.cfg.img_original.copy()
         k = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
         mv, mb = cv2.dilate(self.cfg.green_visual_mask, k), cv2.dilate(self.cfg.blue_visual_mask, k)
@@ -1230,6 +1244,10 @@ class CrackSegmentation:
             cv2.imwrite(path, mask)
             print(f"[SUCCESS] {success_label} saved: {path}")
             return True
+        if os.path.exists(path):
+            # Every shape of this kind was removed (e.g. while editing in Mode 2): drop the stale mask.
+            os.remove(path)
+            print(f"[MASK EXPORT] Removed outdated mask: {path}")
         return False
 
     def _export_binary_masks(self):
@@ -1239,10 +1257,9 @@ class CrackSegmentation:
             crack_mask_out = self._build_variable_width_crack_mask(self.cfg.saved_cracks, self.cfg.H_img, self.cfg.W_img, self.cfg.CRACK_MASK_DILATION_PX)
             detachment_mask_out = self._build_detachment_area_mask()
 
-            base_name_no_ext = os.path.splitext(os.path.basename(self.cfg.JSON_OUTPUT_PATH))[0]
-            mask_dir = os.path.dirname(self.cfg.JSON_OUTPUT_PATH)
-            crack_mask_path = os.path.join(mask_dir, f"{base_name_no_ext}-crack_mask.png")
-            detachment_mask_path = os.path.join(mask_dir, f"{base_name_no_ext}-detachment_mask.png")
+            # Always 'segmentated images', in Mode 2 too (it used to follow the JSON into the archive folder).
+            crack_mask_path = self._segmented_output_path("-crack_mask", ".png")
+            detachment_mask_path = self._segmented_output_path("-detachment_mask", ".png")
 
             if not self._write_mask_if_nonempty(crack_mask_out, crack_mask_path, "Binary crack mask"):
                 print("[MASK EXPORT] No active crack: crack mask not generated (nothing to save).")
@@ -1307,8 +1324,11 @@ class CrackSegmentation:
         if self.cfg.modalita_scelta == "1":
             dest_json_path = os.path.join(processed_folder, os.path.basename(self.cfg.JSON_OUTPUT_PATH))
             dest_img_path = os.path.join(processed_folder, os.path.basename(self.cfg.CURRENT_IMAGE_PATH))
-            shutil.copy2(self.cfg.JSON_OUTPUT_PATH, dest_json_path)
-            if os.path.exists(self.cfg.CURRENT_IMAGE_PATH):
+            # A second [S] on the same photo: JSON and image are already in the archive.
+            if os.path.abspath(self.cfg.JSON_OUTPUT_PATH) != os.path.abspath(dest_json_path):
+                shutil.copy2(self.cfg.JSON_OUTPUT_PATH, dest_json_path)
+            if os.path.exists(self.cfg.CURRENT_IMAGE_PATH) and \
+                    os.path.abspath(self.cfg.CURRENT_IMAGE_PATH) != os.path.abspath(dest_img_path):
                 shutil.move(self.cfg.CURRENT_IMAGE_PATH, dest_img_path)
             if self.cfg.CURRENT_IMAGE_PATH in self.cfg.image_queue:
                 self.cfg.image_queue.remove(self.cfg.CURRENT_IMAGE_PATH)
@@ -2089,7 +2109,7 @@ class CrackSegmentation:
         base_name = os.path.basename(self.cfg.CURRENT_IMAGE_PATH)
         img_name, img_ext = os.path.splitext(base_name)
         self.cfg.JSON_OUTPUT_PATH = os.path.join(self.cfg.OUTPUT_FOLDER, f"{img_name}.json")
-        self.cfg.EXPORT_IMAGE_PATH = os.path.join(self.cfg.OUTPUT_FOLDER, f"{img_name}-seg{img_ext}")
+        self.cfg.EXPORT_IMAGE_PATH = self._segmented_output_path("-seg", img_ext)
 
         with open(self.cfg.CURRENT_IMAGE_PATH, "rb") as _raw_file:
             self.cfg.CURRENT_IMAGE_RAW_BYTES = _raw_file.read()
@@ -2116,6 +2136,8 @@ class CrackSegmentation:
         self.cfg.width_edit_state["focused_seg_idx"] = None
         self.cfg.manual_group_entry_state["active"] = False
         self.cfg.manual_group_entry_state["buffer"] = ""
+        self._reset_cut_join_state()
+        self.cfg.cut_exclusions = []
         self.cfg.PIXEL_TO_CM_SCALE = 0.05
         self.cfg.calib_start, self.cfg.calibration_mode = None, False
 
@@ -2223,6 +2245,7 @@ class CrackSegmentation:
         print("\n [EMERGENCY UNLOCK] Unlocking system and resetting temporary variables...")
         self._reset_translate_state()
         self._reset_width_edit_state()
+        self._reset_cut_join_state()
         self.cfg.temp_start = None
         self.cfg.temp_path.clear()
         self.cfg.temp_nodes.clear()
@@ -2356,6 +2379,16 @@ class CrackSegmentation:
             self._print_directional_width_status(fc, seg)
         self.refresh_zoom_viewport()
 
+    def pan_view_by_fraction(self, fx, fy):
+        """Pans a zoomed view by a fraction of its own width/height (trackpad / mouse wheel). False if not zoomed."""
+        if self.cfg.zoom_factor <= 1.0:
+            return False
+        view_w = self.cfg.W_img / self.cfg.zoom_factor
+        view_h = self.cfg.H_img / self.cfg.zoom_factor
+        self.cfg.zoom_center = [int(self.cfg.zoom_center[0] + fx * view_w), int(self.cfg.zoom_center[1] + fy * view_h)]
+        self.refresh_zoom_viewport()
+        return True
+
     def _zoom_in(self):
         self.cfg.zoom_factor = min(10.0, self.cfg.zoom_factor + 0.5)
         self.refresh_zoom_viewport()
@@ -2398,12 +2431,14 @@ class CrackSegmentation:
         """[C]: switches to the crack tool, cleanly leaving any in-progress T/A mode."""
         self._reset_translate_state()
         self._reset_width_edit_state()
+        self._reset_cut_join_state()
         self.cfg.current_tool, self.cfg.temp_nodes, self.cfg.temp_path = 'crack', [], []
 
     def _select_detachment_tool(self):
         """[D]: switches to the detachment tool, same cleanup as [C]."""
         self._reset_translate_state()
         self._reset_width_edit_state()
+        self._reset_cut_join_state()
         self.cfg.current_tool, self.cfg.temp_start = 'detachment', None
 
     def _toggle_save_seg_image(self):
@@ -2423,6 +2458,7 @@ class CrackSegmentation:
 
     def _toggle_edit_mode(self):
         self.cfg.edit_mode = not self.cfg.edit_mode
+        self._reset_cut_join_state()
         self.cfg.selected_edit_poly = None
         self.cfg.selected_edit_idx = None
         self.recalculate_masks()
@@ -2440,9 +2476,289 @@ class CrackSegmentation:
             if 'drawing_mode' in globals(): drawing_mode = False
             if 'current_poly_points' in globals(): current_poly_points = []  # Clears any leftover orange squares
             self._reset_width_edit_state()
+            self._reset_cut_join_state()
             print(" [MODE] Automatic Snap Mode ACTIVE. Other modes disabled. Correct multiple points in sequence, press [T] again to exit.")
         else:
             print(" [MODE] Automatic Snap Mode disabled.")
+
+    # --- CUT [1] / JOIN [2] crack tools -------------------------------------------------
+
+    CUT_JOIN_PICK_TOLERANCE_WIN_PX = 15   # click tolerance, in window pixels
+    CUT_JOIN_MIN_PIECE_POINTS = 3          # shorter leftovers of a cut are dropped
+    JOIN_BLOCK_RADIUS_PX = 3               # half-width of the corridor JOIN may not reuse
+
+    def _reset_cut_join_state(self):
+        self.cfg.crack_cut_join_state["mode"] = None
+        self.cfg.crack_cut_join_state["first"] = None
+
+    def _toggle_cut_join_mode(self, mode):
+        """[1] CUT / [2] JOIN: two clicks on cracks. Pressing the same key again leaves the tool."""
+        state = self.cfg.crack_cut_join_state
+        state["mode"] = None if state["mode"] == mode else mode
+        state["first"] = None
+        if state["mode"] is None:
+            print(f" [MODE] {mode.upper()} tool disabled.")
+        else:
+            self._reset_translate_state()
+            self._reset_width_edit_state()
+            self.cfg.edit_mode = False
+            self.cfg.current_tool = 'crack'
+            self.cfg.temp_start = None
+            self.cfg.temp_path.clear()
+            if mode == 'cut':
+                print(" [MODE] CUT tool: click the START and then the END of the crack part to remove. [1] to exit.")
+            else:
+                print(" [MODE] JOIN tool: click two points -- on the same crack to re-route the part between them, "
+                      "or the ends of two crack pieces to reconnect them along a new path. [2] to exit.")
+        self.refresh_zoom_viewport()
+
+    def _cut_join_pick_tolerance(self):
+        """Click tolerance converted from window pixels to image pixels at the current zoom."""
+        view_w = max(1, self.cfg.zoom_box[2] - self.cfg.zoom_box[0])
+        return max(3.0, self.CUT_JOIN_PICK_TOLERANCE_WIN_PX * view_w / 1200.0)
+
+    def _pick_active_crack_point(self, real_x, real_y):
+        """(crack_idx, point_idx) of the nearest point on an ACTIVE crack within tolerance, else (None, None)."""
+        best = (None, None, self._cut_join_pick_tolerance())
+        for idx, f in enumerate(self.cfg.saved_cracks):
+            if not f.get('active', True) or not f.get('path'):
+                continue
+            pts = np.asarray(f['path'], dtype=np.float64)
+            d = np.hypot(pts[:, 0] - real_x, pts[:, 1] - real_y)
+            p_idx = int(np.argmin(d))
+            if d[p_idx] <= best[2]:
+                best = (idx, p_idx, float(d[p_idx]))
+        return best[0], best[1]
+
+    def _handle_cut_join_mouse(self, event, x, y):
+        """Two clicks: first point, then second point, then the CUT or JOIN is applied."""
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        real_x, real_y = self.transform_window_to_real_coords(x, y)
+        crack_idx, point_idx = self._pick_active_crack_point(real_x, real_y)
+        state = self.cfg.crack_cut_join_state
+        tool = state["mode"].upper()
+        if crack_idx is None:
+            print(f" [{tool}] No crack near the click: click ON a blue crack line.")
+            return
+        if state["first"] is None:
+            state["first"] = (crack_idx, point_idx)
+            print(f" [{tool}] First point set on crack #{crack_idx + 1}. Now click the second point.")
+            self.refresh_zoom_viewport()
+            return
+        first, state["first"] = state["first"], None
+        if state["mode"] == 'cut':
+            self._cut_crack_section(first, (crack_idx, point_idx))
+        else:
+            self._join_crack_points(first, (crack_idx, point_idx))
+        self.recalculate_masks()
+        self.refresh_zoom_viewport()
+
+    def _snapshot_crack_edit_state(self):
+        return copy.deepcopy(self.cfg.saved_cracks), copy.deepcopy(self.cfg.cut_exclusions)
+
+    def _commit_crack_edit(self, before):
+        """Records a CUT/JOIN for Undo [U] (and drops the now-stale redo chain)."""
+        self.cfg.action_history.append(('crack_snapshot', before))
+        self.cfg.redo_history.clear()
+
+    def _swap_crack_snapshot(self, snapshot):
+        """Restores a snapshot and returns the state it replaced (Undo/Redo of CUT/JOIN)."""
+        current = self._snapshot_crack_edit_state()
+        cracks, exclusions = snapshot
+        self.cfg.saved_cracks[:] = cracks
+        self.cfg.cut_exclusions[:] = exclusions
+        return current
+
+    @staticmethod
+    def _remap_width_segments(segments, first, last, shift=0):
+        """Width tracts lying entirely within original points [first, last], re-indexed by
+        (shift - first). Returns (kept, number of tracts dropped because they straddle the range)."""
+        kept, dropped = [], 0
+        for seg in segments or []:
+            try:
+                i0, i1 = sorted((int(seg['i0']), int(seg['i1'])))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if first <= i0 and i1 <= last:
+                new_seg = dict(seg)
+                new_seg['i0'], new_seg['i1'] = i0 - first + shift, i1 - first + shift
+                kept.append(new_seg)
+            elif i1 >= first and i0 <= last:
+                dropped += 1
+        return kept, dropped
+
+    @staticmethod
+    def _crack_with_path(template, path, width_segments):
+        """New crack dict from template with a new path: start/end follow the path; the
+        import-time original shape no longer matches it, so it's dropped."""
+        crack = {k: v for k, v in template.items() if k not in ('orig_path', 'orig_points', 'nodes', 'width_segments')}
+        crack['path'] = [(int(p[0]), int(p[1])) for p in path]
+        crack['start'], crack['end'] = crack['path'][0], crack['path'][-1]
+        if width_segments:
+            crack['width_segments'] = width_segments
+        return crack
+
+    def _cut_crack_section(self, first, second):
+        """[1] CUT: removes the crack points strictly between the two clicked points.
+        The crack is split in two (or just trimmed if a click was at an end)."""
+        (ia, pa), (ib, pb) = first, second
+        if ia != ib:
+            print(" [CUT] Both points must be on the SAME crack.")
+            return False
+        crack = self.cfg.saved_cracks[ia]
+        path = list(crack['path'])
+        lo, hi = sorted((pa, pb))
+        if hi - lo < 2:
+            print(" [CUT] The two points are too close: nothing to remove.")
+            return False
+        before = self._snapshot_crack_edit_state()
+        pieces, n_dropped = [], 0
+        for first_i, last_i in ((0, lo), (hi, len(path) - 1)):
+            segs, dropped = self._remap_width_segments(crack.get('width_segments'), first_i, last_i)
+            n_dropped += dropped
+            if last_i - first_i + 1 >= self.CUT_JOIN_MIN_PIECE_POINTS:
+                pieces.append(self._crack_with_path(crack, path[first_i:last_i + 1], segs))
+        self.cfg.cut_exclusions.append([(int(p[0]), int(p[1])) for p in path[lo + 1:hi]])
+        self.cfg.saved_cracks[ia:ia + 1] = pieces
+        self._commit_crack_edit(before)
+        print(f" [CUT] Crack #{ia + 1}: {hi - lo - 1} points removed, {len(pieces)} piece(s) kept"
+              + (f", {n_dropped} width tract(s) crossing the cut removed." if n_dropped else ".")
+              + " [2] JOIN reconnects, [U] undoes, [S] saves JSON and masks.")
+        return True
+
+    def _route_avoiding(self, p_start, p_end, blocked_paths):
+        """A* (crack mode) from p_start to p_end with the skeleton removed along blocked_paths,
+        so the route has to follow a DIFFERENT edge. The skeleton is always restored."""
+        original_skeleton = self.cfg.skeleton_mask
+        blocked_paths = [b for b in blocked_paths if len(b) >= 1]
+        if blocked_paths and original_skeleton is not None:
+            r = self.JOIN_BLOCK_RADIUS_PX
+            block = np.zeros_like(original_skeleton)
+            for pts in blocked_paths:
+                arr = np.asarray(pts, dtype=np.int32).reshape(-1, 1, 2)
+                cv2.polylines(block, [arr], False, 255, thickness=2 * r + 1)
+            for p in (p_start, p_end):  # the endpoints themselves must stay reachable
+                cv2.circle(block, (int(p[0]), int(p[1])), r + 2, 0, -1)
+            modified = original_skeleton.copy()
+            modified[block == 255] = 0
+            self.cfg.skeleton_mask = modified
+        try:
+            return self.a_star_pathfinding(p_start, p_end, 'crack')
+        finally:
+            self.cfg.skeleton_mask = original_skeleton
+
+    @staticmethod
+    def _bridge_points(p, q):
+        """Pixel steps strictly between p and q, so concatenated paths have no gaps."""
+        n = int(max(abs(q[0] - p[0]), abs(q[1] - p[1])))
+        return [(int(round(p[0] + (q[0] - p[0]) * t / n)), int(round(p[1] + (q[1] - p[1]) * t / n))) for t in range(1, n)]
+
+    def _stitch(self, *parts):
+        """Concatenates point lists, bridging any gap and dropping duplicated joints."""
+        out = []
+        for part in parts:
+            for pt in part:
+                pt = (int(pt[0]), int(pt[1]))
+                if out and pt == out[-1]:
+                    continue
+                if out:
+                    out.extend(self._bridge_points(out[-1], pt))
+                out.append(pt)
+        return out
+
+    def _join_crack_points(self, first, second):
+        """[2] JOIN: same crack -> re-routes the part between the two points along a different
+        edge; two cracks -> connects them (first point to second point) into one crack."""
+        (ia, pa), (ib, pb) = first, second
+        if ia == ib:
+            return self._reroute_crack_section(ia, pa, pb)
+        return self._connect_two_cracks(ia, pa, ib, pb)
+
+    def _reroute_crack_section(self, idx, pa, pb):
+        crack = self.cfg.saved_cracks[idx]
+        path = list(crack['path'])
+        lo, hi = sorted((pa, pb))
+        if hi - lo < 2:
+            print(" [JOIN] The two points are too close: click farther apart along the crack.")
+            return False
+        new_part = self._route_avoiding(path[lo], path[hi], [path[lo + 1:hi]] + self.cfg.cut_exclusions)
+        if not new_part:
+            print(" [JOIN] No alternative path found between the two points.")
+            return False
+        before = self._snapshot_crack_edit_state()
+        merged = self._stitch(path[:lo + 1], new_part, path[hi:])
+        head_segs, d1 = self._remap_width_segments(crack.get('width_segments'), 0, lo)
+        tail_shift = len(self._stitch(path[:lo + 1], new_part)) - 1
+        tail_segs, d2 = self._remap_width_segments(crack.get('width_segments'), hi, len(path) - 1, tail_shift)
+        self.cfg.saved_cracks[idx] = self._crack_with_path(crack, merged, head_segs + tail_segs)
+        self._commit_crack_edit(before)
+        print(f" [JOIN] Crack #{idx + 1}: section re-routed ({hi - lo + 1} -> {len(new_part)} points)"
+              + (f", {d1 + d2} width tract(s) on the old route removed." if d1 + d2 else ".") + " [U] undoes.")
+        return True
+
+    @staticmethod
+    def _orient_towards(path, p_idx, ends_at_point):
+        """The part of path on the longer side of p_idx, oriented to END at p_idx
+        (ends_at_point=True) or to START at it. Returns (points, original_first, original_last, reversed)."""
+        keep_head = p_idx >= (len(path) - 1) / 2.0
+        first, last = (0, p_idx) if keep_head else (p_idx, len(path) - 1)
+        part = path[first:last + 1]
+        reverse = keep_head != ends_at_point
+        return (part[::-1] if reverse else part), first, last, reverse
+
+    def _connect_two_cracks(self, ia, pa, ib, pb):
+        crack_a, crack_b = self.cfg.saved_cracks[ia], self.cfg.saved_cracks[ib]
+        part_a, a_first, a_last, a_rev = self._orient_towards(list(crack_a['path']), pa, ends_at_point=True)
+        part_b, b_first, b_last, b_rev = self._orient_towards(list(crack_b['path']), pb, ends_at_point=False)
+        bridge = self._route_avoiding(part_a[-1], part_b[0], self.cfg.cut_exclusions)
+        if not bridge:
+            print(" [JOIN] No path found between the two cracks.")
+            return False
+        before = self._snapshot_crack_edit_state()
+        merged = self._stitch(part_a, bridge, part_b)
+        segs, n_dropped = [], 0
+        if a_rev:
+            n_dropped += len(crack_a.get('width_segments') or [])
+        else:
+            segs_a, d = self._remap_width_segments(crack_a.get('width_segments'), a_first, a_last)
+            segs, n_dropped = segs + segs_a, n_dropped + d
+        if b_rev:
+            n_dropped += len(crack_b.get('width_segments') or [])
+        else:
+            shift = len(self._stitch(part_a, bridge)) - 1
+            segs_b, d = self._remap_width_segments(crack_b.get('width_segments'), b_first, b_last, shift)
+            segs, n_dropped = segs + segs_b, n_dropped + d
+        self.cfg.saved_cracks[ia] = self._crack_with_path(crack_a, merged, segs)
+        del self.cfg.saved_cracks[ib]
+        self._commit_crack_edit(before)
+        print(f" [JOIN] Cracks #{ia + 1} and #{ib + 1} joined into one ({len(merged)} points)"
+              + (f"; {n_dropped} width tract(s) had to be removed." if n_dropped else ".") + " [U] undoes.")
+        return True
+
+    def _draw_cut_join_indicator(self, win_out):
+        """Status text for the CUT/JOIN tool and a marker on the first clicked point."""
+        state = self.cfg.crack_cut_join_state
+        if state["mode"] is None:
+            return
+        large = self.cfg.hud_large_size
+        scale, thick = (1.2, 3) if large else (0.65, 2)
+        if state["mode"] == 'cut':
+            msg = "CUT (1): click the START of the part to remove" if state["first"] is None \
+                else "CUT (1): click the END of the part to remove"
+        else:
+            msg = "JOIN (2): click the first point" if state["first"] is None \
+                else "JOIN (2): click the second point (same crack = new route)"
+        y = 135 if large else 120
+        cv2.putText(win_out, msg, (16, y + 1), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), thick + 1, cv2.LINE_AA)
+        cv2.putText(win_out, msg, (15, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 0, 255), thick, cv2.LINE_AA)
+        if state["first"] is not None:
+            c_idx, p_idx = state["first"]
+            if 0 <= c_idx < len(self.cfg.saved_cracks) and 0 <= p_idx < len(self.cfg.saved_cracks[c_idx]['path']):
+                pt = self.cfg.saved_cracks[c_idx]['path'][p_idx]
+                wx, wy = self.transform_real_to_window_coords(int(pt[0]), int(pt[1]))
+                cv2.circle(win_out, (wx, wy), 9, (255, 0, 255), 2, cv2.LINE_AA)
+                cv2.circle(win_out, (wx, wy), 3, (255, 0, 255), -1, cv2.LINE_AA)
 
     def _toggle_width_edit_mode(self):
         """[A]: toggles crack-width-tract edit mode on/off. Mutually exclusive with translate mode (KEY T)."""
@@ -2454,6 +2770,7 @@ class CrackSegmentation:
 
         if self.cfg.width_edit_state["active"]:
             self._reset_translate_state()
+            self._reset_cut_join_state()
             print(" [MODE] CRACK WIDTH Mode active. Click the STARTING point of the tract to widen, "
                   "then the ENDING point. Use [+]/[-] to adjust the width, [BACKSPACE] to remove the "
                   "active tract, [A] to exit.")
@@ -2634,6 +2951,9 @@ class CrackSegmentation:
             self._undo_detachment_delete(last_action[1])
         elif isinstance(last_action, tuple) and len(last_action) > 0 and last_action[0] == 'clear_all':
             self._undo_clear_all(last_action[1])
+        elif isinstance(last_action, tuple) and len(last_action) > 0 and last_action[0] == 'crack_snapshot':
+            self.cfg.redo_history.append(('crack_snapshot', self._swap_crack_snapshot(last_action[1])))
+            print("[UNDO] Cut/Join reverted.")
         elif last_action == 'crack':
             self._undo_new_crack()
         elif last_action == 'detachment':
@@ -2731,6 +3051,10 @@ class CrackSegmentation:
             self._prompt_and_set_pixel_scale()
         elif key_clean in [ord('l'), ord('L')]:
             self._toggle_calibration_mode()
+        elif key_clean == ord('1'):
+            self._toggle_cut_join_mode('cut')
+        elif key_clean == ord('2'):
+            self._toggle_cut_join_mode('join')
         else:
             return False
         return True
@@ -2834,7 +3158,8 @@ class CrackSegmentation:
             if self._scroll_help_menu_if_open(key, key_clean):
                 return
 
-            step = int(100 / self.cfg.zoom_factor) if self.cfg.zoom_factor > 1.0 else 100
+            # Arrow-key pan step: 8% of the visible area (was a fixed 100 px / zoom, tiny on 12-20 MP photos).
+            step = max(10, int(0.08 * max(self.cfg.W_img, self.cfg.H_img) / self.cfg.zoom_factor)) if self.cfg.zoom_factor > 1.0 else 100
             # Shared by the zoom handlers and the width-edit [+]/[-] handlers (KEY A).
             is_plus_key = key_clean in [ord('+'), ord('='), ord('i'), ord('I'), 43, 61] or key == 65451
             is_minus_key = key_clean in [ord('-'), ord('o'), ord('O'), 45] or key == 65453
@@ -3605,6 +3930,10 @@ class CrackSegmentation:
                 self._handle_translate_mouse(event, x, y)
                 return
 
+            if self.cfg.crack_cut_join_state["mode"] is not None:
+                self._handle_cut_join_mouse(event, x, y)
+                return
+
             if self.cfg.edit_mode:
                 self._handle_edit_mode_mouse(event, x, y)
                 return
@@ -3665,14 +3994,15 @@ class CrackSegmentation:
         hud_text, text_color = self._resolve_building_hud_text(filename, total_elements)
         self._draw_hud_text_with_shadow(win_out_canvas, hud_text, text_color, y_pos)
 
-    def _paint_temp_crack_preview(self, scene):
+    def _paint_temp_crack_preview(self, scene, region=None):
         """Paints the in-progress crack trace onto the scene, before
-        any zoom/crop."""
+        any zoom/crop. region=(y0, y1, x0, x1): scene is that crop of the image."""
+        y0, y1, x0, x1 = region if region is not None else (0, self.cfg.H_img, 0, self.cfg.W_img)
         if len(self.cfg.temp_path) > 1 and self.cfg.current_tool == 'crack':
             for pt in self.cfg.temp_path:
                 pt_x, pt_y = int(pt[0]), int(pt[1])
-                if 0 <= pt_x < self.cfg.W_img and 0 <= pt_y < self.cfg.H_img:
-                    scene[pt_y, pt_x] = (0, 165, 255)
+                if x0 <= pt_x < x1 and y0 <= pt_y < y1:
+                    scene[pt_y - y0, pt_x - x0] = (0, 165, 255)
 
     def _ensure_visual_mask_shape(self, mask, h_actual, w_active):
         """Creates or resizes a visual mask (blue/green fill) to match
@@ -3683,7 +4013,7 @@ class CrackSegmentation:
             return cv2.resize(mask, (w_active, h_actual), interpolation=cv2.INTER_NEAREST)
         return mask
 
-    def _paint_width_segment_fills(self, scene, h_actual, w_active):
+    def _paint_width_segment_fills(self, scene, h_actual, w_active, region=None):
         """Paints every width-edited tract's real fill shape, for every
         saved crack -- not just the one currently focused."""
         for _wf in self.cfg.saved_cracks:
@@ -3703,30 +4033,65 @@ class CrackSegmentation:
                 _wi1 = min(len(_wf_path) - 1, _wi1)
                 if _wi0 > _wi1:
                     continue
-                _wseg_mask = self._render_width_segment_mask(_wf_path, _wi0, _wi1, _wseg, h_actual, w_active)
+                _wseg_mask = self._width_segment_display_mask(_wf_path, _wi0, _wi1, _wseg, h_actual, w_active, region)
                 if np.any(_wseg_mask):
                     scene[_wseg_mask == 255] = (255, 0, 0)
 
-    def _paint_blue_crack_overlay(self, scene, k, h_actual, w_active):
+    def _width_segment_display_mask(self, path, i0, i1, seg, height, width, region):
+        """Display-only, cached version of _render_width_segment_mask() cropped to region:
+        re-measuring every tract on every frame made zoomed panning sluggish.
+        The key covers the path's points and every tract setting, so any edit re-renders it."""
+        fill = seg.get('fill')
+        key = (hash(tuple((int(p[0]), int(p[1])) for p in path)), i0, i1, height, width,
+               repr(sorted((k, v) for k, v in seg.items() if k != 'fill')), id(fill), len(fill or ()))
+        cache = self.__dict__.setdefault('_width_mask_cache', {})
+        if key not in cache:
+            full = self._render_width_segment_mask(path, i0, i1, seg, height, width)
+            ys, xs = np.nonzero(full)
+            if len(cache) > 256:
+                cache.clear()
+            if ys.size == 0:
+                cache[key] = None
+            else:
+                by0, by1, bx0, bx1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+                cache[key] = ((by0, by1, bx0, bx1), full[by0:by1, bx0:bx1].copy())
+        y0, y1, x0, x1 = region if region is not None else (0, height, 0, width)
+        out = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+        if cache[key] is not None:
+            (by0, by1, bx0, bx1), sub = cache[key]
+            iy0, iy1, ix0, ix1 = max(y0, by0), min(y1, by1), max(x0, bx0), min(x1, bx1)
+            if iy0 < iy1 and ix0 < ix1:
+                out[iy0 - y0:iy1 - y0, ix0 - x0:ix1 - x0] = sub[iy0 - by0:iy1 - by0, ix0 - bx0:ix1 - bx0]
+        return out
+
+    @staticmethod
+    def _crop_to_region(mask, region):
+        """mask[y0:y1, x0:x1] for region=(y0, y1, x0, x1); the mask itself when region is None."""
+        if region is None:
+            return mask
+        y0, y1, x0, x1 = region
+        return mask[y0:y1, x0:x1]
+
+    def _paint_blue_crack_overlay(self, scene, k, h_actual, w_active, region=None):
         """Paints the blue crack fill, gated by [N]. Detachments (green)
         are intentionally not gated by this same flag."""
         if not self.cfg.show_crack_overlay:
             return
-        mb = cv2.dilate(self.cfg.blue_visual_mask, k)
+        mb = cv2.dilate(self._crop_to_region(self.cfg.blue_visual_mask, region), k)
         scene[mb == 255] = (255, 0, 0)
-        self._paint_width_segment_fills(scene, h_actual, w_active)
+        self._paint_width_segment_fills(scene, h_actual, w_active, region)
 
-    def _paint_green_detachment_overlay(self, scene, k):
+    def _paint_green_detachment_overlay(self, scene, k, region=None):
         """Alpha-blends the green detachment fill onto the scene --
         always shown, never gated by [N]."""
-        mv = cv2.dilate(self.cfg.green_visual_mask, k)
+        mv = cv2.dilate(self._crop_to_region(self.cfg.green_visual_mask, region), k)
         if np.any(mv == 255):
             overlay = scene.copy()
             overlay[mv == 255] = (0, 200, 0)
             alpha_blend = 0.35
             cv2.addWeighted(overlay, alpha_blend, scene, 1 - alpha_blend, 0, scene)
 
-    def _paint_width_edit_live_preview(self, scene, h_actual, w_active):
+    def _paint_width_edit_live_preview(self, scene, h_actual, w_active, region=None):
         """Highlights the focused width-edit tract in yellow, at its
         current width, for live comparison against the real photo."""
         if not (self.cfg.width_edit_state["active"] and self.cfg.width_edit_state["focused_crack_idx"] is not None):
@@ -3743,15 +4108,15 @@ class CrackSegmentation:
         i0, i1 = seg.get('i0', 0), seg.get('i1', -1)
         if not (0 <= i0 <= i1 < len(seg_path)):
             return
-        seg_mask = self._render_width_segment_mask(seg_path, i0, i1, seg, h_actual, w_active)
+        seg_mask = self._width_segment_display_mask(seg_path, i0, i1, seg, h_actual, w_active, region)
         if np.any(seg_mask):
             preview_overlay = scene.copy()
             preview_overlay[seg_mask == 255] = (0, 255, 255)  # bright yellow highlight
             cv2.addWeighted(preview_overlay, 0.55, scene, 0.45, 0, scene)
 
-    def _compute_zoom_roi(self, scene, h_actual, w_active):
+    def _compute_zoom_roi(self, scene, h_actual, w_active, origin=(0, 0)):
         """Crops the scene to the current zoom box, resetting it to the
-        full frame if it's ever invalid."""
+        full frame if it's ever invalid. origin: image position of scene[0, 0]."""
         z_xmin, z_ymin, z_xmax, z_ymax = self.cfg.zoom_box
         x0, y0, x1, y1 = int(z_xmin), int(z_ymin), int(z_xmax), int(z_ymax)
 
@@ -3759,7 +4124,8 @@ class CrackSegmentation:
             x0, y0, x1, y1 = 0, 0, w_active, h_actual
             self.cfg.zoom_box = [0, 0, w_active, h_actual]
 
-        roi = scene[y0:y1, x0:x1]
+        ox, oy = origin
+        roi = scene[y0 - oy:y1 - oy, x0 - ox:x1 - ox]
         if roi.size == 0 or len(roi.shape) < 2:
             roi = scene.copy()
         return roi
@@ -4095,6 +4461,20 @@ class CrackSegmentation:
         widest = max((self._hud_text_width(t, hm) for t in text_lines), default=0)
         return min(max_right, max(760, 15 + widest + 15))
 
+    def _visible_canvas_top(self):
+        """Y (frame pixels) of the first visible row of the frame. Always 0 in the plain
+        OpenCV window; a GUI wrapper with a scrollable canvas overrides it."""
+        return 0
+
+    @staticmethod
+    def _shift_hud_metrics(hm, dy):
+        """Copy of the HUD metrics moved down by dy pixels ('y_off' records the shift)."""
+        shifted = dict(hm)
+        for key in ('y_pos1', 'y_pos2', 'y_pos3'):
+            shifted[key] = hm[key] + dy
+        shifted['y_off'] = dy
+        return shifted
+
     def _draw_info_overlay(self, win_out, status, metrics_str, hm):
         """Draws the FILE/Cracks-Length status panel, toggled by [J], off
         by default -- reserving a line for the Building status (drawn
@@ -4108,10 +4488,11 @@ class CrackSegmentation:
         reliability_lines = self._build_crack_reliability_lines(win_out.shape[1] - 8 - 30, hm)
         extra_lines = building_line + len(reliability_lines) + (1 if reliability_lines else 0)  # +1 for the label line
         base_bottom = 205 if self.cfg.hud_large_size else 160
-        panel_bottom = base_bottom + line_h * extra_lines
+        y_off = hm.get('y_off', 0)
+        panel_bottom = base_bottom + line_h * extra_lines + y_off
         panel_right = self._info_panel_right_edge(win_out, [status, metrics_str] + reliability_lines, hm)
         overlay_info = win_out.copy()
-        cv2.rectangle(overlay_info, (8, 6), (panel_right, panel_bottom), (35, 30, 25), -1)
+        cv2.rectangle(overlay_info, (8, 6 + y_off), (panel_right, panel_bottom), (35, 30, 25), -1)
         cv2.addWeighted(overlay_info, 0.55, win_out, 0.45, 0, win_out)
         cv2.putText(win_out, status, (15, hm['y_pos1']), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (235, 235, 235), hm['f_thick'], cv2.LINE_AA)
         cv2.putText(win_out, metrics_str, (15, hm['y_pos2']), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 220, 255), hm['f_thick'], cv2.LINE_AA)
@@ -4234,6 +4615,8 @@ class CrackSegmentation:
             "[W] : Project fractures from a previous file (same building)",
             "[T] : Automatically snap an imported crack to the real edge (A*, one at a time)",
             "[V] : Bulk-retrace ALL imported cracks onto the real edge (with a plausibility check)",
+            "[1] : CUT tool -- click start and end of a crack part to remove it",
+            "[2] : JOIN tool -- 2 clicks: re-route a crack part, or reconnect two pieces",
             "[AUTO] After every save (S/Q/ENTER), automatic crack comparison with the group's other photos (if >=2 photos)",
             "[G] : Manually repeat the building group's crack comparison/discard (e.g. after correcting the group with B)",
             "[A] : Automatically fill a crack tract (2 clicks) and refine with [+]/[-] (both sides) or [/{ ]/} (one side at a time) for the training mask",
@@ -4327,24 +4710,35 @@ class CrackSegmentation:
         except Exception:
             self._display_frame("Crack Detector Workspace", win_out)
 
-    def _compute_scene_overlays(self, scene, h_actual, w_active):
-        """Draws crack/detachment overlays onto the scene, before the
-        zoom crop, so they stay aligned at any zoom level."""
+    def _compute_scene_overlays(self, scene, h_actual, w_active, region=None):
+        """Draws crack/detachment overlays onto the scene (the full image, or its
+        region=(y0, y1, x0, x1) crop), so they stay aligned at any zoom level."""
         self.cfg.blue_visual_mask = self._ensure_visual_mask_shape(self.cfg.blue_visual_mask, h_actual, w_active)
         self.cfg.green_visual_mask = self._ensure_visual_mask_shape(self.cfg.green_visual_mask, h_actual, w_active)
         k = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
-        self._paint_blue_crack_overlay(scene, k, h_actual, w_active)
-        self._paint_green_detachment_overlay(scene, k)
-        self._paint_width_edit_live_preview(scene, h_actual, w_active)
+        self._paint_blue_crack_overlay(scene, k, h_actual, w_active, region)
+        self._paint_green_detachment_overlay(scene, k, region)
+        self._paint_width_edit_live_preview(scene, h_actual, w_active, region)
+
+    def _padded_zoom_region(self, h_actual, w_active, pad=3):
+        """(y0, y1, x0, x1) of the valid zoom box grown by `pad` px (clamped): enough
+        context for the 4x4 overlay dilation to match a full-image render exactly."""
+        z_xmin, z_ymin, z_xmax, z_ymax = (int(v) for v in self.cfg.zoom_box)
+        if z_xmax <= z_xmin or z_ymax <= z_ymin or z_xmin < 0 or z_ymin < 0 or z_xmax > w_active or z_ymax > h_actual:
+            z_xmin, z_ymin, z_xmax, z_ymax = 0, 0, w_active, h_actual
+        return (max(0, z_ymin - pad), min(h_actual, z_ymax + pad), max(0, z_xmin - pad), min(w_active, z_xmax + pad))
 
     def _build_window_frame(self):
-        """Builds the scene, paints overlays, crops to zoom, and resizes
-        to the window. Returns win_out for the HUD drawing that follows."""
-        scene = self.cfg.img_background.copy()
-        self._paint_temp_crack_preview(scene)
-        h_actual, w_active = scene.shape[:2]
-        self._compute_scene_overlays(scene, h_actual, w_active)
-        roi = self._compute_zoom_roi(scene, h_actual, w_active)
+        """Builds the scene, paints overlays, crops to zoom, and resizes to the window.
+        Only the (padded) zoomed area is copied and painted: when zoomed in this is a
+        small fraction of a 12-20 MP photo, which keeps panning fluid."""
+        h_actual, w_active = self.cfg.img_background.shape[:2]
+        region = self._padded_zoom_region(h_actual, w_active)
+        y0, y1, x0, x1 = region
+        scene = self.cfg.img_background[y0:y1, x0:x1].copy()
+        self._paint_temp_crack_preview(scene, region)
+        self._compute_scene_overlays(scene, h_actual, w_active, region)
+        roi = self._compute_zoom_roi(scene, h_actual, w_active, origin=(x0, y0))
         return self._resize_roi_to_window(roi)
 
     def _draw_hud_stack(self, win_out, current_idx, total_count, show_error_banner, error_time):
@@ -4355,19 +4749,22 @@ class CrackSegmentation:
         total_detachments_area_cm2 = sum(self.calcola_area_poligono_cm2(d['path'], self.cfg.PIXEL_TO_CM_SCALE) for d in self.cfg.saved_detachments if d.get('active', True))
 
         self._draw_tool_markers(win_out, marker_dim)
+        self._draw_cut_join_indicator(win_out)
 
         hm = self._compute_hud_font_metrics()
         status = f"FILE: {current_idx}/{total_count} ({os.path.basename(self.cfg.CURRENT_IMAGE_PATH)}) | Tool: {self.cfg.current_tool.upper()} | Zoom: {self.cfg.zoom_factor:.1f}x"
         metrics_str = f"Cracks Length: {self.cfg.total_cracks_length_cm:.2f} cm | Detachments Area: {total_detachments_area_cm2:.2f} cm2"
 
-        self._draw_info_overlay(win_out, status, metrics_str, hm)
+        # The [J] panel follows the top of the part of the frame actually on screen.
+        hm_top = self._shift_hud_metrics(hm, self._visible_canvas_top())
+        self._draw_info_overlay(win_out, status, metrics_str, hm_top)
         self._draw_calibration_indicator(win_out, hm)
         time_str = self._draw_session_timer(win_out, hm)
         self._draw_timeout_and_warp_banners(win_out, hm)
         self._draw_import_warning_banner(win_out, hm)
         self._draw_save_status_banner(win_out, show_error_banner, error_time, hm)
         self._draw_bottom_hint_bar(win_out, hm)
-        self.draw_building_hud_overlay(win_out, self._resolve_building_hud_y(hm))
+        self.draw_building_hud_overlay(win_out, self._resolve_building_hud_y(hm_top))
         self._draw_help_menu(win_out, status, metrics_str, time_str)
         return status, metrics_str, time_str
 
@@ -4424,9 +4821,9 @@ class CrackSegmentation:
         return True
 
     def _handle_save_key(self):
-        """[S]: saves without moving to another image."""
+        """[S]: saves and STAYS on the current image ([Enter]/[Q] save and move on)."""
         self._do_save_and_archive()
-        return True
+        return False
 
     def _handle_manual_align_key(self):
         """[L]: manually triggers the same homography alignment that
@@ -4489,6 +4886,9 @@ class CrackSegmentation:
         action_type, restored = self.cfg.redo_history.pop()
         if action_type == 'clear_all':
             self._redo_clear_all(restored)
+        elif action_type == 'crack_snapshot':
+            self.cfg.action_history.append(('crack_snapshot', self._swap_crack_snapshot(restored)))
+            print("[REDO] Cut/Join re-applied.")
         else:
             self._redo_restore_crack_or_detachment(action_type, restored)
             self._redo_redelete_crack_or_detachment(action_type, restored)
@@ -4670,11 +5070,11 @@ class CrackSegmentation:
     def _advance_queue_position(self, queue_pos):
         """Chooses which direction to move for the next iteration: backward only for the Previous Image action, forward otherwise.
         A Mode 1 save already removed the image from the queue, so the next one is at queue_pos."""
+        if self.cfg.queue_item_consumed:
+            self.cfg.queue_items_done += 1
         if self.cfg.navigate_direction == "previous":
             queue_pos = max(0, queue_pos - 1)
-        elif self.cfg.queue_item_consumed:
-            self.cfg.queue_items_done += 1
-        else:
+        elif not self.cfg.queue_item_consumed:
             queue_pos += 1
         self.cfg.navigate_direction = None
         self.cfg.queue_item_consumed = False

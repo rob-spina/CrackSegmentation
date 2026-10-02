@@ -196,5 +196,69 @@ class TestFileCounterKeepsCountingInMode1(unittest.TestCase):
             _cleanup_real_module_dir_artifacts()
 
 
+class TestMode2SaveWritesOverlayAndMasksToSegmentatedImages(unittest.TestCase):
+    """USER REPORT (v1.0.2): edits saved in Mode 2 did not show up in the overlay/binary masks --
+    they were written next to the JSON in 'already processed images' instead of 'segmentated images'."""
+
+    def test_mode2_save_updates_the_files_in_segmentated_images(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_mode2_save_")
+        try:
+            archive_dir = os.path.join(tmpdir, "already processed images")
+            seg_dir = os.path.join(tmpdir, "segmentated images")
+            os.makedirs(archive_dir)
+            os.makedirs(seg_dir)
+            img = np.full((220, 300, 3), 190, dtype=np.uint8)
+            cv2.line(img, (20, 20), (280, 200), (30, 30, 30), 2)
+            cv2.imwrite(os.path.join(archive_dir, "photo__BLDG001.png"), img)
+            crack = {"label": "crack_photo__BLDG001.png", "points": [[20.0, 20.0], [150.0, 110.0], [280.0, 200.0]],
+                     "group_id": 1, "shape_type": "linestrip", "flags": {}}
+            with open(os.path.join(archive_dir, "photo__BLDG001.json"), "w", encoding="utf-8") as f:
+                json.dump({"shapes": [crack], "imagePath": "photo__BLDG001.png", "imageHeight": 220, "imageWidth": 300}, f)
+            # Stale outputs from the first (Mode 1) save, which Mode 2 must overwrite.
+            stale_overlay = os.path.join(seg_dir, "photo__BLDG001-seg.png")
+            cv2.imwrite(stale_overlay, np.zeros((5, 5, 3), dtype=np.uint8))
+
+            cfg = Config()
+            cfg.SCRIPT_DIR = tmpdir
+            app = CrackSegmentation(cfg)
+            # The archive step resolves its folder via resolve_script_dir(): point it at tmpdir like cfg.SCRIPT_DIR.
+            with mock.patch("smart_segmentation.resolve_script_dir", return_value=tmpdir), \
+                 mock.patch.object(app, "_prompt_mode_choice", return_value="2"), \
+                 mock.patch.object(app, "render_scene"), \
+                 _MockedHighGui(key_sequence=[ord('q')]):
+                app.run()
+
+            overlay = cv2.imread(stale_overlay)
+            self.assertEqual(overlay.shape[:2], (220, 300), "the overlay in 'segmentated images' must be rewritten")
+            self.assertTrue(os.path.exists(os.path.join(seg_dir, "photo__BLDG001-crack_mask.png")))
+            self.assertEqual([f for f in os.listdir(archive_dir) if "-seg" in f or "_mask" in f], [],
+                             "no overlay/mask files may land in 'already processed images'")
+            self.assertTrue(os.path.exists(os.path.join(archive_dir, "photo__BLDG001.json")), "JSON stays in the archive")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            _cleanup_real_module_dir_artifacts()
+
+    def test_removing_every_crack_deletes_the_outdated_mask(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_stale_mask_")
+        try:
+            app = make_app()
+            stale = os.path.join(tmpdir, "x-crack_mask.png")
+            cv2.imwrite(stale, np.full((5, 5), 255, dtype=np.uint8))
+            self.assertFalse(app._write_mask_if_nonempty(np.zeros((5, 5), dtype=np.uint8), stale, "mask"))
+            self.assertFalse(os.path.exists(stale))
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_overlay_name_follows_a_building_group_rename(self):
+        app = make_app()
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_seg_name_")
+        try:
+            app.cfg.SCRIPT_DIR = tmpdir
+            app.cfg.CURRENT_IMAGE_PATH = os.path.join(tmpdir, "Images", "DJI_0201__BLDG003.JPG")
+            self.assertEqual(os.path.basename(app._segmented_output_path("-seg", ".JPG")), "DJI_0201__BLDG003-seg.JPG")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
