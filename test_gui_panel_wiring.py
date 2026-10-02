@@ -1264,7 +1264,7 @@ class TestGuiRunEndToEnd(unittest.TestCase):
             # Simulate: mode-choice dialog already answered "1", then one
             # [S] press queued (exactly what the toolbar/menu "Salva"
             # button does) before the render loop ever calls cv2.waitKey.
-            app._pending_keys.append(ord('s'))
+            app._pending_keys.append(13)  # Save & next ([S] alone now stays on the image)
 
             main_window_imshow_calls = []
             real_imshow = cv2_module.imshow

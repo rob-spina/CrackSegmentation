@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.0.3</div>
+    <div class="meta-line">Version 1.0.4</div>
   </div>
 
   <div class="features">
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.0.3_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.0.4_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.3_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.4_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -577,15 +577,16 @@ sudo apt-get install -f</div>
 <tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
 <tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Activates the mode for assisted crack tracing.</td></tr>
 <tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Activates the mode for drawing polygons for plaster/material detachment areas.</td></tr>
-<tr><td>Save &amp; Process Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Saves the work (exports JSON, visual masks, binary masks) and moves directly to the next photo.</td></tr>
-<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Imports cracks identified in previous photos of the same building, leveraging SIFT similarity and homographies to project them onto the current perspective. Only the area around the source cracks is matched; an unreliable match imports nothing.</td></tr>
-<tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Batch recalculates (via A* algorithm) the position of newly imported cracks, anchoring them to the real, evident edges in the new photo.</td></tr>
+<tr><td>Save / Save &amp; Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Exports JSON and masks; <span class="key">S</span> stays on the photo, <span class="key">Enter</span> moves to the next.</td></tr>
+<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Projects the cracks of a previous photo of the same building (SIFT + homography, matched around the source cracks); an unreliable match imports nothing.</td></tr>
+<tr><td>Cut / Join Cracks</td><td><span class="key">1</span> / <span class="key">2</span></td><td>Two clicks: Cut removes the part between them; Join re-routes it or reconnects two pieces.</td></tr>
+<tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Re-traces all imported cracks (A*) onto the real edges of the new photo.</td></tr>
 <tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Allows manual, elastic repositioning of an imported crack that hasn&rsquo;t aligned correctly.</td></tr>
-<tr><td>Modify Crack Thickness</td><td><span class="key">A</span></td><td>Activates the mode to vary the thickness (pixels/side) of single crack segments. Use <span class="key">+</span> and <span class="key">-</span> to widen or narrow the mask.</td></tr>
+<tr><td>Modify Crack Thickness</td><td><span class="key">A</span></td><td>Varies the thickness (px/side) of crack tracts: <span class="key">+</span> / <span class="key">-</span> widen or narrow the mask.</td></tr>
 <tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Manually assigns a unique code to the current building, useful for tracking across multiple frames.</td></tr>
 <tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Automatically removes cracks that don&rsquo;t match in shape and path between different photos of the same group.</td></tr>
 <tr><td>Scale Calibration</td><td><span class="key">K</span></td><td>Starts the mode to manually calibrate the measurement scale in centimeters relative to image pixels (Pixel-to-CM).</td></tr>
-<tr><td>Simple Navigation</td><td><span class="key">&#8592;</span> / <span class="key">&#8594;</span></td><td>Scrolls to the next or previous image in the queue without saving.</td></tr>
+<tr><td>Simple Navigation</td><td><span class="key">&#8592;</span> / <span class="key">&#8594;</span></td><td>Next/previous image without saving; wheel/trackpad pans when zoomed.</td></tr>
 <tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
 </table>
 
