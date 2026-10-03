@@ -66,6 +66,11 @@ a = Analysis(
         "skimage.filters",
         "skimage.filters.rank",
         "skimage.filters.rank.core_cy",
+        # Sato ridge filter (crack confidence score) and its Hessian helpers.
+        "skimage.filters.ridges",
+        "skimage.feature",
+        "skimage.feature.corner",
+        "skimage.feature.corner_cy",
         "skimage.draw",
         "skimage.measure",
         "skimage._shared.geometry",
