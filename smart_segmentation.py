@@ -3495,9 +3495,11 @@ class CrackSegmentation:
     def filter_incompatible_cracks_for_current_group(self):
         """[G] key handler: cross-checks every crack of the current building group across its exported photos by sinuosity, discarding any that disagree too much -- from every photo of the group, with confirmation first.
         """
-        if self.cfg.CURRENT_BUILDING_INDEX is None:
-            print(" [GROUP] No active building group on this image "
-                  "(automatic assignment hasn't run on any photo yet -- you can assign one with [B]).")
+        # The photo's own __BLDG tag: CURRENT_BUILDING_INDEX is the highest group number seen, not this photo's group.
+        group = self._current_building_group()
+        if group is None:
+            print(" [GROUP] The current photo has no building group "
+                  "(automatic assignment hasn't run on it yet -- you can assign one with [B]).")
             return
 
         comparator, LoadedJson = self._import_crack_comparator()
@@ -3506,7 +3508,7 @@ class CrackSegmentation:
 
         CARTELLA_BASE = str(resolve_script_dir())
         processed_folder = os.path.join(CARTELLA_BASE, "already processed images")
-        bldg_tag = f"__BLDG{self.cfg.CURRENT_BUILDING_INDEX:03d}"
+        bldg_tag = f"__BLDG{group:03d}"
 
         json_paths = self._collect_group_json_paths(bldg_tag, processed_folder)
         if len(json_paths) < 2:
