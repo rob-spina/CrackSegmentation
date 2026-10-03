@@ -207,3 +207,30 @@ class TestMultiViewExport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGroupFilterUsesPhotoGroup(unittest.TestCase):
+    """[G] and the post-save check must compare the current photo's own group (its __BLDG tag),
+    not CURRENT_BUILDING_INDEX, which tracks the highest group number seen so far."""
+
+    def _tags_checked(self, app):
+        seen = []
+        with mock.patch.object(app, "_collect_group_json_paths", side_effect=lambda tag, folder: seen.append(tag) or []), \
+             mock.patch("smart_segmentation.resolve_script_dir", return_value=tempfile.gettempdir()):
+            app.filter_incompatible_cracks_for_current_group()
+        return seen
+
+    def test_photo_in_an_older_group(self):
+        app = make_app()
+        app.cfg.CURRENT_IMAGE_PATH = "/photos/IMG_0042__BLDG002.jpg"
+        app.cfg.CURRENT_BUILDING_INDEX = 5
+        self.assertEqual(self._tags_checked(app), ["__BLDG002"])
+
+    def test_tagged_photo_without_index_and_untagged_photo(self):
+        app = make_app()
+        app.cfg.CURRENT_IMAGE_PATH = "/photos/IMG_0042__BLDG003.jpg"
+        app.cfg.CURRENT_BUILDING_INDEX = None
+        self.assertEqual(self._tags_checked(app), ["__BLDG003"])
+        app.cfg.CURRENT_IMAGE_PATH = "/photos/IMG_0043.jpg"
+        app.cfg.CURRENT_BUILDING_INDEX = 5
+        self.assertEqual(self._tags_checked(app), [])
