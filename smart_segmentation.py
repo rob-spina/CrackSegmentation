@@ -1331,7 +1331,8 @@ class CrackSegmentation:
                 winsound.Beep(1000, 300)
             elif sys.platform == "darwin":
                 import subprocess
-                subprocess.Popen(["say", "saved"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # DEVNULL, not PIPE: nobody reads the output, and unread pipes leaked two file handles per save.
+                subprocess.Popen(["say", "saved"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
                 sys.stdout.write('\a')
                 sys.stdout.flush()

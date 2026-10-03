@@ -234,3 +234,14 @@ class TestGroupFilterUsesPhotoGroup(unittest.TestCase):
         app.cfg.CURRENT_IMAGE_PATH = "/photos/IMG_0043.jpg"
         app.cfg.CURRENT_BUILDING_INDEX = 5
         self.assertEqual(self._tags_checked(app), [])
+
+
+class TestSaveBeepDoesNotLeakPipes(unittest.TestCase):
+
+    def test_macos_beep_discards_output(self):
+        app = make_app()
+        with mock.patch("smart_segmentation.sys.platform", "darwin"), mock.patch("subprocess.Popen") as popen:
+            app._play_save_beep()
+        import subprocess
+        _, kwargs = popen.call_args
+        self.assertEqual((kwargs["stdout"], kwargs["stderr"]), (subprocess.DEVNULL, subprocess.DEVNULL))
