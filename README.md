@@ -114,6 +114,7 @@ For every saved photo `<name>`:
 | `<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments), with the image embedded as base64 |
 | `<name>-crack_mask.png` | Binary crack mask, single channel, same resolution as the photo (0 = background, 255 = crack) |
 | `<name>-detachment_mask.png` | Binary filled-area mask of the detachments (same format) |
+| `<name>-crack_uncertain_mask.png` | Only the cracks marked uncertain (same band as the crack mask), e.g. as an ignore region in training. Written when `CRACK_UNCERTAIN_EXPORT_MASK` is on and at least one crack is uncertain |
 | `<name>-seg.jpg` | Colored overlay for visual inspection |
 
 Mask files are written only when the photo contains at least one active element. Saved photos are archived in `already processed images/`.
@@ -130,8 +131,21 @@ Main tunables live in `config.py`:
 | `CRACK_MASK_DILATION_PX` | Uniform dilation of the exported crack mask |
 | `IMAGE_GSD_MM_PER_PX` | Ground sample distance in mm/pixel. `0.0` = not set (the two pixel constants above are used as-is) |
 | `CRACK_TARGET_PHYSICAL_WIDTH_MM` | Physical crack width the exported band should represent once the GSD is known |
+| `CRACK_UNCERTAIN_RELIABILITY_PCT` | Cracks below this reliability (%) are saved as uncertain. `None` disables the rule |
+| `CRACK_UNCERTAIN_CONFIDENCE` | Cracks below this confidence (0-1) are saved as uncertain. `None` (default) disables the rule |
+| `CRACK_UNCERTAIN_LABEL` | Label of uncertain cracks (default `crack_incerta`, photo name appended) |
+| `CRACK_UNCERTAIN_EXPORT_MASK` | Also write `<name>-crack_uncertain_mask.png` |
 
 When `IMAGE_GSD_MM_PER_PX` is set, the band width in pixels is derived automatically from it, with a safety ceiling against input errors.
+
+### Crack quality scores
+
+Every crack shape in the JSON carries two scores, also shown per crack in the **J** panel (`Crack N: 85% c0.97`, `[?]` = uncertain):
+
+- `reliability_pct` (0-100): share of the traced line backed by dark texture in the adaptive-threshold mask. Textured plaster, joints and shadows can score high; faint real cracks can score low.
+- `confidence` (0-1): mean percentile rank of a dark-ridge (Sato) filter response along the line, against the wall around each stretch. About 0.5 = no more line-like than the surroundings; close to 1 = clearly the most line-like structure in the area. A heuristic computed from the photo alone, not a calibrated probability.
+
+An uncertain crack gets the `CRACK_UNCERTAIN_LABEL` label and `"flags": {"uncertain": true}`; the regular crack mask still contains every crack. Scores and labels are recomputed at every save.
 
 ## Companion tools
 

@@ -14,6 +14,7 @@ import uuid
 
 import cv2
 import numpy as np
+from skimage.filters import sato
 from skimage.morphology import skeletonize
 
 from config import Config, resolve_script_dir
@@ -1142,10 +1143,13 @@ class CrackSegmentation:
         shapes = []
         for f in self.cfg.saved_cracks:
             if f.get('active', True):
+                reliability, confidence, uncertain = self._crack_quality(f['path'])
                 shape_dict = {
-                    "label": "crack",
+                    "label": self.cfg.CRACK_UNCERTAIN_LABEL if uncertain else "crack",
                     "points": [[float(pt[0]), float(pt[1])] for pt in f['path']],
-                    "group_id": None, "shape_type": "linestrip", "flags": {}
+                    "group_id": None, "shape_type": "linestrip", "flags": {"uncertain": bool(uncertain)},
+                    "reliability_pct": None if reliability is None else round(float(reliability), 1),
+                    "confidence": None if confidence is None else round(float(confidence), 3),
                 }
                 if f.get('width_segments'):
                     shape_dict["width_segments"] = f['width_segments']
@@ -1172,8 +1176,9 @@ class CrackSegmentation:
         if group_id is None:
             group_id = int(uuid.uuid4().int % 1000000)
         label = shape.get('label', 'crack')
-        if "_" not in label:
-            nome_foto_corrente = os.path.basename(self.cfg.CURRENT_IMAGE_PATH)
+        nome_foto_corrente = os.path.basename(self.cfg.CURRENT_IMAGE_PATH)
+        # Tagged once with the photo name; base labels may contain "_" themselves (e.g. "crack_incerta").
+        if not label.endswith(f"_{nome_foto_corrente}"):
             label = f"{label}_{nome_foto_corrente}"
         return group_id, label
 
@@ -1188,6 +1193,9 @@ class CrackSegmentation:
             "shape_type": shape.get('shape_type', 'linestring'),
             "flags": shape.get('flags', {})
         }
+        for extra_key in ("reliability_pct", "confidence"):
+            if extra_key in shape:
+                shape_aggiornata[extra_key] = shape[extra_key]
         if shape.get("width_segments"):
             shape_aggiornata["width_segments"] = shape["width_segments"]
         return shape_aggiornata
@@ -1265,8 +1273,19 @@ class CrackSegmentation:
                 print("[MASK EXPORT] No active crack: crack mask not generated (nothing to save).")
             if not self._write_mask_if_nonempty(detachment_mask_out, detachment_mask_path, "Binary detachment mask (filled area)"):
                 print("[MASK EXPORT] No active detachment: detachment mask not generated (nothing to save).")
+            self._export_uncertain_crack_mask()
         except Exception as mask_error:
             print(f"[MASK EXPORT WARNING] Could not save the binary masks: {mask_error}", file=sys.stderr)
+
+    def _export_uncertain_crack_mask(self):
+        """Writes <photo>-crack_uncertain_mask.png with only the uncertain cracks (same band as the crack mask),
+        for use as an ignore region in training; removes a stale one when none is left."""
+        if not self.cfg.CRACK_UNCERTAIN_EXPORT_MASK:
+            return
+        uncertain = [f for f in self.cfg.saved_cracks if f.get('active', True) and self._crack_quality(f.get('path'))[2]]
+        mask = self._build_variable_width_crack_mask(uncertain, self.cfg.H_img, self.cfg.W_img, self.cfg.CRACK_MASK_DILATION_PX)
+        path = self._segmented_output_path("-crack_uncertain_mask", ".png")
+        self._write_mask_if_nonempty(mask, path, f"Uncertain crack mask ({len(uncertain)} crack(s))")
 
     def _compute_export_summary_stats(self):
         """Returns (num_cracks, num_detachments, total_area_cm2,
@@ -4425,15 +4444,113 @@ class CrackSegmentation:
         corroborated = sum(1 for i in range(n) if left_offsets[i] > 0 or right_offsets[i] > 0)
         return 100.0 * corroborated / n
 
+    @staticmethod
+    def _densify_path(path):
+        """Every integer pixel along the polyline (1 px steps), in order, without consecutive duplicates."""
+        dense = []
+        for (x0, y0), (x1, y1) in zip(path[:-1], path[1:]):
+            steps = max(1, int(np.ceil(max(abs(x1 - x0), abs(y1 - y0)))))
+            for t in range(steps):
+                pt = (int(round(x0 + (x1 - x0) * t / steps)), int(round(y0 + (y1 - y0) * t / steps)))
+                if not dense or dense[-1] != pt:
+                    dense.append(pt)
+        last = (int(round(path[-1][0])), int(round(path[-1][1])))
+        if not dense or dense[-1] != last:
+            dense.append(last)
+        return dense
+
+    def _confidence_of_chunk(self, gray, chunk, search_radius):
+        """Percentile rank (0-1) of the ridge response at each point of one crack stretch, against the
+        background of a window around it. Returns a list (one value per point inside the image), or [] if the
+        window has too little background to rank against."""
+        height, width = gray.shape[:2]
+        margin = int(self.cfg.CRACK_CONFIDENCE_WINDOW_MARGIN_PX)
+        xs = [p[0] for p in chunk]
+        ys = [p[1] for p in chunk]
+        x0, x1 = max(0, min(xs) - margin), min(width, max(xs) + margin + 1)
+        y0, y1 = max(0, min(ys) - margin), min(height, max(ys) + margin + 1)
+        if x1 - x0 < 3 or y1 - y0 < 3:
+            return []
+        patch = gray[y0:y1, x0:x1].astype(np.float32) / 255.0
+        ridge = sato(patch, sigmas=self.cfg.CRACK_CONFIDENCE_SIGMAS, black_ridges=True, mode='reflect')
+        # Tolerates a line traced a few px off the real fracture, like the reliability score does.
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * search_radius + 1, 2 * search_radius + 1))
+        ridge_near = cv2.dilate(ridge.astype(np.float32), kernel)
+
+        line_mask = np.zeros(patch.shape, dtype=np.uint8)
+        local = np.array([[p[0] - x0, p[1] - y0] for p in chunk], dtype=np.int32)
+        cv2.polylines(line_mask, [local], False, 255, 1)
+        exclusion = int(search_radius + 2 * max(self.cfg.CRACK_CONFIDENCE_SIGMAS))
+        excl_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * exclusion + 1, 2 * exclusion + 1))
+        # Ranked against the same local maximum off the line, so plain wall scores ~0.5 rather than high.
+        background = np.sort(ridge_near[cv2.dilate(line_mask, excl_kernel) == 0])
+        if background.size < 50:
+            return []
+
+        values = [ridge_near[p[1] - y0, p[0] - x0] for p in chunk if 0 <= p[0] < width and 0 <= p[1] < height]
+        ranks = np.searchsorted(background, np.asarray(values, dtype=background.dtype), side='right')
+        return list(ranks / float(background.size))
+
+    def _compute_crack_confidence(self, path):
+        """Mean percentile rank (0-1) of a dark-ridge (Sato) filter response along the traced crack, each stretch
+        ranked against the wall around it. Like a model's mean confidence, but derived from the photo alone:
+        0.5 = no more line-like than the surroundings, ~1.0 = the most line-like structure in the area.
+        Not a calibrated probability. None if it cannot be computed. Cached per photo and path."""
+        if not path or len(path) < 2 or self.cfg.img_original is None:
+            return None
+        img = self.cfg.img_original
+        cache = getattr(self, '_crack_confidence_cache', None)
+        if cache is None or cache.get('_img_id') != id(img) or len(cache) > 1000:
+            cache = {'_img_id': id(img)}
+            self._crack_confidence_cache = cache
+        key = tuple((int(round(p[0])), int(round(p[1]))) for p in path)
+        if key in cache:
+            return cache[key]
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+        dense = self._densify_path(key)
+        search_radius = max(1, int(self.cfg.CRACK_AUTO_EDGE_MAX_OFFSET_PX))
+        chunk_len = max(16, int(self.cfg.CRACK_CONFIDENCE_CHUNK_PX))
+        scores = []
+        for start in range(0, len(dense), chunk_len):
+            scores.extend(self._confidence_of_chunk(gray, dense[start:start + chunk_len], search_radius))
+        result = float(np.mean(scores)) if scores else None
+        cache[key] = result
+        return result
+
+    def _is_crack_uncertain(self, reliability_pct, confidence):
+        """True when either enabled threshold in config.py (CRACK_UNCERTAIN_*) is not met."""
+        rel_thr = self.cfg.CRACK_UNCERTAIN_RELIABILITY_PCT
+        conf_thr = self.cfg.CRACK_UNCERTAIN_CONFIDENCE
+        if rel_thr is not None and reliability_pct is not None and reliability_pct < rel_thr:
+            return True
+        if conf_thr is not None and confidence is not None and confidence < conf_thr:
+            return True
+        return False
+
+    def _crack_quality(self, path):
+        """(reliability_pct, confidence, uncertain) for one crack path."""
+        reliability = self._compute_crack_reliability(path)
+        confidence = self._compute_crack_confidence(path)
+        return reliability, confidence, self._is_crack_uncertain(reliability, confidence)
+
     def _build_crack_reliability_entries(self):
-        """One "Crack N: XX%" entry per active crack with a computable reliability score."""
+        """One "Crack N: XX% c0.YY" entry per active crack with a computable score; uncertain cracks get " [?]"."""
         entries = []
         for i, f in enumerate(self.cfg.saved_cracks, start=1):
             if not f.get('active', True):
                 continue
-            pct = self._compute_crack_reliability(f.get('path'))
+            pct, conf, uncertain = self._crack_quality(f.get('path'))
+            if pct is None and conf is None:
+                continue
+            parts = [f"Crack {i}:"]
             if pct is not None:
-                entries.append(f"Crack {i}: {pct:.0f}%")
+                parts.append(f"{pct:.0f}%")
+            if conf is not None:
+                parts.append(f"c{conf:.2f}")
+            if uncertain:
+                parts.append("[?]")
+            entries.append(" ".join(parts))
         return entries
 
     @staticmethod
@@ -4498,7 +4615,7 @@ class CrackSegmentation:
         cv2.putText(win_out, metrics_str, (15, hm['y_pos2']), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 220, 255), hm['f_thick'], cv2.LINE_AA)
         if reliability_lines:
             label_y = hm['y_pos2'] + line_h * (building_line + 1)
-            cv2.putText(win_out, "Crack Reliability:", (15, label_y), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 255, 200), hm['f_thick'], cv2.LINE_AA)
+            cv2.putText(win_out, "Crack Reliability % / Confidence c ([?] = uncertain):", (15, label_y), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 255, 200), hm['f_thick'], cv2.LINE_AA)
             for i, line in enumerate(reliability_lines):
                 y = label_y + line_h * (i + 1)
                 cv2.putText(win_out, line, (15, y), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 255, 200), hm['f_thick'], cv2.LINE_AA)
