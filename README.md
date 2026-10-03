@@ -135,15 +135,21 @@ Main tunables live in `config.py`:
 | `CRACK_UNCERTAIN_CONFIDENCE` | Cracks below this confidence (0-1) are saved as uncertain. `None` (default) disables the rule |
 | `CRACK_UNCERTAIN_LABEL` | Label of uncertain cracks (default `crack_incerta`, photo name appended) |
 | `CRACK_UNCERTAIN_EXPORT_MASK` | Also write `<name>-crack_uncertain_mask.png` |
+| `CRACK_MULTIVIEW_ENABLED` | Check every crack in the other photos of its building group at save |
+| `CRACK_MULTIVIEW_MAX_VIEWS` | Maximum number of other photos checked |
+| `CRACK_MULTIVIEW_CONFIRM_CONFIDENCE` | Confidence a crack must reach in another photo to count as confirmed there |
+| `CRACK_UNCERTAIN_MULTIVIEW_RATIO` | Cracks confirmed in fewer than this share of the checked photos are saved as uncertain. `None` (default) disables the rule |
 
 When `IMAGE_GSD_MM_PER_PX` is set, the band width in pixels is derived automatically from it, with a safety ceiling against input errors.
 
 ### Crack quality scores
 
-Every crack shape in the JSON carries two scores, also shown per crack in the **J** panel (`Crack N: 85% c0.97`, `[?]` = uncertain):
+Every crack shape in the JSON carries these scores, also shown per crack in the **J** panel (`Crack N: 85% c0.97 v3/4`, `[?]` = uncertain):
 
 - `reliability_pct` (0-100): share of the traced line backed by dark texture in the adaptive-threshold mask. Textured plaster, joints and shadows can score high; faint real cracks can score low.
 - `confidence` (0-1): mean percentile rank of a dark-ridge (Sato) filter response along the line, against the wall around each stretch. About 0.5 = no more line-like than the surroundings; close to 1 = clearly the most line-like structure in the area. A heuristic computed from the photo alone, not a calibrated probability.
+
+- `multiview` (`views_checked`, `views_confirmed`, `confidence`): at save, the crack is projected into the other photos of its building group (SIFT + homography, then a local texture alignment) and its confidence is measured there. A real crack stays in place on the wall, while shadows, reflections and dirt move or vanish with light and viewpoint. A photo confirms the crack when its confidence there reaches `CRACK_MULTIVIEW_CONFIRM_CONFIDENCE`; photos that cannot be aligned, or where the crack is out of frame, are not counted. It measures the photos, not the annotations, so a crack imported with **W**/**L** is not confirmed just because it was copied. Permanent lines such as joints are confirmed too. `null` when the photo has no building group or no other photo of the group is available; computed at save, so the panel shows `v` only after saving.
 
 An uncertain crack gets the `CRACK_UNCERTAIN_LABEL` label and `"flags": {"uncertain": true}`; the regular crack mask still contains every crack. Scores and labels are recomputed at every save.
 

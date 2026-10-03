@@ -233,6 +233,21 @@ class Config:
         # Crack stretch length (px) processed per window, to bound memory on long cracks.
         self.CRACK_CONFIDENCE_CHUNK_PX = 256
 
+        # Multi-view check at save: each crack is looked for in the other photos of its building group (__BLDG tag).
+        self.CRACK_MULTIVIEW_ENABLED = True
+        # At most this many other photos of the group are checked (alphabetical order).
+        self.CRACK_MULTIVIEW_MAX_VIEWS = 5
+        # A photo confirms a crack when the crack's confidence there reaches this value (same 0-1 scale as confidence).
+        self.CRACK_MULTIVIEW_CONFIRM_CONFIDENCE = 0.8
+        # A crack is saved as uncertain when confirmed/checked photos is below this ratio (None disables the rule).
+        self.CRACK_UNCERTAIN_MULTIVIEW_RATIO = None
+        # Longer side (px) of the downscaled copies used to align the photos; larger = more precise but slower.
+        self.CRACK_MULTIVIEW_SIFT_MAX_DIM = 2000
+        # Largest residual shift (px) the local texture alignment may apply after the homography.
+        self.CRACK_MULTIVIEW_MAX_SHIFT_PX = 12
+        # Tolerance (px) around the projected line when reading the ridge response in the other photo.
+        self.CRACK_MULTIVIEW_SEARCH_RADIUS_PX = 3
+
     def _init_gsd_calibration(self):
         """Millimeters of real wall per pixel of the current photo batch; 0.0 means uncalibrated, leaving CRACK_AUTO_EDGE_MAX_OFFSET_PX/CRACK_MASK_DILATION_PX at their fallback values.
         """
