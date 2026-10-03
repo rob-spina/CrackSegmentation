@@ -1150,6 +1150,7 @@ class CrackSegmentation:
                     "group_id": None, "shape_type": "linestrip", "flags": {"uncertain": bool(uncertain)},
                     "reliability_pct": None if reliability is None else round(float(reliability), 1),
                     "confidence": None if confidence is None else round(float(confidence), 3),
+                    "multiview": self._crack_multiview(f['path']),
                 }
                 if f.get('width_segments'):
                     shape_dict["width_segments"] = f['width_segments']
@@ -1193,7 +1194,7 @@ class CrackSegmentation:
             "shape_type": shape.get('shape_type', 'linestring'),
             "flags": shape.get('flags', {})
         }
-        for extra_key in ("reliability_pct", "confidence"):
+        for extra_key in ("reliability_pct", "confidence", "multiview"):
             if extra_key in shape:
                 shape_aggiornata[extra_key] = shape[extra_key]
         if shape.get("width_segments"):
@@ -1375,6 +1376,7 @@ class CrackSegmentation:
             processed_folder = self._prepare_export_folders(cartella_base)
             img_b64 = self._get_current_image_base64()
             labelme_data = self._build_labelme_data_dict(img_b64)
+            self._run_multiview_check_safely()
             labelme_data["shapes"] = self._finalize_labelme_shapes()
 
             self._write_labelme_json(labelme_data)
@@ -1390,6 +1392,14 @@ class CrackSegmentation:
             self.cfg.save_timestamp = time.time()
         except Exception as e:
             print(f"[IO ERROR] Physical file transfer or serialization failed: {e}", file=sys.stderr)
+
+    def _run_multiview_check_safely(self):
+        """Multi-view crack check before the shapes are built; a failure there must never block the save."""
+        try:
+            self.compute_multiview_scores()
+        except Exception as mv_error:
+            self._multiview_cache()['result'] = {}
+            print(f"[MULTI-VIEW WARNING] Check skipped: {mv_error}", file=sys.stderr)
 
     def _signal_import_warning(self, message):
         """Raises the on-screen banner warning the operator that a crack-projection attempt (W/L) did not import anything.
@@ -1437,7 +1447,11 @@ class CrackSegmentation:
         kp2, des2 = sift.detectAndCompute(img2, None)
         if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
             return None
+        return kp1, kp2, self._lowe_filtered_matches(des1, des2)
 
+    @staticmethod
+    def _lowe_filtered_matches(des1, des2):
+        """FLANN matches between two descriptor sets passing the Lowe ratio test (0.75)."""
         FLANN_INDEX_KDTREE = 1
         index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
         search_params = dict(checks=100)
@@ -1450,7 +1464,7 @@ class CrackSegmentation:
                 m, n = m_match[0], m_match[1]
                 if m.distance < 0.75 * n.distance:
                     good_matches.append(m)
-        return kp1, kp2, good_matches
+        return good_matches
 
     def _is_homography_degenerate(self, H_matrix):
         """True if the homography flips or scales the image implausibly (a sign of a wrong fit)."""
@@ -4518,24 +4532,228 @@ class CrackSegmentation:
         cache[key] = result
         return result
 
-    def _is_crack_uncertain(self, reliability_pct, confidence):
-        """True when either enabled threshold in config.py (CRACK_UNCERTAIN_*) is not met."""
+    def _is_crack_uncertain(self, reliability_pct, confidence, multiview=None):
+        """True when any enabled threshold in config.py (CRACK_UNCERTAIN_*) is not met."""
         rel_thr = self.cfg.CRACK_UNCERTAIN_RELIABILITY_PCT
         conf_thr = self.cfg.CRACK_UNCERTAIN_CONFIDENCE
         if rel_thr is not None and reliability_pct is not None and reliability_pct < rel_thr:
             return True
         if conf_thr is not None and confidence is not None and confidence < conf_thr:
             return True
-        return False
+        return self._is_multiview_unconfirmed(multiview)
+
+    def _is_multiview_unconfirmed(self, multiview):
+        """True when the crack was checked in other photos and too few of them confirm it (rule off when the threshold is None)."""
+        ratio_thr = self.cfg.CRACK_UNCERTAIN_MULTIVIEW_RATIO
+        if ratio_thr is None or not multiview or not multiview.get('views_checked'):
+            return False
+        return multiview['views_confirmed'] / float(multiview['views_checked']) < ratio_thr
 
     def _crack_quality(self, path):
-        """(reliability_pct, confidence, uncertain) for one crack path."""
+        """(reliability_pct, confidence, uncertain) for one crack path; uses the multi-view result of the last save if any."""
         reliability = self._compute_crack_reliability(path)
         confidence = self._compute_crack_confidence(path)
-        return reliability, confidence, self._is_crack_uncertain(reliability, confidence)
+        multiview = self._crack_multiview(path)
+        return reliability, confidence, self._is_crack_uncertain(reliability, confidence, multiview)
+
+    # Multi-view confirmation: a real crack stays put on the wall in every photo of the building group,
+    # while shadows, reflections and dirt move or vanish with light and viewpoint.
+
+    @staticmethod
+    def _crack_path_key(path):
+        """Hashable key of a crack path (integer pixels), shared by the score caches."""
+        return tuple((int(round(p[0])), int(round(p[1]))) for p in path)
+
+    def _multiview_cache(self):
+        """Per-photo cache of homographies, per-view scores and per-crack results; reset when the photo changes."""
+        img = self.cfg.img_original
+        cache = getattr(self, '_crack_multiview_store', None)
+        if cache is None or cache.get('_img_id') != id(img):
+            cache = {'_img_id': id(img), 'H': {}, 'view': {}, 'result': {}}
+            self._crack_multiview_store = cache
+        return cache
+
+    def _crack_multiview(self, path):
+        """{'views_checked', 'views_confirmed', 'confidence'} from the last save, or None (not checked, or path changed since)."""
+        if not path or len(path) < 2 or self.cfg.img_original is None:
+            return None
+        return self._multiview_cache()['result'].get(self._crack_path_key(path))
+
+    def _current_building_group(self):
+        """Building-group number from the current photo's __BLDG tag, or None if untagged."""
+        if not self.cfg.CURRENT_IMAGE_PATH:
+            return None
+        base, _ = os.path.splitext(os.path.basename(self.cfg.CURRENT_IMAGE_PATH))
+        if "__BLDG" not in base:
+            return None
+        try:
+            return int(base.split("__BLDG")[-1])
+        except ValueError:
+            return None
+
+    def _list_group_photo_paths(self, group_index):
+        """The other photos of a building group (working, output and archive folders), one per file name, sorted."""
+        exts = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+        current = os.path.basename(self.cfg.CURRENT_IMAGE_PATH or "")
+        folders = (self.cfg.IMAGE_FOLDER, self.cfg.OUTPUT_FOLDER, os.path.join(str(resolve_script_dir()), "already processed images"))
+        found = {}
+        for folder in folders:
+            if folder and os.path.isdir(folder):
+                for fname in sorted(os.listdir(folder)):
+                    if fname != current and fname not in found and self._parse_building_index_from_filename(fname, exts) == group_index:
+                        found[fname] = os.path.join(folder, fname)
+        return [found[name] for name in sorted(found)]
+
+    def _sift_detect(self, img, mask=None):
+        """SIFT keypoints and descriptors with the same settings as the W/L import alignment."""
+        sift = cv2.SIFT_create(nfeatures=5000, contrastThreshold=0.015, edgeThreshold=12)
+        return sift.detectAndCompute(img, mask)
+
+    def _current_view_sift_input(self, gray, paths):
+        """(keypoints, descriptors, scale) of the downscaled current photo around its cracks, shared by every other photo."""
+        small = self._downscale_for_sift(gray, int(self.cfg.CRACK_MULTIVIEW_SIFT_MAX_DIM))
+        scale = small.shape[1] / float(gray.shape[1])
+        shapes = [{"points": [[p[0] * scale, p[1] * scale] for p in path]} for path in paths]
+        kp, des = self._sift_detect(small, self._build_warp_source_mask(small.shape, shapes))
+        return kp, des, scale
+
+    def _multiview_homography(self, cur_input, other_gray):
+        """Homography from full-resolution current-photo pixels to the other photo, or None if the alignment is unreliable."""
+        cur_kp, cur_des, cur_scale = cur_input
+        other_small = self._downscale_for_sift(other_gray, int(self.cfg.CRACK_MULTIVIEW_SIFT_MAX_DIM))
+        other_scale = other_small.shape[1] / float(other_gray.shape[1])
+        other_kp, other_des = self._sift_detect(other_small)
+        if cur_des is None or other_des is None or len(cur_des) < 2 or len(other_des) < 2:
+            return None
+        good = self._lowe_filtered_matches(cur_des, other_des)
+        if len(good) < 8:
+            return None
+        fit = self._compute_warp_homography(cur_kp, other_kp, good)
+        if fit is None or fit[3]:
+            return None
+        # The fit is on downscaled copies: rescale it to full-resolution pixels on both sides.
+        return np.diag([1.0 / other_scale, 1.0 / other_scale, 1.0]) @ fit[0] @ np.diag([cur_scale, cur_scale, 1.0])
+
+    def _warp_view_patch(self, other_gray, H, x0, y0, w, h):
+        """The other photo resampled onto the current photo's pixel grid for the box (x0, y0, w, h); None if it leaves that photo."""
+        T = H @ np.array([[1.0, 0.0, x0], [0.0, 1.0, y0], [0.0, 0.0, 1.0]])
+        corners = cv2.perspectiveTransform(np.float32([[[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]]]), T)[0]
+        oh, ow = other_gray.shape[:2]
+        if (corners[:, 0] < 0).any() or (corners[:, 0] > ow - 1).any() or (corners[:, 1] < 0).any() or (corners[:, 1] > oh - 1).any():
+            return None
+        return cv2.warpPerspective(other_gray, T, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+
+    def _refine_patch_alignment(self, cur_patch, view_patch):
+        """Corrects the few-pixel residual shift of the homography by matching the wall texture (ECC); unchanged if that fails."""
+        max_shift = float(self.cfg.CRACK_MULTIVIEW_MAX_SHIFT_PX)
+        warp = np.eye(2, 3, dtype=np.float32)
+        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
+        try:
+            _, warp = cv2.findTransformECC(cur_patch.astype(np.float32), view_patch.astype(np.float32), warp, cv2.MOTION_TRANSLATION, criteria, None, 5)
+        except cv2.error:
+            return view_patch
+        if abs(warp[0, 2]) > max_shift or abs(warp[1, 2]) > max_shift:
+            return view_patch
+        h, w = view_patch.shape[:2]
+        return cv2.warpAffine(view_patch, warp, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REFLECT)
+
+    def _view_confidence_of_chunk(self, cur_gray, other_gray, H, chunk):
+        """Ridge confidence of one crack stretch as it appears in the other photo; [] if that stretch is outside it."""
+        height, width = cur_gray.shape[:2]
+        margin = int(self.cfg.CRACK_CONFIDENCE_WINDOW_MARGIN_PX)
+        x0, x1 = max(0, min(p[0] for p in chunk) - margin), min(width, max(p[0] for p in chunk) + margin + 1)
+        y0, y1 = max(0, min(p[1] for p in chunk) - margin), min(height, max(p[1] for p in chunk) + margin + 1)
+        if x1 - x0 < 3 or y1 - y0 < 3:
+            return []
+        view_patch = self._warp_view_patch(other_gray, H, x0, y0, x1 - x0, y1 - y0)
+        if view_patch is None:
+            return []
+        view_patch = self._refine_patch_alignment(cur_gray[y0:y1, x0:x1], view_patch)
+        local = [(p[0] - x0, p[1] - y0) for p in chunk]
+        return self._confidence_of_chunk(view_patch, local, max(1, int(self.cfg.CRACK_MULTIVIEW_SEARCH_RADIUS_PX)))
+
+    def _view_confidence(self, cur_gray, other_gray, H, key):
+        """Mean ridge confidence of one crack in the other photo, or None if less than half of it is visible there."""
+        dense = self._densify_path(key)
+        chunk_len = max(16, int(self.cfg.CRACK_CONFIDENCE_CHUNK_PX))
+        scores = []
+        for start in range(0, len(dense), chunk_len):
+            scores.extend(self._view_confidence_of_chunk(cur_gray, other_gray, H, dense[start:start + chunk_len]))
+        if len(scores) < 0.5 * len(dense):
+            return None
+        return float(np.mean(scores))
+
+    def _resolve_view_homography(self, cache, view_id, cur_input_fn, other_gray):
+        """Cached homography for one other photo (False = alignment failed, not retried for this photo)."""
+        if view_id not in cache['H']:
+            H = self._multiview_homography(cur_input_fn(), other_gray)
+            cache['H'][view_id] = False if H is None else H
+        return cache['H'][view_id]
+
+    def _check_cracks_in_view(self, view_path, keys, cur_gray, cur_input_fn, cache):
+        """Per-crack confidence in one other photo ({key: value or None}); reads that photo only when something is missing."""
+        view_id = (os.path.abspath(view_path), os.path.getmtime(view_path))
+        missing = [k for k in keys if (view_id, k) not in cache['view']]
+        if missing:
+            other_gray = cv2.imread(view_path, cv2.IMREAD_GRAYSCALE)
+            H = False if other_gray is None else self._resolve_view_homography(cache, view_id, cur_input_fn, other_gray)
+            for k in missing:
+                cache['view'][(view_id, k)] = None if H is False else self._view_confidence(cur_gray, other_gray, H, k)
+        return {k: cache['view'][(view_id, k)] for k in keys}
+
+    def _summarize_multiview(self, values):
+        """{'views_checked', 'views_confirmed', 'confidence'} from one crack's per-view scores (None = not visible there)."""
+        seen = [v for v in values if v is not None]
+        if not seen:
+            return {'views_checked': 0, 'views_confirmed': 0, 'confidence': None}
+        thr = float(self.cfg.CRACK_MULTIVIEW_CONFIRM_CONFIDENCE)
+        return {'views_checked': len(seen), 'views_confirmed': sum(1 for v in seen if v >= thr),
+                'confidence': round(float(np.mean(seen)), 3)}
+
+    def _multiview_targets(self):
+        """(active crack keys, other group photos) to check at save, or None when the check is off or not applicable."""
+        if not self.cfg.CRACK_MULTIVIEW_ENABLED or self.cfg.img_original is None:
+            return None
+        group = self._current_building_group()
+        if group is None:
+            return None
+        keys = [self._crack_path_key(f['path']) for f in self.cfg.saved_cracks if f.get('active', True) and len(f.get('path') or []) >= 2]
+        views = self._list_group_photo_paths(group)[:max(0, int(self.cfg.CRACK_MULTIVIEW_MAX_VIEWS))]
+        if not keys or not views:
+            return None
+        return keys, views
+
+    def compute_multiview_scores(self):
+        """At save: looks for each active crack in the other photos of its building group. Results feed the JSON, the [J] panel
+        and the uncertain rule; unchanged cracks and photos are served from the cache."""
+        cache = self._multiview_cache()
+        cache['result'] = {}
+        targets = self._multiview_targets()
+        if targets is None:
+            return
+        keys, views = targets
+        img = self.cfg.img_original
+        cur_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+        cur_input_fn = self._lazy_current_view_input(cur_gray, keys)
+        per_view = [self._check_cracks_in_view(v, keys, cur_gray, cur_input_fn, cache) for v in views]
+        for k in keys:
+            cache['result'][k] = self._summarize_multiview([pv[k] for pv in per_view])
+        n_aligned = sum(1 for v in views if cache['H'].get((os.path.abspath(v), os.path.getmtime(v))) is not False)
+        print(f"[MULTI-VIEW] {len(keys)} crack(s) checked against {n_aligned}/{len(views)} aligned photo(s) of the building group.")
+
+    def _lazy_current_view_input(self, cur_gray, keys):
+        """Callable returning the current photo's SIFT input, built on first use only (skipped when every homography is cached)."""
+        built = []
+
+        def get():
+            if not built:
+                built.append(self._current_view_sift_input(cur_gray, keys))
+            return built[0]
+        return get
 
     def _build_crack_reliability_entries(self):
-        """One "Crack N: XX% c0.YY" entry per active crack with a computable score; uncertain cracks get " [?]"."""
+        """One "Crack N: XX% c0.YY vK/N" entry per active crack with a computable score (vK/N only after a multi-view save);
+        uncertain cracks get " [?]"."""
         entries = []
         for i, f in enumerate(self.cfg.saved_cracks, start=1):
             if not f.get('active', True):
@@ -4548,6 +4766,9 @@ class CrackSegmentation:
                 parts.append(f"{pct:.0f}%")
             if conf is not None:
                 parts.append(f"c{conf:.2f}")
+            multiview = self._crack_multiview(f.get('path'))
+            if multiview and multiview['views_checked']:
+                parts.append(f"v{multiview['views_confirmed']}/{multiview['views_checked']}")
             if uncertain:
                 parts.append("[?]")
             entries.append(" ".join(parts))
@@ -4615,7 +4836,7 @@ class CrackSegmentation:
         cv2.putText(win_out, metrics_str, (15, hm['y_pos2']), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 220, 255), hm['f_thick'], cv2.LINE_AA)
         if reliability_lines:
             label_y = hm['y_pos2'] + line_h * (building_line + 1)
-            cv2.putText(win_out, "Crack Reliability % / Confidence c ([?] = uncertain):", (15, label_y), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 255, 200), hm['f_thick'], cv2.LINE_AA)
+            cv2.putText(win_out, "Crack Reliability % / Confidence c / Views v ([?] = uncertain):", (15, label_y), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 255, 200), hm['f_thick'], cv2.LINE_AA)
             for i, line in enumerate(reliability_lines):
                 y = label_y + line_h * (i + 1)
                 cv2.putText(win_out, line, (15, y), cv2.FONT_HERSHEY_SIMPLEX, hm['f_scale'], (170, 255, 200), hm['f_thick'], cv2.LINE_AA)
