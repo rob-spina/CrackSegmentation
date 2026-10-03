@@ -210,6 +210,29 @@ class Config:
         self.CRACK_AUTO_EDGE_MAX_OFFSET_PX = 2
         self.CRACK_MASK_AUTO_EDGE_ENABLED = True
 
+    def _init_crack_quality_settings(self):
+        """Per-crack quality scores saved in the LabelMe JSON, and the rule that marks a crack as uncertain.
+
+        reliability_pct (0-100): share of the traced line backed by dark texture in the adaptive-threshold mask (same score as the [J] panel).
+        confidence (0-1): mean percentile rank of a dark-ridge filter (Sato) response along the line, against the surrounding wall.
+        0.5 = no more line-like than the local background, 1.0 = clearly the most line-like structure around. A heuristic, not a calibrated probability.
+        """
+        # A crack is saved as uncertain when reliability_pct is below this (None disables the reliability rule).
+        self.CRACK_UNCERTAIN_RELIABILITY_PCT = 50.0
+        # ...or when confidence is below this (None disables the confidence rule; set it after checking your own data).
+        self.CRACK_UNCERTAIN_CONFIDENCE = None
+        # Label of uncertain cracks in the JSON (the photo name is appended, like "crack_<photo>"). Shape flags also get {"uncertain": true}.
+        self.CRACK_UNCERTAIN_LABEL = "crack_incerta"
+        # Also write <photo>-crack_uncertain_mask.png with only the uncertain cracks (usable as an ignore region in training).
+        # The regular crack mask is unchanged and still contains every crack.
+        self.CRACK_UNCERTAIN_EXPORT_MASK = True
+        # Sato filter scales (px) for the confidence score; roughly half the expected crack widths.
+        self.CRACK_CONFIDENCE_SIGMAS = (1.0, 2.0, 3.0)
+        # Background window around each stretch of crack used for the confidence ranking (px).
+        self.CRACK_CONFIDENCE_WINDOW_MARGIN_PX = 40
+        # Crack stretch length (px) processed per window, to bound memory on long cracks.
+        self.CRACK_CONFIDENCE_CHUNK_PX = 256
+
     def _init_gsd_calibration(self):
         """Millimeters of real wall per pixel of the current photo batch; 0.0 means uncalibrated, leaving CRACK_AUTO_EDGE_MAX_OFFSET_PX/CRACK_MASK_DILATION_PX at their fallback values.
         """
@@ -285,6 +308,7 @@ class Config:
         self._init_building_group_thresholds()
         self._init_crack_compat_thresholds()
         self._init_crack_mask_settings()
+        self._init_crack_quality_settings()
         self._init_gsd_calibration()
         self._init_width_edit_state()
         self._init_manual_group_entry_state()
