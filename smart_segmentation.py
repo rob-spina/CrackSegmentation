@@ -1171,6 +1171,8 @@ class CrackSegmentation:
                 }
                 if f.get('width_segments'):
                     shape_dict["width_segments"] = f['width_segments']
+                if f.get('links'):
+                    shape_dict["links"] = f['links']
                 shapes.append(shape_dict)
         return shapes
 
@@ -1216,6 +1218,8 @@ class CrackSegmentation:
                 shape_aggiornata[extra_key] = shape[extra_key]
         if shape.get("width_segments"):
             shape_aggiornata["width_segments"] = shape["width_segments"]
+        if shape.get("links"):
+            shape_aggiornata["links"] = shape["links"]
         return shape_aggiornata
 
     def _finalize_labelme_shapes(self):
@@ -1679,7 +1683,7 @@ class CrackSegmentation:
                 print(f"[ARCHIVE WARNING] Error while moving the JSON: {e}")
 
     def archive_current_session_to_processed(self):
-        """Since v1.5 the photo stays in 'Images': only makes sure its JSON ends up in 'JSON files'."""
+        """Since v1.0.5 the photo stays in 'Images': only makes sure its JSON ends up in 'JSON files'."""
         if self.cfg.CURRENT_IMAGE_PATH is None:
             return
         processed_folder = self._json_folder()
@@ -1732,8 +1736,25 @@ class CrackSegmentation:
         orig_pts_raw = shape.get("orig_points")
         orig_path = [(int(pt[0]), int(pt[1])) for pt in orig_pts_raw] if orig_pts_raw and len(orig_pts_raw) >= 2 else None
         width_segments = self._load_width_segments(shape)
-        return {'start': points[0], 'end': points[-1], 'path': points, 'active': True,
-                'session_id': 'imported', 'orig_path': orig_path, 'width_segments': width_segments}
+        crack = {'start': points[0], 'end': points[-1], 'path': points, 'active': True,
+                 'session_id': 'imported', 'orig_path': orig_path, 'width_segments': width_segments}
+        links = self._load_links(shape)
+        if links:
+            crack['links'] = links
+        return crack
+
+    @staticmethod
+    def _load_links(shape):
+        """Restores the LINK records ([3]) saved on a crack shape, skipping malformed ones."""
+        links = []
+        for lk in shape.get("links") or []:
+            try:
+                links.append({"from": [int(lk["from"][0]), int(lk["from"][1])],
+                              "to": [int(lk["to"][0]), int(lk["to"][1])],
+                              "method": str(lk.get("method", "straight"))})
+            except (KeyError, TypeError, ValueError, IndexError):
+                continue
+        return links
 
     def _build_loaded_detachment(self, points):
         """Rebuilds one detachment dict from its saved JSON shape."""
@@ -2493,6 +2514,9 @@ class CrackSegmentation:
     # --- CUT [1] / JOIN [2] crack tools -------------------------------------------------
 
     CUT_JOIN_PICK_TOLERANCE_WIN_PX = 15   # click tolerance, in window pixels
+    LINK_PICK_TOLERANCE_WIN_PX = 25       # LINK only snaps to crack ends, so it can be more forgiving
+    LINK_MAX_DETOUR = 2.0                 # an edge route longer than this x the straight gap is replaced by a straight bridge
+    CRACK_TOOL_KEYS = {'cut': '1', 'join': '2', 'link': '3'}
     CUT_JOIN_MIN_PIECE_POINTS = 3          # shorter leftovers of a cut are dropped
     JOIN_BLOCK_RADIUS_PX = 3               # half-width of the corridor JOIN may not reuse
 
@@ -2501,7 +2525,7 @@ class CrackSegmentation:
         self.cfg.crack_cut_join_state["first"] = None
 
     def _toggle_cut_join_mode(self, mode):
-        """[1] CUT / [2] JOIN: two clicks on cracks. Pressing the same key again leaves the tool."""
+        """[1] CUT / [2] JOIN / [3] LINK: two clicks on cracks. Pressing the same key again leaves the tool."""
         state = self.cfg.crack_cut_join_state
         state["mode"] = None if state["mode"] == mode else mode
         state["first"] = None
@@ -2516,6 +2540,9 @@ class CrackSegmentation:
             self.cfg.temp_path.clear()
             if mode == 'cut':
                 print(" [MODE] CUT tool: click the START and then the END of the crack part to remove. [1] to exit.")
+            elif mode == 'link':
+                print(" [MODE] LINK tool: click the END of one crack, then the START of the other (or vice versa) "
+                      "to merge them into a single crack. [3] to exit.")
             else:
                 print(" [MODE] JOIN tool: click two points -- on the same crack to re-route the part between them, "
                       "or the ends of two crack pieces to reconnect them along a new path. [2] to exit.")
@@ -2539,16 +2566,42 @@ class CrackSegmentation:
                 best = (idx, p_idx, float(d[p_idx]))
         return best[0], best[1]
 
+    def _pick_crack_endpoint(self, real_x, real_y):
+        """(crack_idx, point_idx) of the nearest START/END of an ACTIVE crack within tolerance, else (None, None)."""
+        view_w = max(1, self.cfg.zoom_box[2] - self.cfg.zoom_box[0])
+        best = (None, None, max(3.0, self.LINK_PICK_TOLERANCE_WIN_PX * view_w / 1200.0))
+        for idx, f in enumerate(self.cfg.saved_cracks):
+            path = f.get('path')
+            if not f.get('active', True) or not path or len(path) < 2:
+                continue
+            for p_idx in (0, len(path) - 1):
+                d = float(np.hypot(path[p_idx][0] - real_x, path[p_idx][1] - real_y))
+                if d <= best[2]:
+                    best = (idx, p_idx, d)
+        return best[0], best[1]
+
+    def _apply_crack_tool(self, mode, first, second):
+        if mode == 'cut':
+            return self._cut_crack_section(first, second)
+        if mode == 'link':
+            return self._link_cracks(first, second)
+        return self._join_crack_points(first, second)
+
     def _handle_cut_join_mouse(self, event, x, y):
-        """Two clicks: first point, then second point, then the CUT or JOIN is applied."""
+        """Two clicks: first point, then second point, then the CUT, JOIN or LINK is applied."""
         if event != cv2.EVENT_LBUTTONDOWN:
             return
         real_x, real_y = self.transform_window_to_real_coords(x, y)
-        crack_idx, point_idx = self._pick_active_crack_point(real_x, real_y)
         state = self.cfg.crack_cut_join_state
-        tool = state["mode"].upper()
+        mode = state["mode"]
+        tool, key = mode.upper(), self.CRACK_TOOL_KEYS[mode]
+        if mode == 'link':
+            crack_idx, point_idx = self._pick_crack_endpoint(real_x, real_y)
+        else:
+            crack_idx, point_idx = self._pick_active_crack_point(real_x, real_y)
         if crack_idx is None:
-            print(f" [{tool}] No crack near the click: click ON a blue crack line.")
+            hint = "click near the END or START of a crack." if mode == 'link' else "click ON a blue crack line."
+            print(f" [{tool}] No crack near the click: {hint}")
             return
         if state["first"] is None:
             state["first"] = (crack_idx, point_idx)
@@ -2556,18 +2609,16 @@ class CrackSegmentation:
             self.refresh_zoom_viewport()
             return
         first, state["first"] = state["first"], None
-        if state["mode"] == 'cut':
-            applied = self._cut_crack_section(first, (crack_idx, point_idx))
-        else:
-            applied = self._join_crack_points(first, (crack_idx, point_idx))
-        # A completed CUT/JOIN closes the tool; a failed one stays active for a retry.
+        applied = self._apply_crack_tool(mode, first, (crack_idx, point_idx))
+        # A completed operation closes the tool; a failed one stays active for a retry.
         if applied:
             self._reset_cut_join_state()
-            print(f" [MODE] {tool} done: tool closed. Press [{'1' if tool == 'CUT' else '2'}] to use it again.")
+            print(f" [MODE] {tool} done: tool closed. Press [{key}] to use it again.")
         else:
-            print(f" [{tool}] Nothing changed: click the first point again, or press "
-                  f"[{'1' if tool == 'CUT' else '2'}] to exit.")
+            print(f" [{tool}] Nothing changed: click the first point again, or press [{key}] to exit.")
         self.recalculate_masks()
+        if applied and mode == 'link':
+            self._save_annotations_now()
         self.refresh_zoom_viewport()
 
     def _snapshot_crack_edit_state(self):
@@ -2608,12 +2659,98 @@ class CrackSegmentation:
     def _crack_with_path(template, path, width_segments):
         """New crack dict from template with a new path: start/end follow the path; the
         import-time original shape no longer matches it, so it's dropped."""
-        crack = {k: v for k, v in template.items() if k not in ('orig_path', 'orig_points', 'nodes', 'width_segments')}
+        crack = {k: v for k, v in template.items() if k not in ('orig_path', 'orig_points', 'nodes', 'width_segments', 'links')}
         crack['path'] = [(int(p[0]), int(p[1])) for p in path]
         crack['start'], crack['end'] = crack['path'][0], crack['path'][-1]
         if width_segments:
             crack['width_segments'] = width_segments
+        links = CrackSegmentation._links_on_path(template.get('links'), crack['path'])
+        if links:
+            crack['links'] = links
         return crack
+
+    @staticmethod
+    def _links_on_path(links, path):
+        """The LINK records whose two ends both still lie on path (a CUT can remove a bridge)."""
+        on_path = {(int(p[0]), int(p[1])) for p in path}
+        return [lk for lk in links or []
+                if tuple(lk.get('from', ())) in on_path and tuple(lk.get('to', ())) in on_path]
+
+    @staticmethod
+    def _reverse_width_segments(segments, n_points):
+        """Width tracts of a path of n_points re-indexed for the same path walked backwards."""
+        out = []
+        for seg in segments or []:
+            try:
+                i0, i1 = sorted((int(seg['i0']), int(seg['i1'])))
+            except (KeyError, TypeError, ValueError):
+                continue
+            new_seg = dict(seg)
+            new_seg['i0'], new_seg['i1'] = n_points - 1 - i1, n_points - 1 - i0
+            out.append(new_seg)
+        return out
+
+    def _link_bridge(self, p, q):
+        """Route between two crack ends: along the real edge when A* finds a reasonable one,
+        otherwise a straight bridge. Returns (inner points, 'edge' | 'straight')."""
+        gap = float(np.hypot(q[0] - p[0], q[1] - p[1]))
+        if gap < 2:
+            return [], 'straight'
+        route = self._route_avoiding(p, q, self.cfg.cut_exclusions)
+        if route and len(route) <= self.LINK_MAX_DETOUR * gap + 5:
+            return route, 'edge'
+        return [], 'straight'
+
+    def _link_cracks(self, first, second):
+        """[3] LINK: merges two DIFFERENT cracks into one, joining the two clicked ends
+        (end of one -> start of the other, or vice versa). Both cracks are kept whole."""
+        (ia, pa), (ib, pb) = first, second
+        if ia == ib:
+            print(" [LINK] Both ends belong to the SAME crack: click the end of ANOTHER crack.")
+            return False
+        crack_a, crack_b = self.cfg.saved_cracks[ia], self.cfg.saved_cracks[ib]
+        path_a, path_b = list(crack_a['path']), list(crack_b['path'])
+        # Orient A to END at its clicked end and B to START at its clicked end.
+        segs_a, segs_b = crack_a.get('width_segments'), crack_b.get('width_segments')
+        if pa == 0:
+            path_a, segs_a = path_a[::-1], self._reverse_width_segments(segs_a, len(path_a))
+        if pb != 0:
+            path_b, segs_b = path_b[::-1], self._reverse_width_segments(segs_b, len(path_b))
+        p, q = (int(path_a[-1][0]), int(path_a[-1][1])), (int(path_b[0][0]), int(path_b[0][1]))
+        bridge, method = self._link_bridge(p, q)
+        before = self._snapshot_crack_edit_state()
+        merged = self._stitch(path_a, bridge, path_b)
+        shift = len(self._stitch(path_a, bridge, path_b[:1])) - 1
+        segs_b, _ = self._remap_width_segments(segs_b, 0, len(path_b) - 1, shift)
+        new_crack = self._crack_with_path(crack_a, merged, list(segs_a or []) + segs_b)
+        links = list(crack_a.get('links') or []) + list(crack_b.get('links') or [])
+        links.append({"from": [p[0], p[1]], "to": [q[0], q[1]], "method": method})
+        new_crack['links'] = self._links_on_path(links, merged)
+        self.cfg.saved_cracks[ia] = new_crack
+        del self.cfg.saved_cracks[ib]
+        self._commit_crack_edit(before)
+        gap = float(np.hypot(q[0] - p[0], q[1] - p[1]))
+        print(f" [LINK] Cracks #{ia + 1} and #{ib + 1} merged into one ({len(merged)} points, "
+              f"{gap:.0f} px gap bridged {'along the edge' if method == 'edge' else 'with a straight segment'}).")
+        return True
+
+    def _save_annotations_now(self):
+        """Writes the current photo's JSON and binary masks right away (after a LINK),
+        without the CSV row, the beep or the queue bookkeeping of a full [S] save."""
+        if not self.cfg.CURRENT_IMAGE_PATH or not self.cfg.JSON_OUTPUT_PATH:
+            return False
+        try:
+            os.makedirs(os.path.dirname(self.cfg.JSON_OUTPUT_PATH), exist_ok=True)
+            labelme_data = self._build_labelme_data_dict(self._get_current_image_base64())
+            labelme_data["shapes"] = self._finalize_labelme_shapes()
+            self._write_labelme_json(labelme_data)
+            self._export_segmented_preview_image()
+            self._export_binary_masks()
+            print(" [LINK] JSON and binary masks updated. [U] undoes the link on screen; [S] saves again.")
+            return True
+        except Exception as e:
+            print(f" [LINK] Could not update the files: {e}", file=sys.stderr)
+            return False
 
     def _cut_crack_section(self, first, second):
         """[1] CUT: removes the crack points strictly between the two clicked points.
@@ -2746,6 +2883,9 @@ class CrackSegmentation:
             segs_b, d = self._remap_width_segments(crack_b.get('width_segments'), b_first, b_last, shift)
             segs, n_dropped = segs + segs_b, n_dropped + d
         self.cfg.saved_cracks[ia] = self._crack_with_path(crack_a, merged, segs)
+        links = self._links_on_path(crack_b.get('links'), merged)
+        if links:
+            self.cfg.saved_cracks[ia]['links'] = self.cfg.saved_cracks[ia].get('links', []) + links
         del self.cfg.saved_cracks[ib]
         self._commit_crack_edit(before)
         print(f" [JOIN] Cracks #{ia + 1} and #{ib + 1} joined into one ({len(merged)} points)"
@@ -2762,6 +2902,9 @@ class CrackSegmentation:
         if state["mode"] == 'cut':
             msg = "CUT (1): click the START of the part to remove" if state["first"] is None \
                 else "CUT (1): click the END of the part to remove"
+        elif state["mode"] == 'link':
+            msg = "LINK (3): click the end of the first crack" if state["first"] is None \
+                else "LINK (3): click the start of the second crack"
         else:
             msg = "JOIN (2): click the first point" if state["first"] is None \
                 else "JOIN (2): click the second point (same crack = new route)"
@@ -3071,6 +3214,8 @@ class CrackSegmentation:
             self._toggle_cut_join_mode('cut')
         elif key_clean == ord('2'):
             self._toggle_cut_join_mode('join')
+        elif key_clean == ord('3'):
+            self._toggle_cut_join_mode('link')
         else:
             return False
         return True

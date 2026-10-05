@@ -1,11 +1,11 @@
-"""test_v15_fixes.py
+"""test_v105_fixes.py
 
-Headless tests for the changes requested on v1.0.4 (release 1.5):
+Headless tests for the changes requested on v1.0.4 (release 1.0.5):
   - Cut [1] / Join [2]: a completed operation closes the tool (no stale "click the second point").
   - The crack's un-numbered end is drawn as a tiny square (4 px at most).
   - New data layout: Images / Binary files / JSON files, with automatic migration of the old folders.
 
-Run with:  python3 -m unittest test_v15_fixes -v
+Run with:  python3 -m unittest test_v105_fixes -v
 """
 import json
 import os

@@ -35,18 +35,18 @@ def resolve_script_dir():
     return Path(__file__).resolve().parent
 
 
-# Data folders (v1.5): original photos, exported PNGs (masks + overlay) and LabelMe JSONs.
+# Data folders (v1.0.5): original photos, exported PNGs (masks + overlay) and LabelMe JSONs.
 IMAGES_DIR_NAME = "Images"
 BINARY_DIR_NAME = "Binary files"
 JSON_DIR_NAME = "JSON files"
-# Pre-1.5 folders, migrated automatically by migrate_legacy_folders().
+# Pre-1.0.5 folders, migrated automatically by migrate_legacy_folders().
 LEGACY_ARCHIVE_DIR_NAME = "already processed images"
 LEGACY_OUTPUT_DIR_NAME = "segmentated images"
 _IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
 
 
 def _legacy_file_destination(fname):
-    """Target folder name for a file found in a pre-1.5 folder, or None to leave it where it is."""
+    """Target folder name for a file found in a pre-1.0.5 folder, or None to leave it where it is."""
     lower = fname.lower()
     if lower.endswith('.json') or lower.endswith('.json.bak'):
         return JSON_DIR_NAME
@@ -94,7 +94,7 @@ def _remove_if_only_junk(folder):
 
 
 def migrate_legacy_folders(base_dir):
-    """Moves files from the pre-1.5 folders into Images / Binary files / JSON files.
+    """Moves files from the pre-1.0.5 folders into Images / Binary files / JSON files.
     Never overwrites a file: a name already present at the destination stays in the old folder.
     For duplicates the most recent copy wins (see _LEGACY_PRIORITY). Returns the number of files moved."""
     base_dir = str(base_dir)

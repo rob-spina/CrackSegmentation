@@ -1612,7 +1612,7 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
         cfg.SCRIPT_DIR = tmpdir
         app = CrackSegmentation(cfg)
         if empty_mode2:
-            # Since v1.5 a Mode 1 save is immediately visible to Mode 2: simulate an empty Mode 2 explicitly.
+            # Since v1.0.5 a Mode 1 save is immediately visible to Mode 2: simulate an empty Mode 2 explicitly.
             app._load_mode2_queue = lambda exts: setattr(app.cfg, "modalita_scelta", "1")
         seen = []
         original_start = app._start_image_session
@@ -1643,7 +1643,7 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
             make_synthetic_image_folder(tmpdir, n_images=5)
             _, seen, prompt, _ = self._run_recording(tmpdir, [ord('q')] * 5)
             self.assertEqual([name[:6] for _, name in seen], ["img_00", "img_01", "img_02", "img_03", "img_04"])
-            self.assertEqual(len(os.listdir(os.path.join(tmpdir, "Images"))), 5, "photos stay in 'Images' (v1.5)")
+            self.assertEqual(len(os.listdir(os.path.join(tmpdir, "Images"))), 5, "photos stay in 'Images' (v1.0.5)")
             self.assertEqual(self._unsaved_images(tmpdir), [], "every image was saved, none should be left for Mode 1")
             prompt.assert_called_once_with("1", "2", 0)
         finally:

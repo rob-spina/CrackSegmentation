@@ -103,6 +103,8 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 | `B` | Manually assign a building group number |
 | `A` | Widen the training mask on a single crack stretch; refine with `+` / `-` and `[` `]` `{` `}` |
 | `K` | Enter the image scale manually |
+| `1` / `2` | Cut a crack part / Join (re-route or reconnect) — two clicks |
+| `3` | Link: click the end of one crack and the start of another to merge them into one; the JSON and binary masks are updated right away |
 | `R` | Redo |
 
 ## Output files
@@ -111,7 +113,7 @@ For every saved photo `<name>`:
 
 | File | Content |
 |------|---------|
-| `JSON files/<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments), with the image embedded as base64 |
+| `JSON files/<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments), with the image embedded as base64. A crack merged with **Link** carries a `links` list (`from`/`to` points of each bridged gap, `method` `edge` or `straight`) |
 | `Binary files/<name>-crack_mask.png` | Binary crack mask, single channel, same resolution as the photo (0 = background, 255 = crack) |
 | `Binary files/<name>-detachment_mask.png` | Binary filled-area mask of the detachments (same format) |
 | `Binary files/<name>-crack_uncertain_mask.png` | Only the cracks marked uncertain (same band as the crack mask), e.g. as an ignore region in training. Written when `CRACK_UNCERTAIN_EXPORT_MASK` is on and at least one crack is uncertain |
@@ -119,7 +121,7 @@ For every saved photo `<name>`:
 
 Mask files are written only when the photo contains at least one active element.
 
-Data folders (since 1.5):
+Data folders (since 1.0.5):
 
 | Folder | Content |
 |--------|---------|

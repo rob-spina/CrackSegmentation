@@ -1282,7 +1282,7 @@ class TestGuiRunEndToEnd(unittest.TestCase):
                 waitkey_calls.append(delay)
                 return -1
 
-            # Since v1.5 the saved photo is immediately available in Mode 2: decline the end-of-queue switch.
+            # Since v1.0.5 the saved photo is immediately available in Mode 2: decline the end-of-queue switch.
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
                  mock.patch.object(app, "_prompt_queue_exhausted", return_value=False), \
                  mock.patch("cv2.getWindowImageRect", return_value=(0, 0, gm.CANVAS_W, gm.CANVAS_H)), \

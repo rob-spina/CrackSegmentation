@@ -198,7 +198,7 @@ class TestFileCounterKeepsCountingInMode1(unittest.TestCase):
 
 class TestMode2SaveWritesOverlayAndMasksToBinaryFiles(unittest.TestCase):
     """USER REPORT (v1.0.2): edits saved in Mode 2 did not show up in the overlay/binary masks.
-    v1.5 layout: photos in 'Images', JSONs in 'JSON files', PNG outputs in 'Binary files'."""
+    v1.0.5 layout: photos in 'Images', JSONs in 'JSON files', PNG outputs in 'Binary files'."""
 
     def test_mode2_save_updates_the_files_in_binary_files(self):
         tmpdir = tempfile.mkdtemp(prefix="crackseg_mode2_save_")

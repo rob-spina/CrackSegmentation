@@ -321,6 +321,7 @@ _SIDEBAR_SHORTCUTS = [
     ("\U0001F504", "Retrace cracks", "V", ord('v')),
     ("\u2702", "Cut crack part", "1", ord('1')),
     ("\U0001F517", "Join / re-route", "2", ord('2')),
+    ("\u26D3", "Link two cracks", "3", ord('3')),
     ("\U0001F9F2", "Snap / translate", "T", ord('t')),
     ("\u2194", "Width-edit mode", "A", ord('a')),
     ("\U0001F3F7", "Assign building", "B", ord('b')),
@@ -629,6 +630,7 @@ _TOOL_COMMANDS = [
     ("\U0001F504 Retrace imported cracks onto real edge\tV", ord('v')),
     ("\u2702 Cut a crack part (2 clicks)\t1", ord('1')),
     ("\U0001F517 Join / re-route cracks (2 clicks)\t2", ord('2')),
+    ("\u26D3 Link two cracks end-to-start (2 clicks)\t3", ord('3')),
     ("\U0001F50D Building-group compatibility check\tG", ord('g')),
     ("\U0001F3F7 Manually assign building group\tB", ord('b')),
 ]
