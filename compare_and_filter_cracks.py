@@ -754,7 +754,7 @@ class CrackComparator:
 
     @staticmethod
     def output_dir_for_json(json_path):
-        """Where a JSON's masks and overlay go: the sibling 'Binary files' for a JSON in 'JSON files' (v1.5 layout), else next to the JSON."""
+        """Where a JSON's masks and overlay go: the sibling 'Binary files' for a JSON in 'JSON files' (v1.0.5 layout), else next to the JSON."""
         json_dir = os.path.dirname(os.path.abspath(json_path))
         if os.path.basename(json_dir) == "JSON files":
             out_dir = os.path.join(os.path.dirname(json_dir), "Binary files")
