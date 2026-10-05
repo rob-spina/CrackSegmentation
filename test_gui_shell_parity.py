@@ -177,14 +177,16 @@ class TestSwitchModeAtRuntime(unittest.TestCase):
     def _make_mode2_source(self, tmpdir, base_name="already_seg"):
         """A minimal already-segmented image + matching JSON pair, the
         shape _load_mode2_queue() looks for."""
-        archive_dir = os.path.join(tmpdir, "already processed images")
-        os.makedirs(archive_dir, exist_ok=True)
+        images_dir = os.path.join(tmpdir, "Images")
+        json_dir = os.path.join(tmpdir, "JSON files")
+        os.makedirs(images_dir, exist_ok=True)
+        os.makedirs(json_dir, exist_ok=True)
         img = np.full((220, 300, 3), 180, dtype=np.uint8)
-        img_path = os.path.join(archive_dir, f"{base_name}.png")
+        img_path = os.path.join(images_dir, f"{base_name}.png")
         cv2.imwrite(img_path, img)
-        with open(os.path.join(archive_dir, f"{base_name}.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(json_dir, f"{base_name}.json"), "w", encoding="utf-8") as f:
             json.dump({"shapes": [], "imagePath": f"{base_name}.png"}, f)
-        return archive_dir, img_path
+        return json_dir, img_path
 
     def test_load_mode2_queue_finds_images_with_an_uppercase_extension(self):
         # USER REPORT: on Linux (a case-sensitive filesystem), a JSON's
@@ -196,14 +198,16 @@ class TestSwitchModeAtRuntime(unittest.TestCase):
         # case-insensitive filesystems), never on Linux.
         tmpdir = tempfile.mkdtemp(prefix="crackseg_test_mode2_case_")
         try:
-            archive_dir = os.path.join(tmpdir, "already processed images")
-            os.makedirs(archive_dir, exist_ok=True)
+            images_dir = os.path.join(tmpdir, "Images")
+            json_dir = os.path.join(tmpdir, "JSON files")
+            os.makedirs(images_dir, exist_ok=True)
+            os.makedirs(json_dir, exist_ok=True)
             img = np.full((220, 300, 3), 180, dtype=np.uint8)
-            img_path = os.path.join(archive_dir, "photo1.PNG")  # deliberately uppercase
+            img_path = os.path.join(images_dir, "photo1.PNG")  # deliberately uppercase
             ok, buf = cv2.imencode(".png", img)
             with open(img_path, "wb") as f:
                 f.write(buf.tobytes())
-            with open(os.path.join(archive_dir, "photo1.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(json_dir, "photo1.json"), "w", encoding="utf-8") as f:
                 json.dump({"shapes": [], "imagePath": "photo1.PNG"}, f)
 
             cfg = Config()
@@ -1495,11 +1499,11 @@ class TestRunEndToEndHeadless(unittest.TestCase):
                  _MockedHighGui(key_sequence=[ord('q')]):
                 app.run()
 
-            json_files = [f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")] \
-                if os.path.isdir(_REAL_ARCHIVE_DIR) else []
+            json_files = [f for f in os.listdir(os.path.join(tmpdir, "JSON files")) if f.lower().endswith(".json")] \
+                if os.path.isdir(os.path.join(tmpdir, "JSON files")) else []
             self.assertTrue(json_files,
                              "S should have exported a LabelMe JSON before archiving")
-            with open(os.path.join(_REAL_ARCHIVE_DIR, json_files[0]), encoding="utf-8") as f:
+            with open(os.path.join(os.path.join(tmpdir, "JSON files"), json_files[0]), encoding="utf-8") as f:
                 data = json.load(f)
             self.assertIn("shapes", data)
 
@@ -1527,8 +1531,8 @@ class TestRunEndToEndHeadless(unittest.TestCase):
                  _MockedHighGui(key_sequence=[4, ord('q')]):
                 app.run()
 
-            json_files = sorted(f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")) \
-                if os.path.isdir(_REAL_ARCHIVE_DIR) else []
+            json_files = sorted(f for f in os.listdir(os.path.join(tmpdir, "JSON files")) if f.lower().endswith(".json")) \
+                if os.path.isdir(os.path.join(tmpdir, "JSON files")) else []
             self.assertEqual(len(json_files), 1, f"expected exactly one archived JSON (the 2nd image only), got {json_files}")
             self.assertIn("img_01", json_files[0], "the archived file should be the SECOND image, not the skipped first one")
         finally:
@@ -1553,8 +1557,8 @@ class TestRunEndToEndHeadless(unittest.TestCase):
                  _MockedHighGui(key_sequence=[4, 5, ord('q'), 4]):
                 app.run()
 
-            json_files = [f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")] \
-                if os.path.isdir(_REAL_ARCHIVE_DIR) else []
+            json_files = [f for f in os.listdir(os.path.join(tmpdir, "JSON files")) if f.lower().endswith(".json")] \
+                if os.path.isdir(os.path.join(tmpdir, "JSON files")) else []
             self.assertEqual(len(json_files), 1)
             self.assertIn("img_00", json_files[0], "Previous Image should have gone back to the first image")
         finally:
@@ -1589,8 +1593,8 @@ class TestRunEndToEndHeadless(unittest.TestCase):
                  _MockedHighGui():
                 app.run()
 
-            json_files = [f for f in os.listdir(_REAL_ARCHIVE_DIR) if f.lower().endswith(".json")] \
-                if os.path.isdir(_REAL_ARCHIVE_DIR) else []
+            json_files = [f for f in os.listdir(os.path.join(tmpdir, "JSON files")) if f.lower().endswith(".json")] \
+                if os.path.isdir(os.path.join(tmpdir, "JSON files")) else []
             self.assertTrue(json_files,
                              "the queued button click should have exported/saved, exactly like a real S keypress")
         finally:
@@ -1603,10 +1607,13 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
     AND advanced queue_pos, silently skipping every other image; running off
     the end closed the app instead of offering Mode 2 or exit."""
 
-    def _run_recording(self, tmpdir, keys, prompt_answers=(False,)):
+    def _run_recording(self, tmpdir, keys, prompt_answers=(False,), empty_mode2=False):
         cfg = Config()
         cfg.SCRIPT_DIR = tmpdir
         app = CrackSegmentation(cfg)
+        if empty_mode2:
+            # Since v1.5 a Mode 1 save is immediately visible to Mode 2: simulate an empty Mode 2 explicitly.
+            app._load_mode2_queue = lambda exts: setattr(app.cfg, "modalita_scelta", "1")
         seen = []
         original_start = app._start_image_session
 
@@ -1623,13 +1630,21 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
             app.run()
         return app, seen, prompt, notify
 
+    @staticmethod
+    def _unsaved_images(tmpdir):
+        """Photos in 'Images' with no JSON in 'JSON files' -- what the next Mode 1 session would load."""
+        json_dir = os.path.join(tmpdir, "JSON files")
+        saved = {os.path.splitext(f)[0] for f in os.listdir(json_dir)} if os.path.isdir(json_dir) else set()
+        return [f for f in os.listdir(os.path.join(tmpdir, "Images")) if os.path.splitext(f)[0] not in saved]
+
     def test_saving_every_image_visits_each_one_in_order(self):
         tmpdir = tempfile.mkdtemp(prefix="crackseg_test_q_all_")
         try:
             make_synthetic_image_folder(tmpdir, n_images=5)
             _, seen, prompt, _ = self._run_recording(tmpdir, [ord('q')] * 5)
             self.assertEqual([name[:6] for _, name in seen], ["img_00", "img_01", "img_02", "img_03", "img_04"])
-            self.assertEqual(os.listdir(os.path.join(tmpdir, "Images")), [], "every image was saved, none should remain")
+            self.assertEqual(len(os.listdir(os.path.join(tmpdir, "Images"))), 5, "photos stay in 'Images' (v1.5)")
+            self.assertEqual(self._unsaved_images(tmpdir), [], "every image was saved, none should be left for Mode 1")
             prompt.assert_called_once_with("1", "2", 0)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -1641,7 +1656,7 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
             make_synthetic_image_folder(tmpdir, n_images=5)
             _, seen, prompt, _ = self._run_recording(tmpdir, [4] + [ord('q')] * 4)
             self.assertEqual([name[:6] for _, name in seen], ["img_00", "img_01", "img_02", "img_03", "img_04"])
-            left = os.listdir(os.path.join(tmpdir, "Images"))
+            left = self._unsaved_images(tmpdir)
             self.assertEqual(len(left), 1)
             self.assertTrue(left[0].startswith("img_00"), f"only the skipped image should remain, got {left}")
             prompt.assert_called_once_with("1", "2", 1)
@@ -1654,7 +1669,8 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
         try:
             make_synthetic_image_folder(tmpdir, n_images=1)
             TestSwitchModeAtRuntime._make_mode2_source(None, tmpdir, base_name="already_seg")
-            app, seen, prompt, notify = self._run_recording(tmpdir, [ord('q'), 4], prompt_answers=(True, False))
+            # Mode 2 now holds already_seg AND the img_00 just saved in Mode 1: two [4] to reach its end.
+            app, seen, prompt, notify = self._run_recording(tmpdir, [ord('q'), 4, 4], prompt_answers=(True, False))
             self.assertEqual(seen[0][0], "1")
             self.assertEqual(seen[1][0], "2")
             self.assertIn("already_seg", seen[1][1])
@@ -1669,7 +1685,7 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
         tmpdir = tempfile.mkdtemp(prefix="crackseg_test_q_end_empty_")
         try:
             make_synthetic_image_folder(tmpdir, n_images=1)
-            _, seen, prompt, notify = self._run_recording(tmpdir, [ord('q')], prompt_answers=(True,))
+            _, seen, prompt, notify = self._run_recording(tmpdir, [ord('q')], prompt_answers=(True,), empty_mode2=True)
             self.assertEqual(len(seen), 1)
             prompt.assert_called_once()
             notify.assert_called_once_with("2")

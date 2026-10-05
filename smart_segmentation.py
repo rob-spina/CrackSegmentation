@@ -17,7 +17,8 @@ import numpy as np
 from skimage.filters import sato
 from skimage.morphology import skeletonize
 
-from config import Config, resolve_script_dir
+from config import (Config, resolve_script_dir, migrate_legacy_folders,
+                    IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME)
 
 
 class CrackSegmentation:
@@ -78,11 +79,11 @@ class CrackSegmentation:
             "this image; [Enter]",
             "saves and moves on.",
             "",
-            "In Mode 1 the photo is",
-            "moved to 'already",
-            "processed images':",
-            "edit it later in",
-            "Mode 2.",
+            "JSON -> 'JSON files',",
+            "masks -> 'Binary files';",
+            "the photo stays in",
+            "'Images'. Edit it",
+            "later in Mode 2.",
             "",
             "Press any key to close",
             "and complete saving...",
@@ -175,18 +176,41 @@ class CrackSegmentation:
         print("      CRACK & DETACHMENT SEGMENTATION PIPELINE")
         print("=======================================================")
         print("Choose the data source:")
-        print("1) Load NEW images to process (from the 'Images' folder)")
-        print("2) Reload ALREADY SEGMENTED images for edits (from 'already processed images')")
+        print(f"1) Load NEW images to process (photos in '{IMAGES_DIR_NAME}' without a JSON yet)")
+        print(f"2) Reload ALREADY SEGMENTED images for edits (photos with a JSON in '{JSON_DIR_NAME}')")
+
+    def _images_folder(self):
+        """'Images': every original photo, segmented or not."""
+        return os.path.join(str(self.cfg.SCRIPT_DIR), IMAGES_DIR_NAME)
+
+    def _json_folder(self):
+        """'JSON files': every LabelMe JSON."""
+        return os.path.join(str(self.cfg.SCRIPT_DIR), JSON_DIR_NAME)
+
+    def _set_queue_folders(self):
+        """Both modes read photos from 'Images' and write JSONs to 'JSON files'."""
+        self.cfg.IMAGE_FOLDER = os.path.join(str(self.cfg.SCRIPT_DIR), IMAGES_DIR_NAME)
+        self.cfg.OUTPUT_FOLDER = os.path.join(str(self.cfg.SCRIPT_DIR), JSON_DIR_NAME)
+        os.makedirs(self.cfg.IMAGE_FOLDER, exist_ok=True)
+        os.makedirs(self.cfg.OUTPUT_FOLDER, exist_ok=True)
+
+    def _segmented_json_bases(self):
+        """Lower-case base names of the photos that already have a JSON (a legacy '-seg' suffix is dropped)."""
+        bases = set()
+        for f in os.listdir(self.cfg.OUTPUT_FOLDER):
+            base, ext = os.path.splitext(f)
+            if ext.lower() != '.json':
+                continue
+            if base.endswith('-seg'):
+                base = base[:-4]
+            bases.add(base.lower())
+        return bases
 
     def _load_mode2_queue(self, valid_extensions):
-        """MODE 2: rebuilds the queue from already-segmented JSON+image
-        pairs in the archive folder. Falls back to Mode 1 if none found."""
-        self.cfg.IMAGE_FOLDER = os.path.join(self.cfg.SCRIPT_DIR, "already processed images")
-        self.cfg.OUTPUT_FOLDER = self.cfg.IMAGE_FOLDER  # Overwrites the JSON directly in the same archive
-        print(f"\n[INFO] Scanning segmented files in: {self.cfg.IMAGE_FOLDER}")
-
-        if not os.path.exists(self.cfg.IMAGE_FOLDER):
-            os.makedirs(self.cfg.IMAGE_FOLDER)
+        """MODE 2: the photos in 'Images' that have a JSON in 'JSON files'.
+        The JSON is overwritten in place. Falls back to Mode 1 if none found."""
+        self._set_queue_folders()
+        print(f"\n[INFO] Scanning segmented files in: {self.cfg.OUTPUT_FOLDER}")
 
         all_files = os.listdir(self.cfg.IMAGE_FOLDER)
         # Case-insensitive lookup by real on-disk name -- an uppercase
@@ -196,7 +220,7 @@ class CrackSegmentation:
         # ignores case (which is why this only ever surfaced on Linux).
         files_by_lower_name = {f.lower(): f for f in all_files}
 
-        json_files = [f for f in all_files if f.lower().endswith('.json')]
+        json_files = [f for f in os.listdir(self.cfg.OUTPUT_FOLDER) if f.lower().endswith('.json')]
         for j_file in json_files:
             base_name, _ = os.path.splitext(j_file)
             if base_name.endswith('-seg'):
@@ -209,23 +233,18 @@ class CrackSegmentation:
                     break
 
         if not self.cfg.image_queue:
-            print("[WARNING] No valid JSON file found in 'already processed images'. Forcing mode 1.")
+            print(f"[WARNING] No JSON in '{JSON_DIR_NAME}' with its photo in '{IMAGES_DIR_NAME}'. Forcing mode 1.")
             self.cfg.modalita_scelta = "1"
 
     def _load_mode1_queue(self, valid_extensions):
-        """MODE 1: rebuilds the queue from every image in the 'Images'
-        input folder."""
-        self.cfg.IMAGE_FOLDER = os.path.join(self.cfg.SCRIPT_DIR, "Images")
-        # OUTPUT_FOLDER stays pointed at 'segmentated images' for new exports
-        self.cfg.OUTPUT_FOLDER = os.path.join(self.cfg.SCRIPT_DIR, self.cfg.folder_seg_img)
+        """MODE 1: every photo in 'Images' that has no JSON in 'JSON files' yet."""
+        self._set_queue_folders()
         print(f"\n[INFO] Scanning the new images folder: {self.cfg.IMAGE_FOLDER}")
-
-        if not os.path.exists(self.cfg.IMAGE_FOLDER):
-            os.makedirs(self.cfg.IMAGE_FOLDER)
-
+        done = self._segmented_json_bases()
         self.cfg.image_queue = [
             os.path.join(self.cfg.IMAGE_FOLDER, f) for f in os.listdir(self.cfg.IMAGE_FOLDER)
             if f.lower().endswith(valid_extensions) and not f.lower().endswith('-seg.jpg')
+            and os.path.splitext(f)[0].lower() not in done
         ]
 
     def _finalize_queue_or_exit(self):
@@ -273,6 +292,7 @@ class CrackSegmentation:
 
     def build_chronological_queue(self):
         """Scans folders and builds the image processing queue based on user choice."""
+        migrate_legacy_folders(self.cfg.SCRIPT_DIR)
         self._print_pipeline_banner()
         scelta = self._prompt_mode_choice()
 
@@ -281,11 +301,11 @@ class CrackSegmentation:
         VALID_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
         self.cfg.image_queue = []
 
-        # MODE 2: Reload from 'already processed images'
+        # MODE 2: Reload the photos that already have a JSON
         if scelta == "2":
             self._load_mode2_queue(VALID_EXTENSIONS)
 
-        # MODE 1: Load new images from 'Images'
+        # MODE 1: Load the photos in 'Images' that have no JSON yet
         if self.cfg.modalita_scelta != "2":
             self._load_mode1_queue(VALID_EXTENSIONS)
 
@@ -939,7 +959,7 @@ class CrackSegmentation:
 
     def resume_last_building_index(self):
         """Retrieves the last building index used, from the processed-files folder."""
-        processed_folder = os.path.join(self.cfg.SCRIPT_DIR, "already processed images")
+        processed_folder = os.path.join(str(self.cfg.SCRIPT_DIR), JSON_DIR_NAME)
         max_idx = None
         if os.path.exists(processed_folder):
             for f in os.listdir(processed_folder):
@@ -1107,13 +1127,10 @@ class CrackSegmentation:
 
 
     def _prepare_export_folders(self, cartella_base):
-        """Ensures 'already processed images' and OUTPUT_FOLDER exist
-        before anything gets written into them."""
-        processed_folder = os.path.join(cartella_base, "already processed images")
-        if not os.path.exists(processed_folder):
-            os.makedirs(processed_folder)
-        if not os.path.exists(self.cfg.OUTPUT_FOLDER):
-            os.makedirs(self.cfg.OUTPUT_FOLDER)
+        """Ensures 'JSON files' and OUTPUT_FOLDER exist before anything gets written into them."""
+        processed_folder = self._json_folder()
+        os.makedirs(processed_folder, exist_ok=True)
+        os.makedirs(self.cfg.OUTPUT_FOLDER, exist_ok=True)
         return processed_folder
 
     def _get_current_image_base64(self):
@@ -1214,7 +1231,7 @@ class CrackSegmentation:
         print(f"[SUCCESS] JSON configuration generated at: {self.cfg.JSON_OUTPUT_PATH}")
 
     def _segmented_output_path(self, suffix, ext):
-        """Path in 'segmentated images' for an export of the current photo (overlay or masks), in BOTH modes.
+        """Path in 'Binary files' for an export of the current photo (overlay or masks), in BOTH modes.
         Named after the photo's CURRENT name, so a building-group rename made after loading is honoured."""
         folder = os.path.join(str(self.cfg.SCRIPT_DIR), self.cfg.folder_seg_img)
         os.makedirs(folder, exist_ok=True)
@@ -1226,7 +1243,6 @@ class CrackSegmentation:
         ([M])."""
         if not self.cfg.SAVE_SEG_IMAGE:
             return
-        # Mode 2 used to write this next to the JSON ('already processed images'), leaving the real one stale.
         self.cfg.EXPORT_IMAGE_PATH = self._segmented_output_path("-seg", os.path.splitext(self.cfg.CURRENT_IMAGE_PATH)[1])
         segmented_img = self.cfg.img_original.copy()
         k = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
@@ -1266,7 +1282,7 @@ class CrackSegmentation:
             crack_mask_out = self._build_variable_width_crack_mask(self.cfg.saved_cracks, self.cfg.H_img, self.cfg.W_img, self.cfg.CRACK_MASK_DILATION_PX)
             detachment_mask_out = self._build_detachment_area_mask()
 
-            # Always 'segmentated images', in Mode 2 too (it used to follow the JSON into the archive folder).
+            # Always 'Binary files', in both modes.
             crack_mask_path = self._segmented_output_path("-crack_mask", ".png")
             detachment_mask_path = self._segmented_output_path("-detachment_mask", ".png")
 
@@ -1340,17 +1356,12 @@ class CrackSegmentation:
             pass
 
     def _archive_saved_files(self, processed_folder):
-        """Mode 1: copies the JSON and moves the source image into
-        'already processed images'. Mode 2: leaves both in place."""
+        """Mode 1: makes sure the JSON is in 'JSON files' and drops the photo from the queue
+        (the photo itself stays in 'Images'). Mode 2: leaves everything in place."""
         if self.cfg.modalita_scelta == "1":
             dest_json_path = os.path.join(processed_folder, os.path.basename(self.cfg.JSON_OUTPUT_PATH))
-            dest_img_path = os.path.join(processed_folder, os.path.basename(self.cfg.CURRENT_IMAGE_PATH))
-            # A second [S] on the same photo: JSON and image are already in the archive.
             if os.path.abspath(self.cfg.JSON_OUTPUT_PATH) != os.path.abspath(dest_json_path):
                 shutil.copy2(self.cfg.JSON_OUTPUT_PATH, dest_json_path)
-            if os.path.exists(self.cfg.CURRENT_IMAGE_PATH) and \
-                    os.path.abspath(self.cfg.CURRENT_IMAGE_PATH) != os.path.abspath(dest_img_path):
-                shutil.move(self.cfg.CURRENT_IMAGE_PATH, dest_img_path)
             if self.cfg.CURRENT_IMAGE_PATH in self.cfg.image_queue:
                 self.cfg.image_queue.remove(self.cfg.CURRENT_IMAGE_PATH)
                 self.cfg.queue_item_consumed = True
@@ -1654,31 +1665,13 @@ class CrackSegmentation:
             self._signal_import_warning(f"IMPORT FAILED: error during projection ({error_msg}).")
             return False
 
-    def _resolve_missing_source_image(self, processed_folder):
-        """The image no longer exists at its recorded path -- checks if it's already at the archive destination. Returns True if resolved."""
-        check_dest = os.path.join(processed_folder, os.path.basename(self.cfg.CURRENT_IMAGE_PATH))
-        if os.path.exists(check_dest):
-            # Updates the pointer and falls through so the JSON still gets archived.
-            self.cfg.CURRENT_IMAGE_PATH = check_dest
-            return True
-        print(f"[ARCHIVE WARNING] Cannot archive: the source file no longer exists: {self.cfg.CURRENT_IMAGE_PATH}")
-        return False
-
-    def _move_current_image_to_archive(self, processed_folder):
-        """Safe move of the image file into the archive."""
-        try:
-            img_dest = os.path.join(processed_folder, os.path.basename(self.cfg.CURRENT_IMAGE_PATH))
-            shutil.move(self.cfg.CURRENT_IMAGE_PATH, img_dest)
-            print(f"[ARCHIVE SUCCESS] Image archived: {os.path.basename(img_dest)}")
-            self.cfg.CURRENT_IMAGE_PATH = img_dest  # Update the global path with the new one
-        except Exception as e:
-            print(f"[ARCHIVE ERROR] Error while moving the image: {e}")
-
     def _move_current_json_to_archive(self, processed_folder):
-        """Safe move of the associated JSON file into the archive."""
+        """Safe move of the current JSON into 'JSON files', if it was written anywhere else."""
         if self.cfg.JSON_OUTPUT_PATH and os.path.exists(self.cfg.JSON_OUTPUT_PATH):
+            json_dest = os.path.join(processed_folder, os.path.basename(self.cfg.JSON_OUTPUT_PATH))
+            if os.path.abspath(json_dest) == os.path.abspath(self.cfg.JSON_OUTPUT_PATH):
+                return
             try:
-                json_dest = os.path.join(processed_folder, os.path.basename(self.cfg.JSON_OUTPUT_PATH))
                 shutil.move(self.cfg.JSON_OUTPUT_PATH, json_dest)
                 print(f"[ARCHIVE SUCCESS] Session JSON archived: {os.path.basename(json_dest)}")
                 self.cfg.JSON_OUTPUT_PATH = json_dest
@@ -1686,29 +1679,11 @@ class CrackSegmentation:
                 print(f"[ARCHIVE WARNING] Error while moving the JSON: {e}")
 
     def archive_current_session_to_processed(self):
-        """ Safely moves the current image and its JSON file into the
-        'already processed images' folder, avoiding file-not-found errors.
-        """
+        """Since v1.5 the photo stays in 'Images': only makes sure its JSON ends up in 'JSON files'."""
         if self.cfg.CURRENT_IMAGE_PATH is None:
             return
-
-        processed_folder = os.path.join(str(resolve_script_dir()), "already processed images")
-        if not os.path.exists(processed_folder):
-            os.makedirs(processed_folder)
-
-        # 1. Safety check: if the file is already inside the destination folder, do nothing
-        if processed_folder in self.cfg.CURRENT_IMAGE_PATH:
-            return
-
-        # 2. Check whether the file still physically exists at the original path before moving it
-        if not os.path.exists(self.cfg.CURRENT_IMAGE_PATH):
-            if not self._resolve_missing_source_image(processed_folder):
-                return
-        else:
-            # 3. Safe move of the image file
-            self._move_current_image_to_archive(processed_folder)
-
-        # 4. Safe move of the associated JSON file
+        processed_folder = self._json_folder()
+        os.makedirs(processed_folder, exist_ok=True)
         self._move_current_json_to_archive(processed_folder)
 
     def _parse_one_width_segment(self, seg):
@@ -1816,15 +1791,16 @@ class CrackSegmentation:
             return None
 
     def _locate_associated_image(self, processed_folder, j_file, orig_img_name):
-        """Finds an archived JSON's photo -- by its recorded imagePath first, then by guessing common extensions."""
+        """Finds a saved JSON's photo in 'Images' -- by its recorded imagePath first, then by guessing common extensions."""
+        images_folder = self._images_folder()
         if orig_img_name:
-            img_path_check = os.path.join(processed_folder, orig_img_name)
+            img_path_check = os.path.join(images_folder, orig_img_name)
             if os.path.exists(img_path_check):
                 return img_path_check
         candidate_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
         for ext in candidate_extensions:
             img_name_fallback = j_file.replace('.json', ext)
-            img_path_check = os.path.join(processed_folder, img_name_fallback)
+            img_path_check = os.path.join(images_folder, img_name_fallback)
             if os.path.exists(img_path_check):
                 return img_path_check
         return None
@@ -1873,10 +1849,10 @@ class CrackSegmentation:
         return False
 
     def auto_import_best_previous_session(self):
-        """ Searches the processed-files folder for files sharing the same
+        """ Searches 'JSON files' for sessions sharing the same
         building code (__CODE) as the current image, and imports the best one.
         """
-        processed_folder = os.path.join(str(resolve_script_dir()), "already processed images")
+        processed_folder = self._json_folder()
         if not os.path.exists(processed_folder):
             return False
 
@@ -2064,12 +2040,11 @@ class CrackSegmentation:
                 groups[idx] = os.path.join(folder, fname)
 
     def _list_existing_building_groups(self):
-        """Scans IMAGE_FOLDER, OUTPUT_FOLDER, and 'already processed images' for files tagged __BLDG, returning {group_index: representative_image_path}, one photo per distinct group.
+        """Scans IMAGE_FOLDER and 'Images' for photos tagged __BLDG, returning {group_index: representative_image_path}, one photo per distinct group.
         """
         candidate_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
         groups = {}
-        processed_folder = os.path.join(str(resolve_script_dir()), "already processed images")
-        for folder in (self.cfg.IMAGE_FOLDER, self.cfg.OUTPUT_FOLDER, processed_folder):
+        for folder in (self.cfg.IMAGE_FOLDER, self._images_folder()):
             self._scan_folder_for_building_groups(folder, groups, candidate_extensions)
         return groups
 
@@ -2582,9 +2557,16 @@ class CrackSegmentation:
             return
         first, state["first"] = state["first"], None
         if state["mode"] == 'cut':
-            self._cut_crack_section(first, (crack_idx, point_idx))
+            applied = self._cut_crack_section(first, (crack_idx, point_idx))
         else:
-            self._join_crack_points(first, (crack_idx, point_idx))
+            applied = self._join_crack_points(first, (crack_idx, point_idx))
+        # A completed CUT/JOIN closes the tool; a failed one stays active for a retry.
+        if applied:
+            self._reset_cut_join_state()
+            print(f" [MODE] {tool} done: tool closed. Press [{'1' if tool == 'CUT' else '2'}] to use it again.")
+        else:
+            print(f" [{tool}] Nothing changed: click the first point again, or press "
+                  f"[{'1' if tool == 'CUT' else '2'}] to exit.")
         self.recalculate_masks()
         self.refresh_zoom_viewport()
 
@@ -3293,7 +3275,7 @@ class CrackSegmentation:
         return True
 
     def _collect_known_building_indices(self, processed_folder):
-        """Every distinct building-group number already tagged on a file in the working or archived folder -- a hint list for the [B] operator."""
+        """Every distinct building-group number already tagged on a photo or JSON -- a hint list for the [B] operator."""
         known_indices = set()
         for folder in (processed_folder, self.cfg.OUTPUT_FOLDER):
             if os.path.exists(folder):
@@ -3325,8 +3307,7 @@ class CrackSegmentation:
 
         # Hint: list the building groups already seen on disk, so the operator
         # doesn't have to remember the exact number by heart.
-        processed_folder = os.path.join(str(resolve_script_dir()), "already processed images")
-        known_indices = self._collect_known_building_indices(processed_folder)
+        known_indices = self._collect_known_building_indices(self._images_folder())
         self._print_known_building_groups_hint(known_indices)
 
         print(" [MANUAL GROUP] Type the number (with the tool's window active/in the foreground), "
@@ -3357,9 +3338,10 @@ class CrackSegmentation:
 
 
     def _collect_candidate_json_files(self, processed_folder):
-        """Every JSON in either the working or archived folder, excluding the current image's own JSON. None if nothing is found."""
-        # Scans both the working AND archived folders and merges the results.
-        search_folders = [self.cfg.OUTPUT_FOLDER, processed_folder]
+        """Every JSON in OUTPUT_FOLDER or 'JSON files', excluding the current image's own JSON. None if nothing is found."""
+        search_folders = [self.cfg.OUTPUT_FOLDER]
+        if os.path.abspath(processed_folder) != os.path.abspath(self.cfg.OUTPUT_FOLDER):
+            search_folders.append(processed_folder)
         json_files = []
         for folder in search_folders:
             if os.path.exists(folder):
@@ -3369,7 +3351,7 @@ class CrackSegmentation:
                     if f.lower().endswith('.json')
                 )
         if not json_files:
-            print("[ALIGNMENT] No JSON file found in 'segmentated images' or 'already processed images'.")
+            print(f"[ALIGNMENT] No JSON file found in '{JSON_DIR_NAME}'.")
             return None
         json_files = [p for p in json_files if os.path.abspath(p) != os.path.abspath(self.cfg.JSON_OUTPUT_PATH)]
         return json_files or None
@@ -3412,11 +3394,11 @@ class CrackSegmentation:
         return None
 
     def find_last_processed_session_asset(self):
-        """Scans 'segmentated images' and 'already processed images' to locate the latest JSON and its original image.
+        """Scans 'JSON files' to locate the latest JSON and its original photo in 'Images'.
         """
         try:
-            CARTELLA_BASE = str(resolve_script_dir())
-            processed_folder = os.path.join(CARTELLA_BASE, "already processed images")
+            CARTELLA_BASE = str(self.cfg.SCRIPT_DIR)
+            processed_folder = os.path.join(CARTELLA_BASE, JSON_DIR_NAME)
 
             json_files = self._collect_candidate_json_files(processed_folder)
             if json_files is None:
@@ -3431,9 +3413,7 @@ class CrackSegmentation:
             # List of folders to search for the source image
             cartelle_ricerca = [
                 self.cfg.IMAGE_FOLDER,                          # Current active folder
-                processed_folder,                               # Historical archive
-                os.path.join(CARTELLA_BASE, "Images"),          # Standard input folder
-                self.cfg.OUTPUT_FOLDER                          # Same folder as the JSON
+                os.path.join(CARTELLA_BASE, IMAGES_DIR_NAME),   # Standard photo folder
             ]
 
             found = self._find_image_by_recorded_path(original_filename, cartelle_ricerca)
@@ -3459,7 +3439,7 @@ class CrackSegmentation:
         return CrackComparator(self.cfg), LoadedJson
 
     def _collect_group_json_paths(self, bldg_tag, processed_folder):
-        """Every already-exported JSON (working + archived folders)
+        """Every already-exported JSON (OUTPUT_FOLDER + 'JSON files')
         tagged with this building group, deduplicated by path."""
         json_paths, seen = [], set()
         for folder in (self.cfg.OUTPUT_FOLDER, processed_folder):
@@ -3507,8 +3487,7 @@ class CrackSegmentation:
         if comparator is None:
             return
 
-        CARTELLA_BASE = str(resolve_script_dir())
-        processed_folder = os.path.join(CARTELLA_BASE, "already processed images")
+        processed_folder = self._json_folder()
         bldg_tag = f"__BLDG{group:03d}"
 
         json_paths = self._collect_group_json_paths(bldg_tag, processed_folder)
@@ -4349,6 +4328,15 @@ class CrackSegmentation:
             (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
         cv2.putText(win_out, text, (wx - tw // 2, wy + th // 2), cv2.FONT_HERSHEY_SIMPLEX, scale, ink, thick, cv2.LINE_AA)
 
+    CRACK_END_DOT_PX = 4  # side of the un-numbered end marker, in window pixels
+
+    def _draw_crack_end_dot(self, win_out, wx, wy, active):
+        """Tiny filled square on a crack's un-numbered end: yellow if active, grey if soft-deleted."""
+        lo = self.CRACK_END_DOT_PX // 2
+        hi = self.CRACK_END_DOT_PX - lo - 1
+        color = (0, 255, 255) if active else (128, 128, 128)
+        cv2.rectangle(win_out, (wx - lo, wy - lo), (wx + hi, wy + hi), color, -1)
+
     def _draw_one_crack_marker(self, win_out, f, marker_dim, number=None):
         """Draws one crack's two endpoint markers (filled if soft-
         deleted, crosshair if active); the start marker carries the crack's number."""
@@ -4359,6 +4347,9 @@ class CrackSegmentation:
             kp_x, kp_y = f.get(k_p)[0], f.get(k_p)[1]
             wx, wy = self.transform_real_to_window_coords(int(kp_x), int(kp_y))
             if not (0 <= wx < 1200 and 0 <= wy < 900):
+                continue
+            if k_p == 'end' and number is not None:
+                self._draw_crack_end_dot(win_out, wx, wy, symbol == "-")
                 continue
             cv2.rectangle(win_out, (wx-marker_dim, wy-marker_dim), (wx+marker_dim, wy+marker_dim), (0, 255, 255), 2)
             if k_p == 'start' and number is not None:
@@ -4595,10 +4586,10 @@ class CrackSegmentation:
             return None
 
     def _list_group_photo_paths(self, group_index):
-        """The other photos of a building group (working, output and archive folders), one per file name, sorted."""
+        """The other photos of a building group (IMAGE_FOLDER and 'Images'), one per file name, sorted."""
         exts = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
         current = os.path.basename(self.cfg.CURRENT_IMAGE_PATH or "")
-        folders = (self.cfg.IMAGE_FOLDER, self.cfg.OUTPUT_FOLDER, os.path.join(str(resolve_script_dir()), "already processed images"))
+        folders = (self.cfg.IMAGE_FOLDER, self._images_folder())
         found = {}
         for folder in folders:
             if folder and os.path.isdir(folder):
@@ -5248,7 +5239,7 @@ class CrackSegmentation:
     def _handle_w_import_key(self):
         """[W]: projects fractures from the best matching previous
         session onto the current photo."""
-        print("\n[W-COMMAND] Scanning 'segmentated images' folder...")
+        print(f"\n[W-COMMAND] Scanning the '{JSON_DIR_NAME}' folder...")
         base_img, orig_json = self.find_last_processed_session_asset()
         if base_img and orig_json:
             success = self.warp_and_adapt_json_to_new_image(

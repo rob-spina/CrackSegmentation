@@ -89,7 +89,7 @@ No sample photos are included in this repository (facade photos are typically pr
    python smart_segmentation.py
    ```
 
-3. Trace cracks and detachments, then save with **S**, **Q** or **Enter**. The tool moves on to the next photo.
+3. Trace cracks and detachments, then save with **S** (stays on the photo), **Q** or **Enter** (moves on to the next photo). The JSON goes to `JSON files/`, the masks to `Binary files/`; the photo stays in `Images/`.
 
 The complete list of shortcuts is available in the in-app help menu. The most used ones:
 
@@ -111,13 +111,23 @@ For every saved photo `<name>`:
 
 | File | Content |
 |------|---------|
-| `<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments), with the image embedded as base64 |
-| `<name>-crack_mask.png` | Binary crack mask, single channel, same resolution as the photo (0 = background, 255 = crack) |
-| `<name>-detachment_mask.png` | Binary filled-area mask of the detachments (same format) |
-| `<name>-crack_uncertain_mask.png` | Only the cracks marked uncertain (same band as the crack mask), e.g. as an ignore region in training. Written when `CRACK_UNCERTAIN_EXPORT_MASK` is on and at least one crack is uncertain |
-| `<name>-seg.jpg` | Colored overlay for visual inspection |
+| `JSON files/<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments), with the image embedded as base64 |
+| `Binary files/<name>-crack_mask.png` | Binary crack mask, single channel, same resolution as the photo (0 = background, 255 = crack) |
+| `Binary files/<name>-detachment_mask.png` | Binary filled-area mask of the detachments (same format) |
+| `Binary files/<name>-crack_uncertain_mask.png` | Only the cracks marked uncertain (same band as the crack mask), e.g. as an ignore region in training. Written when `CRACK_UNCERTAIN_EXPORT_MASK` is on and at least one crack is uncertain |
+| `Binary files/<name>-seg.jpg` | Colored overlay for visual inspection |
 
-Mask files are written only when the photo contains at least one active element. Saved photos are archived in `already processed images/`.
+Mask files are written only when the photo contains at least one active element.
+
+Data folders (since 1.5):
+
+| Folder | Content |
+|--------|---------|
+| `Images/` | Every original photo. Photos are never moved: Mode 1 lists the ones without a JSON yet, Mode 2 the ones with a JSON |
+| `Binary files/` | Every exported PNG/overlay (crack, detachment and uncertain masks, `-seg` overlay) |
+| `JSON files/` | Every LabelMe JSON |
+
+Folders from earlier versions (`segmentated images/`, `already processed images/`) are migrated automatically at startup: each file is moved to the matching new folder, nothing is overwritten or deleted, and an old folder is removed only once it is empty.
 
 ## Configuration
 
@@ -171,7 +181,9 @@ python crack_segmentation_evaluator.py --help
 
 ```
 CrackSegmentation/
-├── Images/                            # your input photos — not included, create it locally (see Quick start)
+├── Images/                            # your original photos — not included, create it locally (see Quick start)
+├── Binary files/                      # exported masks and overlays (created on first save)
+├── JSON files/                        # LabelMe annotations (created on first save)
 ├── smart_segmentation.py              # main interactive tool
 ├── config.py                          # tunable constants and shared state
 ├── crack_segmentation_gui.py          # GUI layer (Tkinter window, PDF manual panel)

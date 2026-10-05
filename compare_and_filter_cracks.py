@@ -659,6 +659,7 @@ class CrackComparator:
         json_dir = os.path.dirname(os.path.abspath(lj.path))
         candidates_dirs = [json_dir]
         parent = os.path.dirname(json_dir)
+        candidates_dirs.append(os.path.join(parent, "Images"))
         candidates_dirs.append(os.path.join(parent, "already processed images"))
         candidates_dirs.append(os.path.join(parent, "segmentated images"))
         candidates_dirs.append(os.path.join(json_dir, "..", "already processed images"))
@@ -751,6 +752,16 @@ class CrackComparator:
             print(f"  [OVERLAY WARNING] Source photo '{lj.image_path}' not found "
                   f"(use --images-dir to indicate where to look for it): -seg overlay not regenerated.")
 
+    @staticmethod
+    def output_dir_for_json(json_path):
+        """Where a JSON's masks and overlay go: the sibling 'Binary files' for a JSON in 'JSON files' (v1.5 layout), else next to the JSON."""
+        json_dir = os.path.dirname(os.path.abspath(json_path))
+        if os.path.basename(json_dir) == "JSON files":
+            out_dir = os.path.join(os.path.dirname(json_dir), "Binary files")
+            os.makedirs(out_dir, exist_ok=True)
+            return out_dir
+        return json_dir
+
     def _regenerate_masks_for_one_json(self, lj, new_shapes, width, height, mask_dilation_px, images_dir):
         """Rebuilds the crack mask and -seg overlay for one JSON's
         remaining shapes."""
@@ -758,7 +769,7 @@ class CrackComparator:
         remaining_crack_points = [s["points"] for s in remaining_crack_shapes]
 
         base_name_no_ext = os.path.splitext(os.path.basename(lj.path))[0]
-        mask_dir = os.path.dirname(os.path.abspath(lj.path))
+        mask_dir = self.output_dir_for_json(lj.path)
         crack_mask_path = os.path.join(mask_dir, f"{base_name_no_ext}-crack_mask.png")
 
         img_original, src_image = self._load_source_photo(lj, images_dir)

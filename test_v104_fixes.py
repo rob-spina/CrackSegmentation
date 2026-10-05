@@ -59,9 +59,10 @@ class TestSaveKeyStaysOnImage(unittest.TestCase):
 
             self.assertEqual(shown, [("img_00", 1, 2), ("img_01", 2, 2)])
             self.assertEqual(len(saves), 3, "S, S and Enter must each save")
-            archive = os.path.join(tmpdir, "already processed images")
-            self.assertTrue(any(f.startswith("img_00") and f.endswith(".json") for f in os.listdir(archive)))
-            self.assertTrue(any(f.startswith("img_00") and f.endswith(".png") for f in os.listdir(archive)))
+            json_dir = os.path.join(tmpdir, "JSON files")
+            images_dir = os.path.join(tmpdir, "Images")
+            self.assertTrue(any(f.startswith("img_00") and f.endswith(".json") for f in os.listdir(json_dir)))
+            self.assertTrue(any(f.startswith("img_00") and f.endswith(".png") for f in os.listdir(images_dir)))
             self.assertNotIn("IO ERROR", err.getvalue(), "a repeated save must not fail on already-archived files")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
