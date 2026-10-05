@@ -92,8 +92,8 @@ class TestResolveScriptDirFrozenMode(unittest.TestCase):
              mock.patch.object(Path, "home", return_value=Path(self.tmp_home)):
             cfg = Config()
         self.assertEqual(cfg.SCRIPT_DIR, expected)
-        self.assertEqual(cfg.IMAGE_FOLDER, expected)
-        self.assertEqual(cfg.OUTPUT_FOLDER, os.path.join(str(expected), "segmentated images"))
+        self.assertEqual(cfg.IMAGE_FOLDER, os.path.join(str(expected), "Images"))
+        self.assertEqual(cfg.OUTPUT_FOLDER, os.path.join(str(expected), "JSON files"))
 
 
 class TestSmartSegmentationUsesTheSameHelper(unittest.TestCase):

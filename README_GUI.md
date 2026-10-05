@@ -587,8 +587,11 @@ comando) che ora fa apparire una finestra di errore vera in quel caso.
 **Da sorgente** (`python3 smart_segmentation.py` o `python3 crack_segmentation_gui.py`):
 crea una cartella `Images` nella STESSA cartella dove si trovano
 `config.py`/`smart_segmentation.py`, e mettici dentro le foto (jpg, jpeg,
-png, bmp, tiff). Gli output finiscono in `segmentated images` e `already
-processed images`, sempre lì accanto.
+png, bmp, tiff). Dalla versione 1.5 le foto restano sempre in `Images`; i
+JSON finiscono in `JSON files` e i PNG (maschere binarie e overlay `-seg`)
+in `Binary files`, sempre lì accanto. Le vecchie cartelle `segmentated
+images` e `already processed images` vengono migrate automaticamente
+all'avvio.
 
 **Dalla app pacchettizzata (.app/.exe)**: `~/Documents/CrackSegmentation/Images`
 (creata automaticamente al primo avvio) -- un `.app`/`.exe` pacchettizzato

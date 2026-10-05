@@ -567,11 +567,11 @@ class _ModeChoiceDialog:
 
         self._make_option_button(
             body, "1)  Load NEW images to process",
-            "     from the 'Images' folder", "1",
+            "     photos in 'Images' without a JSON yet", "1",
         )
         self._make_option_button(
             body, "2)  Reload ALREADY SEGMENTED images",
-            "     from 'already processed images', to edit or correct", "2",
+            "     photos with a JSON in 'JSON files', to edit or correct", "2",
         )
 
     def _build_footer(self):
@@ -935,8 +935,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         messagebox.showinfo(
             "Crack Detector",
             "[S] saves and stays on this image; [Enter] saves and moves "
-            "to the next one.\n\nIn Mode 1 the photo is moved to "
-            "'already processed images': to modify it again later, use Mode 2.",
+            "to the next one.\n\nThe JSON goes to 'JSON files' and the masks to "
+            "'Binary files'; the photo stays in 'Images'. To modify it again later, use Mode 2.",
             parent=self._tk_root,
         )
 

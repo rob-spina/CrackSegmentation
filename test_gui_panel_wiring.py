@@ -1282,7 +1282,9 @@ class TestGuiRunEndToEnd(unittest.TestCase):
                 waitkey_calls.append(delay)
                 return -1
 
+            # Since v1.5 the saved photo is immediately available in Mode 2: decline the end-of-queue switch.
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
+                 mock.patch.object(app, "_prompt_queue_exhausted", return_value=False), \
                  mock.patch("cv2.getWindowImageRect", return_value=(0, 0, gm.CANVAS_W, gm.CANVAS_H)), \
                  _MockedHighGui() as hg:
                 # Layer our tracking on top of _MockedHighGui's own imshow/waitKey mocks.
@@ -1297,7 +1299,7 @@ class TestGuiRunEndToEnd(unittest.TestCase):
                               "CRASH REGRESSION: a real GUI session must NEVER call cv2.waitKey() "
                               "at all (see _wait_key's docstring for the confirmed macOS crash mechanism)")
 
-            archive_dir = os.path.join(os.path.dirname(os.path.abspath(gm.__file__)), "already processed images")
+            archive_dir = os.path.join(tmpdir, "JSON files")
             json_files = [f for f in os.listdir(archive_dir) if f.lower().endswith(".json")] \
                 if os.path.isdir(archive_dir) else []
             self.assertTrue(json_files, "the queued [S] should have exported/archived exactly like a real keypress")

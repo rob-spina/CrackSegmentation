@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def resolve_script_dir():
-    """Returns the app's data folder (Images, segmentated images, already processed images, CSV report): next to the script when run from source, or a per-user data folder when packaged/frozen -- normally ~/Documents/CrackSegmentation, falling back to %LOCALAPPDATA%/~/CrackSegmentation or a temp folder if that isn't writable (e.g. a broken OneDrive redirect of Documents).
+    """Returns the app's data folder (Images, Binary files, JSON files, CSV report): next to the script when run from source, or a per-user data folder when packaged/frozen -- normally ~/Documents/CrackSegmentation, falling back to %LOCALAPPDATA%/~/CrackSegmentation or a temp folder if that isn't writable (e.g. a broken OneDrive redirect of Documents).
     """
     if getattr(sys, 'frozen', False):
         candidates = [Path.home() / "Documents" / "CrackSegmentation"]
@@ -35,6 +35,87 @@ def resolve_script_dir():
     return Path(__file__).resolve().parent
 
 
+# Data folders (v1.5): original photos, exported PNGs (masks + overlay) and LabelMe JSONs.
+IMAGES_DIR_NAME = "Images"
+BINARY_DIR_NAME = "Binary files"
+JSON_DIR_NAME = "JSON files"
+# Pre-1.5 folders, migrated automatically by migrate_legacy_folders().
+LEGACY_ARCHIVE_DIR_NAME = "already processed images"
+LEGACY_OUTPUT_DIR_NAME = "segmentated images"
+_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+
+
+def _legacy_file_destination(fname):
+    """Target folder name for a file found in a pre-1.5 folder, or None to leave it where it is."""
+    lower = fname.lower()
+    if lower.endswith('.json') or lower.endswith('.json.bak'):
+        return JSON_DIR_NAME
+    base, ext = os.path.splitext(lower)
+    if ext in _IMAGE_EXTENSIONS and (base.endswith('-seg') or base.endswith('_mask')):
+        return BINARY_DIR_NAME
+    if ext in _IMAGE_EXTENSIONS:
+        return IMAGES_DIR_NAME
+    return None
+
+
+# Which old folder holds the most recent copy of each kind of file: Mode 2 edited the JSONs
+# in the archive, while since v1.0.3 masks and overlays were always rewritten in the output folder.
+_LEGACY_PRIORITY = {
+    JSON_DIR_NAME: (LEGACY_ARCHIVE_DIR_NAME, LEGACY_OUTPUT_DIR_NAME),
+    IMAGES_DIR_NAME: (LEGACY_ARCHIVE_DIR_NAME, LEGACY_OUTPUT_DIR_NAME),
+    BINARY_DIR_NAME: (LEGACY_OUTPUT_DIR_NAME, LEGACY_ARCHIVE_DIR_NAME),
+}
+
+
+def _move_if_free(src, dest_dir):
+    """Moves src into dest_dir unless a file with that name is already there. True if moved."""
+    dest = os.path.join(dest_dir, os.path.basename(src))
+    if os.path.exists(dest):
+        return False
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        os.replace(src, dest)
+        return True
+    except OSError as exc:
+        print(f"[MIGRATION WARNING] Could not move {src}: {exc}")
+        return False
+
+
+def _remove_if_only_junk(folder):
+    """Removes an old folder once nothing but Finder metadata (.DS_Store) is left in it."""
+    try:
+        leftovers = os.listdir(folder)
+        if all(f == '.DS_Store' for f in leftovers):
+            for f in leftovers:
+                os.remove(os.path.join(folder, f))
+            os.rmdir(folder)
+    except OSError:
+        pass
+
+
+def migrate_legacy_folders(base_dir):
+    """Moves files from the pre-1.5 folders into Images / Binary files / JSON files.
+    Never overwrites a file: a name already present at the destination stays in the old folder.
+    For duplicates the most recent copy wins (see _LEGACY_PRIORITY). Returns the number of files moved."""
+    base_dir = str(base_dir)
+    moved = 0
+    for dest_name, legacy_order in _LEGACY_PRIORITY.items():
+        for legacy_name in legacy_order:
+            legacy_dir = os.path.join(base_dir, legacy_name)
+            if not os.path.isdir(legacy_dir):
+                continue
+            for fname in sorted(os.listdir(legacy_dir)):
+                src = os.path.join(legacy_dir, fname)
+                if _legacy_file_destination(fname) == dest_name and os.path.isfile(src):
+                    moved += _move_if_free(src, os.path.join(base_dir, dest_name))
+    for legacy_name in (LEGACY_ARCHIVE_DIR_NAME, LEGACY_OUTPUT_DIR_NAME):
+        _remove_if_only_junk(os.path.join(base_dir, legacy_name))
+    if moved:
+        print(f"[MIGRATION] {moved} file(s) moved from the old folders into "
+              f"'{IMAGES_DIR_NAME}', '{BINARY_DIR_NAME}' and '{JSON_DIR_NAME}'.")
+    return moved
+
+
 class Config:
     """Holds every configuration constant and mutable runtime-state
     attribute the segmentation pipeline needs."""
@@ -42,9 +123,10 @@ class Config:
     def _init_paths(self):
         """Resolves operating directory paths based on the script location (or a per-user data folder when packaged -- see resolve_script_dir())."""
         self.SCRIPT_DIR = resolve_script_dir()
-        self.IMAGE_FOLDER = self.SCRIPT_DIR  # Scans the active folder where the script resides
-        self.folder_seg_img = 'segmentated images'
-        self.OUTPUT_FOLDER = os.path.join(self.IMAGE_FOLDER, self.folder_seg_img)
+        self.IMAGE_FOLDER = os.path.join(str(self.SCRIPT_DIR), IMAGES_DIR_NAME)
+        # Masks and overlay PNGs go to 'Binary files'; JSONs (OUTPUT_FOLDER) to 'JSON files'.
+        self.folder_seg_img = BINARY_DIR_NAME
+        self.OUTPUT_FOLDER = os.path.join(str(self.SCRIPT_DIR), JSON_DIR_NAME)
 
     def _init_session_pointers(self):
         """Global runtime pointers modified dynamically at the beginning

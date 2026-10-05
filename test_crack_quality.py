@@ -129,7 +129,7 @@ class TestExport(unittest.TestCase):
             self.assertEqual(plain["flags"], {"uncertain": True})
             self.assertLess(plain["confidence"], 0.65)
 
-            seg = os.path.join(tmpdir, "segmentated images")
+            seg = os.path.join(tmpdir, "Binary files")
             full = cv2.imread(os.path.join(seg, "wall-crack_mask.png"), cv2.IMREAD_GRAYSCALE)
             unc = cv2.imread(os.path.join(seg, "wall-crack_uncertain_mask.png"), cv2.IMREAD_GRAYSCALE)
             self.assertTrue(full[82, 200] and full[242, 200], "the crack mask still holds every crack")

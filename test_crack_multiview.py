@@ -66,7 +66,7 @@ class _MultiViewScene:
         app._compute_binary_and_skeleton_masks()
         app.cfg.SCRIPT_DIR = self.dir
         app.cfg.IMAGE_FOLDER = self.dir
-        app.cfg.OUTPUT_FOLDER = os.path.join(self.dir, "segmentated images")
+        app.cfg.OUTPUT_FOLDER = os.path.join(self.dir, "JSON files")
         app.cfg.CURRENT_IMAGE_PATH = self.path(current_name)
         app.cfg.saved_cracks = [
             {'start': CRACK[0], 'end': CRACK[-1], 'path': CRACK, 'active': True},
