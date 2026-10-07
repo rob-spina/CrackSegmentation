@@ -265,6 +265,18 @@ class Config:
         # Plausible range for the scale change |det| of the homography's linear part between two shots.
         self.HOMOGRAPHY_MIN_AREA_SCALE = 0.2
         self.HOMOGRAPHY_MAX_AREA_SCALE = 5.0
+        # v1.0.7 perspective pre-warp ([W]/[L]): the target photo is re-seen in memory from the source viewpoint
+        # through the first alignment and matched again, which corrects it (see perspective_match.py).
+        self.WARP_PREWARP_REFINE = True
+        # Area scales the pre-warp accepts (a close-up vs a wide view of the same facade), and the largest
+        # correction it may apply (share of the photo diagonal); a bigger one means the first alignment was wrong.
+        self.WARP_PREWARP_MIN_AREA_SCALE = 0.02
+        self.WARP_PREWARP_MAX_AREA_SCALE = 50.0
+        self.WARP_PREWARP_MAX_CORRECTION = 0.05
+        # A first alignment agreeing on at least this share of the matches is already precise: no pre-warp (saves time).
+        self.WARP_PREWARP_SKIP_ABOVE_RATIO = 0.8
+        # A projected shape with fewer of its points inside the target photo is left out (not squashed onto its border).
+        self.IMPORT_MIN_INSIDE_PHOTO = 0.5
         # SIFT features are taken only around the source cracks (the facade plane), grown by this fraction of the image size.
         self.WARP_SOURCE_MASK_MARGIN = 0.02
 
@@ -401,6 +413,61 @@ class Config:
         # Crack report: active = waiting for / showing a report; idx = saved_cracks index of the reported crack.
         self.crack_report_state = {"active": False, "idx": None}
 
+    def _init_alternative_route_state(self):
+        """v1.0.7 [Alternative route]: other edge routes between the ends of the crack traced last.
+        Button-only action (sidebar, process_keypress() code 18); [$] makes the route on screen the crack's path."""
+        # crack = the crack dict being re-routed; routes[0] = its current path, routes[1:] = the alternatives found.
+        # index = route on screen; direction = +1 next (arrow right) / -1 back (arrow left); exhausted = no more routes.
+        self.alt_route_state = {"active": False, "crack": None, "routes": [], "index": 0, "direction": 1, "exhausted": False}
+        # The crack traced last in this photo (the one the button re-routes); None until a crack is traced.
+        self.last_traced_crack = None
+        # A route longer than this x the current path (+10 px) is not offered.
+        self.ALT_ROUTE_MAX_DETOUR = 2.5
+        # Shares of a route's pixels that must lie on the detected edges, and away from every route already shown.
+        self.ALT_ROUTE_MIN_ON_EDGE = 0.85
+        self.ALT_ROUTE_MIN_NEW = 0.25
+        # Most alternative routes offered for one crack.
+        self.ALT_ROUTE_MAX_ROUTES = 8
+
+    def _init_crack_filter_state(self):
+        """v1.0.7 [Show cracks by number]: shows only the cracks whose numbers were typed (display only).
+        Button-only action (sidebar, process_keypress() code 19)."""
+        # None = every crack shown; else {"numbers": [...], "hidden_keys": path keys of the hidden cracks}.
+        self.crack_filter = None
+        # Display-only blue mask of the cracks shown, rebuilt with the other masks (None with no filter).
+        self.filtered_blue_mask = None
+
+    def _init_building_portion_state(self):
+        """v1.0.7 [Building portion]: a window over the part of the building shared with the other photos of
+        the group; while set, [W]/[L] align on it and import only inside it (sidebar, process_keypress() code 20)."""
+        # rect = (x0, y0, x1, y1) image px or None; drag = None / "new" / "move" while the mouse is pressed.
+        # compatible = orange polygons of the area shared with the rest of the group (None = not searched yet).
+        self.portion_state = {"active": False, "rect": None, "drag": None, "anchor": None,
+                              "rect_at_press": None, "press_window_xy": None, "compatible": None}
+        # Longer side (px) the photos are reduced to when looking for the shared (orange) area.
+        self.COMPATIBLE_AREA_MAX_DIM = 1600
+        # Share of a projected shape's points that must fall inside the window for the shape to be imported.
+        self.IMPORT_PORTION_MIN_INSIDE = 0.5
+
+    def _init_trace_waypoint_state(self):
+        """v1.0.7: Shift+click while tracing a crack adds an intermediate point the route must pass through."""
+        # Intermediate points of the trace in progress, and the route traced so far through them.
+        self.trace_waypoints = []
+        self.trace_partial_path = []
+        # Most intermediate points per crack (3rd and 4th click).
+        self.TRACE_MAX_WAYPOINTS = 2
+        # Guided route through those points (guided_trace.py): search padding and click snap radius (px).
+        self.TRACE_GUIDE_PAD_PX = 60
+        self.TRACE_GUIDE_SNAP_PX = 4
+        # Crack widths (ridge filter sigmas, px) of the thin-dark-line detector, and how much cheaper such lines are.
+        self.TRACE_GUIDE_RIDGE_SIGMAS = (1.0, 1.5, 2.0)
+        self.TRACE_GUIDE_RIDGE_WEIGHT = 20.0
+        # How far a leg may stray from the line joining its two points: max(MIN_PX, FRAC x leg length).
+        self.TRACE_GUIDE_CORRIDOR_MIN_PX = 20
+        self.TRACE_GUIDE_CORRIDOR_FRAC = 0.08
+        # Extra cost factor for running back along the previous leg (what made the route turn back at a point).
+        self.TRACE_GUIDE_BACKTRACK_FACTOR = 20.0
+
     def _init_validation_settings(self):
         """v1.0.6 [Validation]: which segmented photos are moved to 'Suitable for training'.
         A photo qualifies when it has at least one crack with quality scores and meets every enabled rule below
@@ -447,5 +514,9 @@ class Config:
         self._init_calibration_and_misc()
         self._init_visual_masks()
         self._init_inspection_tools_state()
+        self._init_alternative_route_state()
+        self._init_crack_filter_state()
+        self._init_building_portion_state()
+        self._init_trace_waypoint_state()
         self._init_validation_settings()
         self._init_queue_and_cache()

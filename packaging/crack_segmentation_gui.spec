@@ -62,6 +62,10 @@ a = Analysis(
         # ModuleNotFoundError for anything under skimage.*, add the
         # missing dotted name to this list and rebuild.
         "skimage.morphology",
+        "skimage.graph",          # v1.0.7 guided tracing (route_through_array)
+        "skimage.graph._mcp",
+        "skimage.graph.mcp",
+        "skimage.graph.heap",
         "skimage.morphology._skeletonize",
         "skimage.filters",
         "skimage.filters.rank",
@@ -138,7 +142,7 @@ if sys.platform == "darwin":
         bundle_identifier="local.crackseg.gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "1.0.6",
+            "CFBundleShortVersionString": "1.0.7",
             "NSHumanReadableCopyright": "Internal tool",
         },
     )

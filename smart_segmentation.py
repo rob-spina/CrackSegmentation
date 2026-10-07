@@ -21,10 +21,17 @@ from skimage.morphology import skeletonize
 from config import (Config, resolve_script_dir, migrate_legacy_folders,
                     IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME)
 from inspection_tools import InspectionToolsMixin
+from route_options import AlternativeRoutesMixin, ALT_ROUTE_CODE
+from crack_filter import CrackFilterMixin, CRACK_FILTER_CODE
+from building_portion import BuildingPortionMixin, BUILDING_PORTION_CODE
+from guided_trace import GuidedTraceMixin
+from perspective_match import PerspectiveMatchMixin
+from compatible_area import CompatibleAreaMixin
 from training_validation import TrainingValidationMixin
 
 
-class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
+class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
+                        GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -929,6 +936,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             self.cfg.green_visual_mask[:, :] = 0
             self._stamp_points_on_mask(self.cfg.blue_visual_mask, self.cfg.saved_cracks)
             self._stamp_points_on_mask(self.cfg.green_visual_mask, self.cfg.saved_detachments)
+            self._refresh_filtered_crack_mask()
         except Exception as e:
             print(f"[RUNTIME EXCEPTION] Overlay mask refresh anomaly: {e}", file=sys.stderr)
 
@@ -1508,12 +1516,13 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             mask = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
         return mask
 
-    def _find_good_sift_matches(self, img1, img2, src_mask=None):
-        """SIFT-detects and FLANN-matches features (source features only inside src_mask, if given),
-        keeping only matches passing the Lowe ratio test. None if too little detail."""
+    def _find_good_sift_matches(self, img1, img2, src_mask=None, dst_mask=None, src_features=None):
+        """SIFT-detects and FLANN-matches features (source features only inside src_mask, target features
+        only inside dst_mask, if given), keeping only matches passing the Lowe ratio test. None if too little detail.
+        src_features = (keypoints, descriptors) of img1 already detected, to skip detecting them again."""
         sift = cv2.SIFT_create(nfeatures=5000, contrastThreshold=0.015, edgeThreshold=12)
-        kp1, des1 = sift.detectAndCompute(img1, src_mask)
-        kp2, des2 = sift.detectAndCompute(img2, None)
+        kp1, des1 = src_features if src_features is not None else sift.detectAndCompute(img1, src_mask)
+        kp2, des2 = sift.detectAndCompute(img2, dst_mask)
         if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
             return None
         return kp1, kp2, self._lowe_filtered_matches(des1, des2)
@@ -1592,9 +1601,9 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
                 new_points.append([clamped_x, clamped_y])
         return new_points
 
-    def _is_crack_span_implausible(self, old_points, new_points, is_crack_shape, min_ratio, max_ratio):
-        """Flags a crack whose warped length no longer plausibly
-        matches its original -- a sign of a locally bad homography."""
+    def _is_crack_span_implausible(self, old_points, new_points, is_crack_shape, min_ratio, max_ratio, scale=1.0):
+        """Flags a crack whose warped length no longer plausibly matches its original -- a sign of a locally bad
+        homography. scale = how much the alignment itself enlarges lengths there (v1.0.7: photos at other distances)."""
         if not (is_crack_shape and len(old_points) >= 2 and len(new_points) >= 2):
             return False
         old_span = ((old_points[-1][0] - old_points[0][0]) ** 2 + (old_points[-1][1] - old_points[0][1]) ** 2) ** 0.5
@@ -1603,16 +1612,22 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             return False
         if new_span <= 1e-6:
             return True
-        span_ratio = new_span / old_span
+        span_ratio = new_span / (old_span * max(scale, 1e-6))
         return not (min_ratio <= span_ratio <= max_ratio)
 
     def _project_one_shape(self, shape, H_matrix, w2, h2, min_ratio, max_ratio):
         """Warps one shape, checks crack-span plausibility, and (if
         plausible) finalizes it. Returns (shape_or_None, was_rejected)."""
         old_points = shape.get("points", [])
+        if old_points and self._fraction_inside(old_points, H_matrix, w2, h2) < self.cfg.IMPORT_MIN_INSIDE_PHOTO:
+            return None, False  # v1.0.7: (mostly) outside the target photo's view -- not clamped onto its border
         is_crack_shape = self._is_crack_shape_for_warp(shape)
+        if is_crack_shape and len(old_points) >= 2:
+            run = self._longest_inside_run(old_points, H_matrix, w2, h2)  # v1.0.7: cut where the crack leaves the view
+            old_points = old_points[run[0]:run[1] + 1] if run else []
         new_points = self._warp_shape_points(old_points, H_matrix, w2, h2)
-        implausible = self._is_crack_span_implausible(old_points, new_points, is_crack_shape, min_ratio, max_ratio)
+        scale = self._local_linear_scale(H_matrix, np.mean(np.float32(old_points), axis=0)) if len(old_points) >= 2 else 1.0
+        implausible = self._is_crack_span_implausible(old_points, new_points, is_crack_shape, min_ratio, max_ratio, scale)
         if len(new_points) >= 2 and not implausible:
             shape["points"] = new_points
             if is_crack_shape and len(old_points) >= 2:
@@ -1654,7 +1669,8 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         """Shows the WARP SYNC banner with the match quality; any implausible-crack rejections get their own warning."""
         print(f"[SUCCESS] Sequential alignment completed for: {os.path.basename(output_json_path)} "
               f"({num_inliers}/{n_good_matches} matches)")
-        self.cfg.warp_banner_message = f"WARP SYNC: aligned ({num_inliers}/{n_good_matches} matches)"
+        portion = ", building portion" if self.cfg.portion_state["rect"] is not None else ""
+        self.cfg.warp_banner_message = f"WARP SYNC: aligned ({num_inliers}/{n_good_matches} matches{portion})"
         self.cfg.warp_jitter_triggered = True
         if n_rejected_implausible > 0:
             crack_word = "cracks" if n_rejected_implausible > 1 else "crack"
@@ -1671,7 +1687,10 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         """SIFT + homography from the source photo (around its shapes) to the target photo.
         Returns (H_matrix, num_inliers, n_good_matches), or None after signaling why it failed."""
         src_mask = self._build_warp_source_mask(img1.shape, source_shapes)
-        sift_result = self._find_good_sift_matches(img1, img2, src_mask)
+        src_features = self._detect_warp_sift(img1, src_mask)
+        # v1.0.7 Building portion: target features only inside the window, when one is set.
+        sift_result = self._find_good_sift_matches(img1, img2, src_mask, self._portion_target_mask(img2.shape),
+                                                   src_features=src_features)
         if sift_result is None:
             self._signal_import_warning("IMPORT FAILED: no recognizable detail in the images for alignment.")
             return None
@@ -1683,7 +1702,13 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         if homography_result is None:
             self._signal_import_warning("IMPORT FAILED: view too different from the previous photo, alignment impossible.")
             return None
-        H_matrix, num_inliers, _, low_confidence_match = homography_result
+        H_matrix, num_inliers, inlier_ratio, low_confidence_match = homography_result
+        # v1.0.7: unless the first alignment is already clearly good, the target is re-seen from the source
+        # viewpoint (in memory only) and matched again.
+        if low_confidence_match or inlier_ratio < self.cfg.WARP_PREWARP_SKIP_ABOVE_RATIO:
+            refined = self._refine_alignment_by_prewarp(img1, img2, src_mask, H_matrix, src_features)
+            if refined is not None:
+                return refined
         if low_confidence_match:
             self._signal_import_warning(
                 f"IMPORT NOT PERFORMED: unreliable alignment ({num_inliers}/{len(good_matches)} matches) -- "
@@ -1711,6 +1736,10 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             H_matrix, num_inliers, n_good_matches = alignment
 
             projected_shapes, n_rejected_implausible = self._project_all_shapes(json_payload.get("shapes", []), H_matrix, w2, h2)
+            projected_shapes, n_outside = self._keep_shapes_in_portion(projected_shapes, w2, h2)
+            if self.cfg.portion_state["rect"] is not None:
+                print(f"[BUILDING PORTION] Import limited to the window: {len(projected_shapes)} shape(s) kept, "
+                      f"{n_outside} outside it left out.")
             json_payload["shapes"] = projected_shapes + self._collect_current_session_shapes()
             with open(output_json_path, 'w', encoding='utf-8') as f:
                 json.dump(json_payload, f, ensure_ascii=False, indent=2)
@@ -2262,6 +2291,9 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         self._reset_zoom_state()
         self._reset_session_editing_state()
         self._reset_inspection_tools_for_new_image()
+        self._reset_alt_routes_for_new_image()
+        self._reset_crack_filter()
+        self._reset_building_portion()
         self._compute_binary_and_skeleton_masks()
         self._build_display_background()
         self._load_or_initialize_shapes_for_mode()
@@ -2595,7 +2627,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             if mode == 'cut':
                 print(" [MODE] CUT tool: click the START and then the END of the crack part to remove. [1] to exit.")
             elif mode == 'link':
-                print(" [MODE] LINK tool: click the END of one crack, then the START of the other (or vice versa) "
+                print(" [MODE] LINK tool: click one crack, then the other (at an end or anywhere on the blue line) "
                       "to merge them into a single crack. [3] to exit.")
             else:
                 print(" [MODE] JOIN tool: click two points -- on the same crack to re-route the part between them, "
@@ -2611,7 +2643,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         """(crack_idx, point_idx) of the nearest point on an ACTIVE crack within tolerance, else (None, None)."""
         best = (None, None, self._cut_join_pick_tolerance())
         for idx, f in enumerate(self.cfg.saved_cracks):
-            if not f.get('active', True) or not f.get('path'):
+            if not f.get('active', True) or not f.get('path') or not self._crack_shown(f):
                 continue
             pts = np.asarray(f['path'], dtype=np.float64)
             d = np.hypot(pts[:, 0] - real_x, pts[:, 1] - real_y)
@@ -2626,13 +2658,20 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         best = (None, None, max(3.0, self.LINK_PICK_TOLERANCE_WIN_PX * view_w / 1200.0))
         for idx, f in enumerate(self.cfg.saved_cracks):
             path = f.get('path')
-            if not f.get('active', True) or not path or len(path) < 2:
+            if not f.get('active', True) or not path or len(path) < 2 or not self._crack_shown(f):
                 continue
             for p_idx in (0, len(path) - 1):
                 d = float(np.hypot(path[p_idx][0] - real_x, path[p_idx][1] - real_y))
                 if d <= best[2]:
                     best = (idx, p_idx, d)
         return best[0], best[1]
+
+    def _pick_link_point(self, real_x, real_y):
+        """[3] LINK pick: a crack END within the forgiving end tolerance, else any point ON a crack line."""
+        crack_idx, point_idx = self._pick_crack_endpoint(real_x, real_y)
+        if crack_idx is None:
+            crack_idx, point_idx = self._pick_active_crack_point(real_x, real_y)
+        return crack_idx, point_idx
 
     def _apply_crack_tool(self, mode, first, second):
         if mode == 'cut':
@@ -2649,12 +2688,10 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         state = self.cfg.crack_cut_join_state
         mode = state["mode"]
         tool, key = mode.upper(), self.CRACK_TOOL_KEYS[mode]
-        if mode == 'link':
-            crack_idx, point_idx = self._pick_crack_endpoint(real_x, real_y)
-        else:
-            crack_idx, point_idx = self._pick_active_crack_point(real_x, real_y)
+        crack_idx, point_idx = self._pick_link_point(real_x, real_y) if mode == 'link' \
+            else self._pick_active_crack_point(real_x, real_y)
         if crack_idx is None:
-            hint = "click near the END or START of a crack." if mode == 'link' else "click ON a blue crack line."
+            hint = "click near an END of a crack or ON its blue line." if mode == 'link' else "click ON a blue crack line."
             print(f" [{tool}] No crack near the click: {hint}")
             return
         if state["first"] is None:
@@ -2755,21 +2792,38 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             return route, 'edge'
         return [], 'straight'
 
+    def _link_side(self, crack, p_idx, ends_at_point):
+        """One side of a LINK: the crack oriented to END (or START) at p_idx. Clicked at an end, the whole crack;
+        clicked inside, its longer part, the shorter one returned as a separate spur crack (or None)."""
+        path, segs = list(crack['path']), crack.get('width_segments')
+        n, spur, dropped = len(path), None, 0
+        if p_idx in (0, n - 1):
+            reverse = (p_idx == 0) == ends_at_point
+        else:
+            keep_head = p_idx >= (n - 1) / 2.0
+            (m0, m1), (s0, s1) = ((0, p_idx), (p_idx, n - 1)) if keep_head else ((p_idx, n - 1), (0, p_idx))
+            segs, _ = self._remap_width_segments(segs, m0, m1)
+            spur_segs, _ = self._remap_width_segments(crack.get('width_segments'), s0, s1)
+            if s1 - s0 + 1 >= self.CUT_JOIN_MIN_PIECE_POINTS:
+                spur = self._crack_with_path(crack, path[s0:s1 + 1], spur_segs)
+            n_valid = len(self._remap_width_segments(crack.get('width_segments'), 0, n - 1)[0])
+            dropped = n_valid - len(segs) - (len(spur_segs) if spur is not None else 0)
+            path, reverse = path[m0:m1 + 1], keep_head != ends_at_point
+        if reverse:
+            path, segs = path[::-1], self._reverse_width_segments(segs, len(path))
+        return path, segs, spur, dropped
+
     def _link_cracks(self, first, second):
-        """[3] LINK: merges two DIFFERENT cracks into one, joining the two clicked ends
-        (end of one -> start of the other, or vice versa). Both cracks are kept whole."""
+        """[3] LINK: merges two DIFFERENT cracks into one, joining the two clicked points (crack ends or
+        points on the lines). At an end a crack is kept whole; inside, the shorter leftover stays a separate crack."""
         (ia, pa), (ib, pb) = first, second
         if ia == ib:
-            print(" [LINK] Both ends belong to the SAME crack: click the end of ANOTHER crack.")
+            print(" [LINK] Both points belong to the SAME crack: click ANOTHER crack.")
             return False
         crack_a, crack_b = self.cfg.saved_cracks[ia], self.cfg.saved_cracks[ib]
-        path_a, path_b = list(crack_a['path']), list(crack_b['path'])
-        # Orient A to END at its clicked end and B to START at its clicked end.
-        segs_a, segs_b = crack_a.get('width_segments'), crack_b.get('width_segments')
-        if pa == 0:
-            path_a, segs_a = path_a[::-1], self._reverse_width_segments(segs_a, len(path_a))
-        if pb != 0:
-            path_b, segs_b = path_b[::-1], self._reverse_width_segments(segs_b, len(path_b))
+        # Orient A to END at its clicked point and B to START at its clicked point.
+        path_a, segs_a, spur_a, drop_a = self._link_side(crack_a, pa, ends_at_point=True)
+        path_b, segs_b, spur_b, drop_b = self._link_side(crack_b, pb, ends_at_point=False)
         p, q = (int(path_a[-1][0]), int(path_a[-1][1])), (int(path_b[0][0]), int(path_b[0][1]))
         bridge, method = self._link_bridge(p, q)
         before = self._snapshot_crack_edit_state()
@@ -2780,12 +2834,17 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         links = list(crack_a.get('links') or []) + list(crack_b.get('links') or [])
         links.append({"from": [p[0], p[1]], "to": [q[0], q[1]], "method": method})
         new_crack['links'] = self._links_on_path(links, merged)
+        spurs = [c for c in (spur_a, spur_b) if c is not None]
         self.cfg.saved_cracks[ia] = new_crack
         del self.cfg.saved_cracks[ib]
+        at = ia - (1 if ib < ia else 0) + 1
+        self.cfg.saved_cracks[at:at] = spurs
         self._commit_crack_edit(before)
         gap = float(np.hypot(q[0] - p[0], q[1] - p[1]))
         print(f" [LINK] Cracks #{ia + 1} and #{ib + 1} merged into one ({len(merged)} points, "
-              f"{gap:.0f} px gap bridged {'along the edge' if method == 'edge' else 'with a straight segment'}).")
+              f"{gap:.0f} px gap bridged {'along the edge' if method == 'edge' else 'with a straight segment'})"
+              + (f"; {len(spurs)} leftover piece(s) beyond the junction kept as separate crack(s)" if spurs else "")
+              + (f"; {drop_a + drop_b} width tract(s) crossing the junction removed" if drop_a + drop_b else "") + ".")
         return True
 
     def _save_annotations_now(self):
@@ -2958,8 +3017,8 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             msg = "CUT (1): click the START of the part to remove" if state["first"] is None \
                 else "CUT (1): click the END of the part to remove"
         elif state["mode"] == 'link':
-            msg = "LINK (3): click the end of the first crack" if state["first"] is None \
-                else "LINK (3): click the start of the second crack"
+            msg = "LINK (3): click the first crack (end or line)" if state["first"] is None \
+                else "LINK (3): click the second crack (end or line)"
         else:
             msg = "JOIN (2): click the first point" if state["first"] is None \
                 else "JOIN (2): click the second point (same crack = new route)"
@@ -3109,8 +3168,20 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         """[U]: while a crack's start point is clicked but not completed, cancels that in-progress trace. Returns True if this applied."""
         if not (self.cfg.current_tool == 'crack' and self.cfg.temp_start is not None):
             return False
+        if self.cfg.trace_waypoints:  # v1.0.7: drops the last Shift+clicked point first
+            self._drop_last_trace_waypoint()
+            return True
         self.cfg.temp_start, self.cfg.temp_path = None, []
         return True
+
+    def _drop_last_trace_waypoint(self):
+        """Removes the last intermediate point and re-traces the route through the remaining ones."""
+        cfg = self.cfg
+        cfg.trace_waypoints.pop()
+        partial = self._guided_route([cfg.temp_start] + cfg.trace_waypoints) if cfg.trace_waypoints else []
+        cfg.trace_partial_path = partial
+        cfg.temp_path = list(partial) if partial else [cfg.temp_start]
+        print(f" [TRACE] Intermediate point removed ({len(cfg.trace_waypoints)} left).")
 
     def _undo_crack_extension(self, backup):
         """Reverts a single crack's path/start/end to the given backup, shared by [T]/[V] undo (both modify an existing crack in place)."""
@@ -3271,6 +3342,8 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
             self._toggle_cut_join_mode('join')
         elif key_clean == ord('3'):
             self._toggle_cut_join_mode('link')
+        elif key_clean == ord('5'):
+            self._building_portion_button()   # v1.0.7, also the sidebar button (code 20)
         else:
             return False
         return True
@@ -3794,7 +3867,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         best_crack_idx, best_pt_idx = None, None
         for idx, f in enumerate(self.cfg.saved_cracks):
             path = f.get('path')
-            if not path:
+            if not path or not self._crack_shown(f):
                 continue
             for p_idx, pt in enumerate(path):
                 dist = np.sqrt((real_x - pt[0]) ** 2 + (real_y - pt[1]) ** 2)
@@ -3888,7 +3961,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         within tolerance."""
         best_dist = float('inf')
         for idx, f in enumerate(self.cfg.saved_cracks):
-            if 'path' in f:
+            if 'path' in f and self._crack_shown(f):
                 for pt in f['path']:
                     dist = np.sqrt((real_x - pt[0])**2 + (real_y - pt[1])**2)
                     if dist <= 22 and dist < best_dist:
@@ -4002,6 +4075,8 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         tolerance. Returns True if one was deleted."""
         tolleranza_click = 22
         for idx, f in enumerate(self.cfg.saved_cracks):
+            if not self._crack_shown(f):
+                continue
             for k_p in ['start', 'end']:
                 if k_p in f:
                     kp_x, kp_y = f[k_p]
@@ -4018,15 +4093,42 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         self.cfg.redo_history.clear()
         self.cfg.temp_start = (real_x, real_y)
         self.cfg.temp_path = [self.cfg.temp_start]
+        self.cfg.trace_waypoints, self.cfg.trace_partial_path = [], []
         if self.cfg.hover_extension_index is not None:
             self.cfg.action_history.append(('crack_extension_start', self.cfg.hover_extension_index, self.cfg.hover_extension_mode))
         else:
             self.cfg.action_history.append('crack_start')
 
+    def _add_trace_waypoint(self, point):
+        """Shift+click while tracing (v1.0.7): an intermediate point the crack must pass THROUGH, so the route
+        cannot follow a shadow edge instead. Up to TRACE_MAX_WAYPOINTS; the route so far is shown right away."""
+        cfg = self.cfg
+        if len(cfg.trace_waypoints) >= cfg.TRACE_MAX_WAYPOINTS:
+            print(f" [TRACE] At most {cfg.TRACE_MAX_WAYPOINTS} intermediate points: click (without Shift) on the END.")
+            return
+        partial = self._guided_route([cfg.temp_start] + cfg.trace_waypoints + [point])
+        if not partial:
+            print(" [TRACE] No route to that point: Shift+click closer to the crack.")
+            return
+        cfg.trace_waypoints.append(point)
+        cfg.trace_partial_path = partial
+        cfg.temp_path = list(partial)
+        print(f" [TRACE] Intermediate point {len(cfg.trace_waypoints)} set. "
+              "Shift+click another one, or click the END of the crack. [U] removes it.")
+        self.refresh_zoom_viewport()
+
+    def _trace_through_waypoints(self, end_point):
+        """Route from the start to end_point ([] if it fails). With no intermediate point it is exactly the
+        plain A* start-to-end trace; through Shift+clicked points it is the guided route (guided_trace.py)."""
+        cfg = self.cfg
+        if not cfg.trace_waypoints:
+            return self.a_star_pathfinding(cfg.temp_start, end_point, 'crack')
+        return self._guided_route([cfg.temp_start] + cfg.trace_waypoints + [end_point])
+
     def _complete_new_crack_trace(self, end_point):
-        """Second click of a new crack trace: traces via A* and, if
-        successful, saves the new crack."""
-        computed_path = self.a_star_pathfinding(self.cfg.temp_start, end_point, 'crack')
+        """Second click of a new crack trace: traces via A* (through any Shift+clicked
+        intermediate points) and, if successful, saves the new crack."""
+        computed_path = self._trace_through_waypoints(end_point)
         if computed_path:
             new_crack = {
                 'start': self.cfg.temp_start,
@@ -4036,34 +4138,39 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
                 'session_id': str(time.time())
             }
             self.cfg.saved_cracks.append(new_crack)
+            self.cfg.last_traced_crack = new_crack  # the crack [Alternative route] works on
             self.cfg.action_history.append('crack')
             self.cfg.temp_start = None
             self.cfg.temp_path.clear()
+            self.cfg.trace_waypoints, self.cfg.trace_partial_path = [], []
         self.recalculate_masks()
         self.refresh_zoom_viewport()
 
-    def _crack_tool_click(self, x, y):
-        """Dispatches a crack-tool click: delete-by-proximity (only
-        with no trace in progress), else start/complete a trace."""
+    def _crack_tool_click(self, x, y, flags=0):
+        """Dispatches a crack-tool click: delete-by-proximity (only with no trace in progress),
+        else start/complete a trace; Shift+click while tracing adds an intermediate point."""
         real_x, real_y = self.transform_window_to_real_coords(x, y)
         if self.cfg.temp_start is None and self._delete_crack_near(real_x, real_y):
             return
         if self.cfg.temp_start is None:
             self._start_new_crack_trace(real_x, real_y)
+        elif flags & cv2.EVENT_FLAG_SHIFTKEY:
+            self._add_trace_waypoint((real_x, real_y))
         else:
             self._complete_new_crack_trace((real_x, real_y))
 
     def _crack_tool_preview(self, x, y):
-        """Live-updates the in-progress trace's preview line."""
+        """Live-updates the in-progress trace's preview line (after the route traced so far, if any)."""
         if self.cfg.temp_start is not None:
             real_x, real_y = self.transform_window_to_real_coords(x, y)
-            self.cfg.temp_path = [self.cfg.temp_start, (real_x, real_y)]
+            head = self.cfg.trace_partial_path if self.cfg.trace_waypoints else [self.cfg.temp_start]
+            self.cfg.temp_path = list(head) + [(real_x, real_y)]
             self.refresh_zoom_viewport()
 
-    def _handle_crack_tool_mouse(self, event, x, y):
+    def _handle_crack_tool_mouse(self, event, x, y, flags=0):
         """Handles the crack tool's clicks/drag preview."""
         if event == cv2.EVENT_LBUTTONDOWN:
-            self._crack_tool_click(x, y)
+            self._crack_tool_click(x, y, flags)
         elif event == cv2.EVENT_MOUSEMOVE:
             self._crack_tool_preview(x, y)
 
@@ -4143,11 +4250,19 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
                 self._handle_calibration_mouse(event, x, y)
                 return
 
+            if self.cfg.portion_state["active"]:
+                self._handle_building_portion_mouse(event, x, y)
+                return
+
             if self.cfg.zoom_window_state["active"]:
                 # Drags zoom; plain clicks and hover moves go on to the tool below (tracing while zoomed).
                 event = self._handle_zoom_window_mouse(event, x, y)
                 if event is None:
                     return
+
+            if self.cfg.alt_route_state["active"]:
+                self._handle_alt_route_mouse(event, x, y)
+                return
 
             if self.cfg.crack_report_state["active"]:
                 self._handle_crack_report_mouse(event, x, y)
@@ -4170,7 +4285,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
                 return
 
             if self.cfg.current_tool == 'crack':
-                self._handle_crack_tool_mouse(event, x, y)
+                self._handle_crack_tool_mouse(event, x, y, flags)
             elif self.cfg.current_tool == 'detachment':
                 self._handle_detachment_tool_mouse(event, x, y)
 
@@ -4248,7 +4363,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         """Paints every width-edited tract's real fill shape, for every
         saved crack -- not just the one currently focused."""
         for _wf in self.cfg.saved_cracks:
-            if not _wf.get('active', True):
+            if not _wf.get('active', True) or not self._crack_shown(_wf):
                 continue
             _wf_path = _wf.get('path')
             if not _wf_path:
@@ -4308,7 +4423,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         are intentionally not gated by this same flag."""
         if not self.cfg.show_crack_overlay:
             return
-        mb = cv2.dilate(self._crop_to_region(self.cfg.blue_visual_mask, region), k)
+        mb = cv2.dilate(self._crop_to_region(self._display_blue_mask(), region), k)
         scene[mb == 255] = (255, 0, 0)
         self._paint_width_segment_fills(scene, h_actual, w_active, region)
 
@@ -4580,7 +4695,8 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
     def _draw_crack_markers(self, win_out, marker_dim):
         """Draws every saved crack's start/end markers, numbered from 1 like the Crack Reliability panel."""
         for number, f in enumerate(self.cfg.saved_cracks, start=1):
-            self._draw_one_crack_marker(win_out, f, marker_dim, number)
+            if self._crack_shown(f):
+                self._draw_one_crack_marker(win_out, f, marker_dim, number)
 
     def _draw_temp_crack_start_marker(self, win_out, marker_dim):
         """Draws the marker at an in-progress crack's start point,
@@ -4591,6 +4707,11 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         wx, wy = self.transform_real_to_window_coords(int(ts_x), int(ts_y))
         if 0 <= wx < 1200 and 0 <= wy < 900:
             cv2.rectangle(win_out, (wx-marker_dim, wy-marker_dim), (wx+marker_dim, wy+marker_dim), (0, 165, 255), 2)
+        for n, wp in enumerate(self.cfg.trace_waypoints, start=1):  # v1.0.7 Shift+clicked points
+            wx, wy = self.transform_real_to_window_coords(int(wp[0]), int(wp[1]))
+            if 0 <= wx < 1200 and 0 <= wy < 900:
+                cv2.circle(win_out, (wx, wy), max(4, marker_dim // 2), (0, 165, 255), 2, cv2.LINE_AA)
+                cv2.putText(win_out, str(n), (wx + 8, wy - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1, cv2.LINE_AA)
 
     def _draw_hover_snap_indicator(self, win_out):
         """Draws the pulsing crosshair over a crack's end while it's the
@@ -4966,7 +5087,7 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         uncertain cracks get " [?]"."""
         entries = []
         for i, f in enumerate(self.cfg.saved_cracks, start=1):
-            if not f.get('active', True):
+            if not f.get('active', True) or not self._crack_shown(f):
                 continue
             pct, conf, uncertain = self._crack_quality(f.get('path'))
             if pct is None and conf is None:
@@ -5308,6 +5429,9 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
         self._draw_tool_markers(win_out, marker_dim)
         self._draw_cut_join_indicator(win_out)
         self._draw_inspection_tools(win_out)
+        self._draw_alt_route(win_out)
+        self._draw_crack_filter_label(win_out)
+        self._draw_building_portion(win_out)
 
         hm = self._compute_hud_font_metrics()
         status = f"FILE: {current_idx}/{total_count} ({os.path.basename(self.cfg.CURRENT_IMAGE_PATH)}) | Tool: {self.cfg.current_tool.upper()} | Zoom: {self.cfg.zoom_factor:.1f}x"
@@ -5558,6 +5682,18 @@ class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
 
         elif key_clean == 17:
             return self._handle_validation_key()
+
+        elif key_clean == ALT_ROUTE_CODE:
+            self._alt_route_button()
+
+        elif key_clean == CRACK_FILTER_CODE:
+            self._crack_filter_button()
+
+        elif key_clean == BUILDING_PORTION_CODE:
+            self._building_portion_button()
+
+        elif key_clean == ord('$'):
+            self._apply_alt_route()
 
         else:
             self.handle_keyboard(key_raw)

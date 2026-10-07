@@ -266,11 +266,17 @@ ttk = types.SimpleNamespace(Frame=Frame, LabelFrame=LabelFrame, Button=TtkButton
 class _simpledialog:
     last_call = None
     next_return = 42.0
+    next_string = ""
 
     @staticmethod
     def askfloat(title, prompt, parent=None, **kw):
         _simpledialog.last_call = (title, prompt)
         return _simpledialog.next_return
+
+    @staticmethod
+    def askstring(title, prompt, parent=None, **kw):
+        _simpledialog.last_call = (title, prompt)
+        return _simpledialog.next_string
 
 
 simpledialog = _simpledialog

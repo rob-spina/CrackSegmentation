@@ -575,11 +575,11 @@ sudo apt-get install -f</div>
 
 <table class="shortcuts">
 <tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
-<tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Activates the mode for assisted crack tracing.</td></tr>
+<tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Click start and end; <span class="key">Shift</span>+click adds up to 2 points to pass through.</td></tr>
 <tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Activates the mode for drawing polygons for plaster/material detachment areas.</td></tr>
 <tr><td>Save / Save &amp; Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Exports JSON and masks; <span class="key">S</span> stays on the photo, <span class="key">Enter</span> moves to the next.</td></tr>
-<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Projects the cracks of a previous photo of the same building (SIFT + homography, matched around the source cracks); an unreliable match imports nothing.</td></tr>
-<tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Two clicks. Cut removes the part between them; Join re-routes it; Link merges two cracks (end of one, start of the other) and saves JSON and mask at once.</td></tr>
+<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Projects the cracks of a previous photo of the same building (SIFT + homography, matched around the source cracks); an unreliable match imports nothing. <i>Building portion</i> limits it.</td></tr>
+<tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Two clicks. Cut removes the part between them; Join re-routes it; Link merges two cracks (end or line) and saves JSON and mask; <span class="key">$</span> applies an <i>Alternative route</i>.</td></tr>
 
 <tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Re-traces all imported cracks (A*) onto the real edges of the new photo.</td></tr>
 <tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Allows manual, elastic repositioning of an imported crack that hasn&rsquo;t aligned correctly.</td></tr>
@@ -594,7 +594,7 @@ sudo apt-get install -f</div>
 <h3 class="sub">Visual Mask Management</h3>
 <p>While tracing cracks and defects, transparency/overlay visibility can be managed to avoid obscuring the view:</p>
 <ul class="tight">
-  <li><span class="key">N</span> &nbsp;Shows or hides the blue crack-thickness band.</li>
+  <li><span class="key">N</span> &nbsp;Shows or hides the blue band; <i>Show cracks by number</i> (e.g. 3;7) shows only those.</li>
   <li><span class="key">Space</span> &nbsp;Hides the markers (each start marker shows the crack number); <span class="key">.</span> hides messages (auto after 15&nbsp;s).</li>
   <li><span class="key">J</span> &nbsp;Opens/closes the status info panel overlay, with each crack&rsquo;s reliability score (texture along the line) and confidence (0&ndash;1, ridge strength against the wall); <span class="code">[?]</span> marks an uncertain crack.</li>
   <li><span class="key">?</span> &nbsp;Shows the on-screen user manual.</li>

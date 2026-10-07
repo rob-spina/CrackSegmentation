@@ -95,6 +95,7 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 
 | Key | Action |
 |-----|--------|
+| Click, click | Crack tool (`C`): click the start and the end of a crack, the route is traced along the edge. **Shift+click** in between (since 1.0.7) adds up to two points the route must pass through, when it would otherwise follow a shadow line: through them the route follows the thin dark line of the crack on the photo (`TRACE_GUIDE_*` in `config.py`); `U` removes the last one |
 | `S` / `Q` / `Enter` | Save the current photo and move to the next one |
 | `W` / `L` | Import cracks from a previously saved photo of the same building group |
 | `T` | Elastic translation with automatic snap to the real fracture edge |
@@ -104,8 +105,17 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 | `A` | Widen the training mask on a single crack stretch; refine with `+` / `-` and `[` `]` `{` `}` |
 | `K` | Enter the image scale manually |
 | `1` / `2` | Cut a crack part / Join (re-route or reconnect) — two clicks |
-| `3` | Link: click the end of one crack and the start of another to merge them into one; the JSON and binary masks are updated right away |
+| `3` | Link: click one crack and then another, at an end or anywhere on the blue line, to merge them into one; clicked inside a crack, its shorter leftover stays a separate crack. The JSON and binary masks are updated right away |
+| `$` | Use the route shown by the **Alternative route** sidebar button (see below) |
 | `R` | Redo |
+
+**Show cracks by number** (sidebar, since 1.0.7): type one or more crack numbers separated by `;` (e.g. `3;7;12`) to show only those cracks — blue fill, markers and the `J` list; hidden cracks cannot be clicked by the tools. Leave the field empty to show every crack again. Display only: the JSON, the binary masks and the `-seg` preview always contain every crack.
+
+**Import between different viewpoints** (since 1.0.7): when `W` / `L` find only a rough alignment between two photos of the same building taken from far apart (a close-up and a wide oblique view), the current photo is re-seen in memory from the source photo's viewpoint and matched again, which makes the alignment precise; the photo itself is never changed (`WARP_PREWARP_*` in `config.py`). Cracks running out of the current photo's view are cut at its edge.
+
+**Building portion** (sidebar or `5`, since 1.0.7): for a photo that matches the other photos of its group only in part. Turning it on tints **orange** the part of the photo shown by the other already-segmented photos of the group, and pre-sets the window around it (`COMPATIBLE_AREA_MAX_DIM` in `config.py`); adjust it or drag a window over the shared part of the building (drag inside it to move it, click outside it to remove it, press `5` again when done). While the window is set, `W` / `L` align on that part only and import only the shapes lying mostly inside it (`IMPORT_PORTION_MIN_INSIDE` in `config.py`).
+
+**Alternative route** (sidebar, since 1.0.7): each press shows another edge route between the start and the end of the crack traced last, in its own color (red, green, orange, ...). When no other route is left, the button's arrow turns from ▶ to ◀ and further presses step back through the routes already shown. Press `$` to make the route on screen the crack's new path (blue) and close the tool; a click on the photo closes it keeping the old route, and `U` undoes the change.
 
 ## Output files
 
