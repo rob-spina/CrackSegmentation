@@ -164,12 +164,19 @@ class TestLinkToolAndFiles(unittest.TestCase):
         app.load_labelme_format()
         self.assertEqual(app.cfg.saved_cracks[0]['links'][0]['to'], [160, 100], "the record survives a reload")
 
-    def test_click_in_the_middle_of_a_crack_is_ignored(self):
+    def test_click_in_the_middle_of_a_crack_picks_that_point(self):
+        # Since 1.0.7 LINK also accepts a point on the blue line (see test_v107_features).
         app = _two_crack_app(self.tmpdir)
         app.handle_keyboard(ord('3'))
         _click(app, 70, 100)
-        self.assertIsNone(app.cfg.crack_cut_join_state["first"], "LINK only picks crack ends")
-        self.assertFalse(os.path.exists(app.cfg.JSON_OUTPUT_PATH))
+        self.assertEqual(app.cfg.crack_cut_join_state["first"], (0, 50))
+        self.assertFalse(os.path.exists(app.cfg.JSON_OUTPUT_PATH), "nothing is saved before the second click")
+
+    def test_click_far_from_any_crack_is_ignored(self):
+        app = _two_crack_app(self.tmpdir)
+        app.handle_keyboard(ord('3'))
+        _click(app, 70, 160)
+        self.assertIsNone(app.cfg.crack_cut_join_state["first"])
 
     def test_indicator_text(self):
         app = _two_crack_app()

@@ -110,14 +110,19 @@ class EmbeddedCanvas:
         cy = int(self.canvas.canvasy(event.y)) - y_offset
         return cx, cy
 
+    @staticmethod
+    def _mouse_flags(event):
+        """Shift held -> cv2.EVENT_FLAG_SHIFTKEY, as the OpenCV window would report it (Shift+click tracing)."""
+        return cv2.EVENT_FLAG_SHIFTKEY if getattr(event, "state", 0) & 0x0001 else 0
+
     def _on_press(self, event):
         self.canvas.focus_set()
         x, y = self._canvas_xy(event)
-        self.app.mouse_callback(cv2.EVENT_LBUTTONDOWN, x, y, 0, None)
+        self.app.mouse_callback(cv2.EVENT_LBUTTONDOWN, x, y, self._mouse_flags(event), None)
 
     def _on_release(self, event):
         x, y = self._canvas_xy(event)
-        self.app.mouse_callback(cv2.EVENT_LBUTTONUP, x, y, 0, None)
+        self.app.mouse_callback(cv2.EVENT_LBUTTONUP, x, y, self._mouse_flags(event), None)
 
     def _on_motion(self, event):
         x, y = self._canvas_xy(event)
@@ -322,9 +327,13 @@ _SIDEBAR_SHORTCUTS = [
     ("\u2702", "Cut crack part", "1", ord('1')),
     ("\U0001F517", "Join / re-route", "2", ord('2')),
     ("\u26D3", "Link two cracks", "3", ord('3')),
+    # v1.0.7: the arrow turns left once no other route is left; [$] applies the route on screen.
+    ("\u25B6", "Alternative route", "", 18),
+    ("\U0001F522", "Show cracks by number", "", 19),
     ("\U0001F9F2", "Snap / translate", "T", ord('t')),
     ("\u2194", "Width-edit mode", "A", ord('a')),
     ("\U0001F3F7", "Assign building", "B", ord('b')),
+    ("\u2B1C", "Building portion (import)", "", 20),
     ("\U0001F50D", "Compatibility check", "G", ord('g')),
     ("\U0001F4D0", "Set scale", "K", ord('k')),
     ("\u26F6", "Fullscreen", "F", ord('f')),
@@ -342,6 +351,14 @@ _SIDEBAR_TOGGLE_STATES = {
     14: lambda cfg: cfg.show_viewed_windows,
     15: lambda cfg: cfg.zoom_window_state["active"],
     16: lambda cfg: cfg.crack_report_state["active"],
+    18: lambda cfg: cfg.alt_route_state["active"],
+    19: lambda cfg: cfg.crack_filter is not None,
+    20: lambda cfg: cfg.portion_state["active"] or cfg.portion_state["rect"] is not None,
+}
+
+# Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
+_SIDEBAR_DYNAMIC_ICONS = {
+    18: lambda cfg: "\u25C0" if cfg.alt_route_state["active"] and cfg.alt_route_state["direction"] < 0 else "\u25B6",
 }
 VALIDATION_CODE = 17
 
@@ -376,6 +393,8 @@ class ShortcutsSidebar:
 
         self.buttons = []
         self.buttons_by_code = {}
+        self._labels_by_code = {code: (label, key) for _, label, key, code in _SIDEBAR_SHORTCUTS}
+        self._shown_texts = {}  # code -> text last set by _set_icon()
         for icon, label, key, code in _SIDEBAR_SHORTCUTS:
             btn = self._add_row(inner, icon, label, key, code)
             self.buttons.append(btn)
@@ -390,6 +409,19 @@ class ShortcutsSidebar:
         btn = self.buttons_by_code.get(VALIDATION_CODE)
         if btn is not None:
             btn.configure(state=("normal" if validation_available else "disabled"))
+        for code, icon_of in _SIDEBAR_DYNAMIC_ICONS.items():
+            self._set_icon(code, icon_of(cfg))
+
+    def _set_icon(self, code, icon):
+        """Re-labels a sidebar button with a new icon, only when it actually changed."""
+        btn = self.buttons_by_code.get(code)
+        if btn is None:
+            return
+        label, key = self._labels_by_code[code]
+        text = f"{icon} {label}" + (f" [{key}]" if key else "")
+        if self._shown_texts.get(code) != text:
+            btn.configure(text=text)
+            self._shown_texts[code] = text
 
     def _bind_wheel(self):
         # Same bind_all-while-hovering pattern as EmbeddedCanvas/PdfManualPanel/toolbar.
@@ -947,6 +979,13 @@ class GuiCrackSegmentation(CrackSegmentation):
             "Pixel-to-cm scale",
             f"New scale (current value: {current_value:.6f} cm/pixel):",
             parent=self._tk_root,
+        )
+
+    def _prompt_crack_numbers(self, current_text):
+        return simpledialog.askstring(
+            "Show cracks by number",
+            "Crack numbers separated by ';' (e.g. 3;7;12).\nLeave empty to show every crack:",
+            initialvalue=current_text, parent=self._tk_root,
         )
 
     def _prompt_calibration_distance(self):
