@@ -32,6 +32,51 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.0.6: quattro nuovi pulsanti nella barra laterale + Modo 2 riprende dall'ultima
+
+Nuovi moduli: `inspection_tools.py` (HWAV, Zoom window, Crack report) e
+`training_validation.py` (Validation), entrambi agganciati a
+`CrackSegmentation` come mixin. Sono azioni solo-pulsante (codici 14-17 in
+`process_keypress()`), come Switch Mode (codice 6): quasi tutte le lettere
+sono già occupate da altri comandi.
+
+- **⬚ Zoom window** (codice 15): trascina un rettangolo attorno a una
+  crepa e lo zoom va direttamente lì (il rettangolo viene allargato alle
+  proporzioni della foto, così nulla viene deformato; si può ripetere per
+  ingrandire ancora, fino a 40x). Solo il trascinamento fa zoom: i clic
+  semplici passano allo strumento attivo, quindi nella vista ingrandita si
+  possono tracciare le crepe (e usare Cut/Join/Link). Ripremendo il pulsante
+  lo strumento si chiude e lo zoom torna alla foto intera.
+- **🟩 Highlight viewed (HWAV)** (codice 14): durante lo spostamento a
+  zoom attivo ogni finestra che lasci viene registrata come "già vista".
+  Premendo il pulsante le zone già viste vengono velate in verde vetro
+  con un bordo, e in basso compare la percentuale della foto già
+  ispezionata. Ripremendolo i colori vengono cancellati e la registrazione
+  riparte da zero (nuova passata di ispezione). Ogni foto nuova parte
+  senza zone viste.
+- **📋 Crack report** (codice 16): premi il pulsante e clicca una crepa:
+  il pannello vetro di `J` si apre da solo e mostra solo il report
+  ("CRACK 4 REPORT": lunghezza, reliability, confidence, multi-view,
+  incertezza e un giudizio complessivo HIGH/MEDIUM/LOW), con la crepa
+  evidenziata in giallo. Ripremendo il pulsante il vetro viene nascosto.
+- **✅ Validation** (codice 17): attivo solo sull'ultima immagine della
+  coda (quando Next non può più andare avanti). Seleziona le foto con
+  JSON che superano le soglie `VALIDATION_*` di `config.py` (reliability
+  media, confidence media, quota di crepe incerte), scarta le foto quasi
+  identiche tenendo quella con i punteggi migliori (hash per differenze a
+  256 bit, confrontato anche con le foto già validate in precedenza),
+  chiede conferma e sposta foto, JSON, overlay e maschere in
+  `Suitable for training/` (stesse sottocartelle `Images`, `Binary files`,
+  `JSON files`), con un `validation_report_<data>.csv`. Nessun file viene
+  mai sovrascritto. Dopo lo spostamento la coda viene ricaricata.
+- **Modo 2 riprende dall'ultima foto segmentata**: entrando nel Modo 2
+  con Switch Mode (o dal dialogo di fine coda) si parte dalla foto il cui
+  JSON è stato salvato più di recente, non dalla prima. All'avvio
+  dell'app il Modo 2 parte ancora dalla prima.
+
+I pulsanti-interruttore appaiono "premuti" finché il loro strumento è
+attivo. Test: `test_v106_features.py` (36 test).
+
 ## Redo dopo Annulla-di-un'eliminazione: la correzione precedente era a metà
 
 Segnalazione: "adesso undo funziona redo no". Avevo corretto solo metà

@@ -128,6 +128,9 @@ Data folders (since 1.0.5):
 | `Images/` | Every original photo. Photos are never moved: Mode 1 lists the ones without a JSON yet, Mode 2 the ones with a JSON |
 | `Binary files/` | Every exported PNG/overlay (crack, detachment and uncertain masks, `-seg` overlay) |
 | `JSON files/` | Every LabelMe JSON |
+| `Suitable for training/` | (since 1.0.6) Photos picked by **Validation**, with their JSON and exports, in the same `Images/`, `Binary files/`, `JSON files/` layout, plus a `validation_report_<date>.csv` per run |
+
+Photos are moved out of `Images/` only by the **Validation** button (sidebar, available on the last image of the queue): a photo qualifies when its cracks reach the `VALIDATION_*` thresholds in `config.py` (mean reliability, mean confidence, share of uncertain cracks), and of several near-identical photos only the best-scoring one is kept.
 
 Folders from earlier versions (`segmentated images/`, `already processed images/`) are migrated automatically at startup: each file is moved to the matching new folder, nothing is overwritten or deleted, and an old folder is removed only once it is empty.
 

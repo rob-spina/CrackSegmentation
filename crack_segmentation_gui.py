@@ -329,8 +329,21 @@ _SIDEBAR_SHORTCUTS = [
     ("\U0001F4D0", "Set scale", "K", ord('k')),
     ("\u26F6", "Fullscreen", "F", ord('f')),
     ("\U0001F50E", "Reset zoom", "0", ord('0')),
+    # v1.0.6 button-only actions (codes 14-17, see process_keypress()).
+    ("\u2B1A", "Zoom window", "", 15),
+    ("\U0001F7E9", "Highlight viewed (HWAV)", "", 14),
+    ("\U0001F4CB", "Crack report", "", 16),
     ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
+    ("\u2705", "Validation", "", 17),
 ]
+
+# Sidebar toggles shown pressed while their tool is on: code -> reads the state from cfg.
+_SIDEBAR_TOGGLE_STATES = {
+    14: lambda cfg: cfg.show_viewed_windows,
+    15: lambda cfg: cfg.zoom_window_state["active"],
+    16: lambda cfg: cfg.crack_report_state["active"],
+}
+VALIDATION_CODE = 17
 
 
 class ShortcutsSidebar:
@@ -362,8 +375,21 @@ class ShortcutsSidebar:
         canvas.bind("<Leave>", lambda e: self._unbind_wheel())
 
         self.buttons = []
+        self.buttons_by_code = {}
         for icon, label, key, code in _SIDEBAR_SHORTCUTS:
-            self.buttons.append(self._add_row(inner, icon, label, key, code))
+            btn = self._add_row(inner, icon, label, key, code)
+            self.buttons.append(btn)
+            self.buttons_by_code[code] = btn
+
+    def refresh_states(self, cfg, validation_available):
+        """Toggle buttons look pressed while their tool is on; Validation is enabled only at the end of the queue."""
+        for code, is_on in _SIDEBAR_TOGGLE_STATES.items():
+            btn = self.buttons_by_code.get(code)
+            if btn is not None:
+                btn.configure(relief=("sunken" if is_on(cfg) else "raised"))
+        btn = self.buttons_by_code.get(VALIDATION_CODE)
+        if btn is not None:
+            btn.configure(state=("normal" if validation_available else "disabled"))
 
     def _bind_wheel(self):
         # Same bind_all-while-hovering pattern as EmbeddedCanvas/PdfManualPanel/toolbar.
@@ -611,6 +637,7 @@ _FILE_COMMANDS = [
     # USER REQUEST: switch between "new images" and "reload segmented" data
     # sources without restarting the app (code 6, see process_keypress()).
     ("\U0001F504 Switch Mode (1 \u2194 2)", 6),
+    ("\u2705 Validation: move training-ready photos (end of queue)", 17),
     ("\u23FB Quit\tEsc", 27),
 ]
 
@@ -633,6 +660,7 @@ _TOOL_COMMANDS = [
     ("\u26D3 Link two cracks end-to-start (2 clicks)\t3", ord('3')),
     ("\U0001F50D Building-group compatibility check\tG", ord('g')),
     ("\U0001F3F7 Manually assign building group\tB", ord('b')),
+    ("\U0001F4CB Crack report (click a crack)", 16),
 ]
 
 _WIDTH_COMMANDS = [
@@ -648,6 +676,8 @@ _WIDTH_COMMANDS = [
 _VIEW_COMMANDS = [
     ("\u26F6 Toggle fullscreen\tF", ord('f')),
     ("\U0001F50D Reset zoom\t0", ord('0')),
+    ("\u2B1A Zoom window (drag a rectangle)", 15),
+    ("\U0001F7E9 Highlight windows already viewed (HWAV)", 14),
     ("\U0001F520 Toggle HUD size\tH", ord('h')),
     ("\U0001F4CD Toggle markers\tSpace", ord(' ')),
     ("\U0001F535 Toggle blue crack overlay\tN", ord('n')),
@@ -942,15 +972,25 @@ class GuiCrackSegmentation(CrackSegmentation):
             parent=self._tk_root,
         )
 
+    def _keep_open_when_queue_empty(self):
+        # The GUI stays open with no photo left, so Validation can still be run after a restart.
+        return True
+
     def _prompt_queue_exhausted(self, finished_mode, target_mode, skipped_count):
         # Modal Yes/No instead of the terminal prompt: Yes switches mode, No exits.
         message = self._queue_end_message(finished_mode, target_mode, skipped_count)
         return bool(messagebox.askyesno("Crack Detector - Images finished", message, parent=self._tk_root))
 
+    def _confirm_training_validation(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Validation", message, parent=self._tk_root))
+
+    def _notify_training_validation_result(self, message):
+        messagebox.showinfo("Crack Detector - Validation", message, parent=self._tk_root)
+
     def _notify_mode_switch_unavailable(self, target_mode):
         messagebox.showinfo(
             "Crack Detector",
-            f"No images available for Mode {target_mode}.\n\nThe application will now close.",
+            f"No images available for Mode {target_mode}.",
             parent=self._tk_root,
         )
 
@@ -1035,6 +1075,7 @@ class GuiCrackSegmentation(CrackSegmentation):
     def _pump_extra_events(self):
         try:
             self._update_navigation_button_states()
+            self._sidebar.refresh_states(self.cfg, self._validation_available())
         except tk.TclError:
             pass
         try:

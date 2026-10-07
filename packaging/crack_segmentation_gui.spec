@@ -138,7 +138,7 @@ if sys.platform == "darwin":
         bundle_identifier="local.crackseg.gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "1.0.5",
+            "CFBundleShortVersionString": "1.0.6",
             "NSHumanReadableCopyright": "Internal tool",
         },
     )

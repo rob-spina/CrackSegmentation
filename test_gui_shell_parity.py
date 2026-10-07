@@ -1669,11 +1669,12 @@ class TestMode1QueueAdvanceAndQueueEnd(unittest.TestCase):
         try:
             make_synthetic_image_folder(tmpdir, n_images=1)
             TestSwitchModeAtRuntime._make_mode2_source(None, tmpdir, base_name="already_seg")
-            # Mode 2 now holds already_seg AND the img_00 just saved in Mode 1: two [4] to reach its end.
+            # Mode 2 holds already_seg AND the img_00 just saved in Mode 1. Since v1.0.6 it resumes from the
+            # last segmented photo (img_00, the last in the queue), so one [4] reaches its end.
             app, seen, prompt, notify = self._run_recording(tmpdir, [ord('q'), 4, 4], prompt_answers=(True, False))
             self.assertEqual(seen[0][0], "1")
             self.assertEqual(seen[1][0], "2")
-            self.assertIn("already_seg", seen[1][1])
+            self.assertIn("img_00", seen[1][1])
             self.assertEqual(prompt.call_count, 2, "Mode 2's own end of queue asks again (offering Mode 1)")
             self.assertEqual(prompt.call_args_list[1][0][:2], ("2", "1"))
             notify.assert_not_called()

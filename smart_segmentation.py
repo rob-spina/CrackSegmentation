@@ -7,6 +7,7 @@ import csv
 import heapq
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -19,9 +20,11 @@ from skimage.morphology import skeletonize
 
 from config import (Config, resolve_script_dir, migrate_legacy_folders,
                     IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME)
+from inspection_tools import InspectionToolsMixin
+from training_validation import TrainingValidationMixin
 
 
-class CrackSegmentation:
+class CrackSegmentation(InspectionToolsMixin, TrainingValidationMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -251,6 +254,10 @@ class CrackSegmentation:
         """Sorts the queue chronologically/alphabetically; exits the
         whole program if it ends up empty (nothing to work on)."""
         self.cfg.image_queue.sort()
+        if not self.cfg.image_queue and self._keep_open_when_queue_empty():
+            # Nothing left to process: run() keeps the window open (Validation, Switch Mode, Quit).
+            print(f"[INFO] No photo to process in: {self.cfg.IMAGE_FOLDER}")
+            return
         if not self.cfg.image_queue:
             error_message = f"No valid file found in: {self.cfg.IMAGE_FOLDER}"
             print(f"[CRITICAL ERROR] {error_message}")
@@ -927,6 +934,7 @@ class CrackSegmentation:
 
     def refresh_zoom_viewport(self):
         """Safely computes zoom bounds preventing any possible division-by-zero."""
+        old_box = list(self.cfg.zoom_box)
         try:
             if self.cfg.zoom_factor <= 1.0:
                 self.cfg.zoom_box = [0, 0, self.cfg.W_img, self.cfg.H_img]
@@ -941,6 +949,8 @@ class CrackSegmentation:
         except Exception as e:
             self.cfg.zoom_box = [0, 0, self.cfg.W_img, self.cfg.H_img]
             print(f"[VIEWPORT EXCEPTION] Fallback zoom anomaly: {e}", file=sys.stderr)
+        # HWAV: the view just left counts as already inspected.
+        self._note_viewport_change(old_box)
 
     def calcola_area_poligono_cm2(self, percorso_pixel, scala):
         """Computes detachment polygon closed surface area in square 
@@ -1242,6 +1252,48 @@ class CrackSegmentation:
         img_name = os.path.splitext(os.path.basename(self.cfg.CURRENT_IMAGE_PATH))[0]
         return os.path.join(folder, f"{img_name}{suffix}{ext}")
 
+    _PHOTO_OUTPUT_SUFFIXES = ("-seg", "-crack_mask", "-crack_uncertain_mask", "-detachment_mask")
+
+    @staticmethod
+    def _untagged_photo_name(name):
+        """Photo name without extension and without its __BLDGnnn tag."""
+        return os.path.splitext(name)[0].split("__BLDG")[0]
+
+    def _photo_outputs_in_folder(self, folder, photo_name):
+        """{suffix: [file names]} of the overlay/mask files in folder that belong to photo_name,
+        whatever building tag (or none) they carry."""
+        clean = re.escape(self._untagged_photo_name(photo_name))
+        pattern = re.compile(rf"^{clean}(__BLDG\d+)?(?P<suffix>-seg|-crack_mask|-crack_uncertain_mask|-detachment_mask)\.[A-Za-z]+$")
+        found = {}
+        if os.path.isdir(folder):
+            for f in os.listdir(folder):
+                m = pattern.match(f)
+                if m:
+                    found.setdefault(m.group("suffix"), []).append(f)
+        return found
+
+    def _remove_stale_photo_outputs(self):
+        """Deletes overlay/mask files of the current photo saved under a previous building tag:
+        after a group change they were left next to the new ones, so 2-3 versions piled up."""
+        folder = os.path.join(str(self.cfg.SCRIPT_DIR), self.cfg.folder_seg_img)
+        current = os.path.splitext(os.path.basename(self.cfg.CURRENT_IMAGE_PATH))[0]
+        for files in self._photo_outputs_in_folder(folder, current).values():
+            for f in files:
+                if not os.path.splitext(f)[0].startswith(current + "-"):
+                    os.remove(os.path.join(folder, f))
+                    print(f"[MASK EXPORT] Removed old copy saved under a previous group: {f}")
+
+    def _rename_photo_outputs(self, old_photo_name, new_photo_name):
+        """Building-group change: renames the photo's existing overlay/mask files to the new name,
+        as already done for the image and its JSON."""
+        folder = os.path.join(str(self.cfg.SCRIPT_DIR), self.cfg.folder_seg_img)
+        old_base = os.path.splitext(old_photo_name)[0]
+        new_base = os.path.splitext(new_photo_name)[0]
+        for files in self._photo_outputs_in_folder(folder, old_photo_name).values():
+            for f in files:
+                if f.startswith(old_base + "-"):
+                    os.replace(os.path.join(folder, f), os.path.join(folder, new_base + f[len(old_base):]))
+
     def _export_segmented_preview_image(self):
         """Writes the colored crack/detachment overlay PNG, if enabled
         ([M])."""
@@ -1396,6 +1448,7 @@ class CrackSegmentation:
             labelme_data["shapes"] = self._finalize_labelme_shapes()
 
             self._write_labelme_json(labelme_data)
+            self._remove_stale_photo_outputs()
             self._export_segmented_preview_image()
             self._export_binary_masks()
 
@@ -2208,6 +2261,7 @@ class CrackSegmentation:
         self._load_current_image_bytes_and_decode(target_path)
         self._reset_zoom_state()
         self._reset_session_editing_state()
+        self._reset_inspection_tools_for_new_image()
         self._compute_binary_and_skeleton_masks()
         self._build_display_background()
         self._load_or_initialize_shapes_for_mode()
@@ -2744,6 +2798,7 @@ class CrackSegmentation:
             labelme_data = self._build_labelme_data_dict(self._get_current_image_base64())
             labelme_data["shapes"] = self._finalize_labelme_shapes()
             self._write_labelme_json(labelme_data)
+            self._remove_stale_photo_outputs()
             self._export_segmented_preview_image()
             self._export_binary_masks()
             print(" [LINK] JSON and binary masks updated. [U] undoes the link on screen; [S] saves again.")
@@ -3414,6 +3469,10 @@ class CrackSegmentation:
         new_img_path, new_img_filename, img_base, building_suffix = rename_result
 
         new_json_path = self._sync_renamed_json(old_json_path, new_img_filename, img_base, building_suffix)
+        try:
+            self._rename_photo_outputs(curr_filename, new_img_filename)
+        except OSError as e:
+            print(f"[RENAME WARNING] Could not rename the overlay/mask files: {e}")
 
         self.cfg.CURRENT_IMAGE_PATH = new_img_path
         self.cfg.JSON_OUTPUT_PATH = new_json_path
@@ -4074,12 +4133,24 @@ class CrackSegmentation:
     def mouse_callback(self, event, x, y, flags, param):
         """Handles mouse clicks, transforming window coordinates into real image pixels with A* edge/user-node edit support."""
         try:
+            if self.cfg.queue_idle:
+                return  # no photo on screen
             if self.cfg.show_help_menu:
                 self._handle_help_scrollbar_mouse(event, x, y)
                 return
 
             if self.cfg.calibration_mode:
                 self._handle_calibration_mouse(event, x, y)
+                return
+
+            if self.cfg.zoom_window_state["active"]:
+                # Drags zoom; plain clicks and hover moves go on to the tool below (tracing while zoomed).
+                event = self._handle_zoom_window_mouse(event, x, y)
+                if event is None:
+                    return
+
+            if self.cfg.crack_report_state["active"]:
+                self._handle_crack_report_mouse(event, x, y)
                 return
 
             if self.cfg.width_edit_state["active"]:
@@ -4146,7 +4217,7 @@ class CrackSegmentation:
         if self.cfg.CURRENT_IMAGE_PATH is None:
             return
         # Shares the [J]/Info toggle with the status/metrics panel above.
-        if not self.cfg.show_info_overlay:
+        if not self.cfg.show_info_overlay or self._is_crack_report_shown():
             return
 
         filename = os.path.basename(self.cfg.CURRENT_IMAGE_PATH)
@@ -4959,6 +5030,9 @@ class CrackSegmentation:
         before the "Crack Reliability:" label and per-crack score lines."""
         if not self.cfg.show_info_overlay:
             return
+        # Crack report: the glass shows only the selected crack's report.
+        if self._is_crack_report_shown() and self._draw_crack_report_panel(win_out, hm):
+            return
         line_h = hm['line_h']
         building_line = 1 if self.cfg.CURRENT_IMAGE_PATH is not None else 0
         # Reliability lines wrap to the full window width (minus margins), not a fixed count per line.
@@ -5104,7 +5178,11 @@ class CrackSegmentation:
             "[Space] : Show/Hide on-screen markers",
             "[N] : Show/Hide blue fill of segmented cracks",
             "[J] : Show/Hide FILE/Cracks Length/BUILDING status text",
-            "[.] : Hide all on-screen messages (they also hide after 15 s)"
+            "[.] : Hide all on-screen messages (they also hide after 15 s)",
+            "[Zoom window] (sidebar) : drag a rectangle to zoom onto a crack; press again to reset the zoom",
+            "[HWAV] (sidebar) : tint in green the windows already viewed while zoomed; press again to clear",
+            "[Crack report] (sidebar) : click a crack to read its reliability report; press again to close it",
+            "[Validation] (sidebar, last image) : move training-ready photos to 'Suitable for training'"
         ]
 
     def _draw_help_menu_command_list(self, win_out, comandi):
@@ -5216,7 +5294,9 @@ class CrackSegmentation:
         self._paint_temp_crack_preview(scene, region)
         self._compute_scene_overlays(scene, h_actual, w_active, region)
         roi = self._compute_zoom_roi(scene, h_actual, w_active, origin=(x0, y0))
-        return self._resize_roi_to_window(roi)
+        win_out = self._resize_roi_to_window(roi)
+        self._paint_viewed_windows(win_out)
+        return win_out
 
     def _draw_hud_stack(self, win_out, current_idx, total_count, show_error_banner, error_time):
         """Draws every window-space HUD element, in their original
@@ -5227,6 +5307,7 @@ class CrackSegmentation:
 
         self._draw_tool_markers(win_out, marker_dim)
         self._draw_cut_join_indicator(win_out)
+        self._draw_inspection_tools(win_out)
 
         hm = self._compute_hud_font_metrics()
         status = f"FILE: {current_idx}/{total_count} ({os.path.basename(self.cfg.CURRENT_IMAGE_PATH)}) | Tool: {self.cfg.current_tool.upper()} | Zoom: {self.cfg.zoom_factor:.1f}x"
@@ -5419,6 +5500,14 @@ class CrackSegmentation:
         self.cfg.switch_mode_requested = True
         return True
 
+    def _handle_validation_key(self):
+        """Code 17 [Validation]: once photos were moved out of 'Images', run()'s outer loop reloads the queue."""
+        if not self.run_training_validation():
+            return False
+        self.cfg.translate_state["active"] = False
+        self.cfg.reload_queue_requested = True
+        return True
+
     def process_keypress(self, key_raw):
         """Handles a single key press, real or synthetic (from a GUI button/menu, see _pending_keys). Returns True if the caller should advance to the next image, False otherwise.
         """
@@ -5457,6 +5546,18 @@ class CrackSegmentation:
 
         elif key_clean == 6:
             return self._handle_switch_mode_key()
+
+        elif key_clean == 14:
+            self._toggle_viewed_windows()
+
+        elif key_clean == 15:
+            self._toggle_zoom_window()
+
+        elif key_clean == 16:
+            self._toggle_crack_report()
+
+        elif key_clean == 17:
+            return self._handle_validation_key()
 
         else:
             self.handle_keyboard(key_raw)
@@ -5562,14 +5663,48 @@ class CrackSegmentation:
         mode if Switch Mode was requested (code 6), otherwise advances
         queue_pos normally. Returns the (queue_pos, total_files) to
         continue run()'s outer loop with."""
+        if self.cfg.reload_queue_requested:
+            return self._reload_queue_after_validation()
         if self.cfg.switch_mode_requested:
             self.cfg.switch_mode_requested = False
             self.cfg.queue_item_consumed = False
             target_mode = "2" if self.cfg.modalita_scelta == "1" else "1"
             if self._rebuild_queue_for_mode(target_mode):
-                queue_pos = 0
+                queue_pos = self._mode_start_position()
             return queue_pos, len(self.cfg.image_queue)
         return self._advance_queue_position(queue_pos), total_files
+
+    def _last_segmented_queue_position(self):
+        """Queue position of the photo whose JSON was saved most recently (0 if none has one)."""
+        best_pos, best_mtime = 0, None
+        for pos, img_path in enumerate(self.cfg.image_queue):
+            base = os.path.splitext(os.path.basename(img_path))[0]
+            for json_name in (f"{base}.json", f"{base}-seg.json"):
+                json_path = os.path.join(self.cfg.OUTPUT_FOLDER, json_name)
+                if os.path.exists(json_path):
+                    mtime = os.path.getmtime(json_path)
+                    if best_mtime is None or mtime > best_mtime:
+                        best_pos, best_mtime = pos, mtime
+        return best_pos
+
+    def _mode_start_position(self):
+        """Where a freshly (re)built queue starts: Mode 2 on the last segmented photo, Mode 1 on the first."""
+        if self.cfg.modalita_scelta == "2":
+            pos = self._last_segmented_queue_position()
+            print(f"[MODE 2] Resuming from the last segmented image: "
+                  f"{os.path.basename(self.cfg.image_queue[pos]) if self.cfg.image_queue else '-'}")
+            return pos
+        return 0
+
+    def _reload_queue_after_validation(self):
+        """After [Validation] moved photos away: rebuilds the current mode's queue (empty = queue finished)."""
+        self.cfg.reload_queue_requested = False
+        self.cfg.queue_item_consumed = False
+        self.cfg.navigate_direction = None
+        if not self._rebuild_queue_for_mode(self.cfg.modalita_scelta):
+            self.cfg.image_queue = []
+            return 0, 0
+        return self._mode_start_position(), len(self.cfg.image_queue)
 
     def _write_final_csv_report(self):
         """Step 4 of run(): appends every buffered report_data_summary
@@ -5610,7 +5745,10 @@ class CrackSegmentation:
             lines = ["You have reached the last already-segmented image."]
         target_label = "review the already segmented images" if target_mode == "2" else "load new images"
         lines.append(f"\nSwitch to Mode {target_mode} ({target_label})?")
-        lines.append("Yes = switch mode, No = exit the application.")
+        if self._keep_open_when_queue_empty():
+            lines.append("Yes = switch mode, No = stay here (Validation, Switch Mode or Quit from the sidebar/menu).")
+        else:
+            lines.append("Yes = switch mode, No = exit the application.")
         return "\n".join(lines)
 
     def _prompt_queue_exhausted(self, finished_mode, target_mode, skipped_count):
@@ -5655,12 +5793,73 @@ class CrackSegmentation:
             self._run_single_image_loop(index, total_files)
             queue_pos, total_files = self._advance_or_switch_mode(queue_pos, total_files)
 
+    def _keep_open_when_queue_empty(self):
+        """False in the plain OpenCV window (the run ends with the queue); a GUI wrapper returns True
+        so the app stays open with no photo left, e.g. to run Validation after a restart."""
+        return False
+
+    def _render_idle_screen(self):
+        """The frame shown while no photo is left: what happened and what can be done now."""
+        frame = np.full((900, 1200, 3), 32, dtype=np.uint8)
+        lines = [("No photo left to process in Mode " + str(self.cfg.modalita_scelta), 1.0, (235, 235, 235)),
+                 ("", 0.7, (0, 0, 0)),
+                 ("Validation : select the photos suitable for training", 0.7, (170, 255, 200)),
+                 ("Switch Mode : review the segmented photos / load new ones", 0.7, (170, 220, 255)),
+                 ("Quit (Esc) : close the application", 0.7, (200, 200, 200))]
+        y = 360
+        for text, scale, color in lines:
+            if text:
+                cv2.putText(frame, text, (120, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 2, cv2.LINE_AA)
+            y += 50
+        self._display_frame(self._window_name, frame)
+
+    def _handle_idle_key(self, key):
+        """One key/button while idle. True once a new queue is loaded (Switch Mode or Validation)."""
+        code = key & 0xFF
+        if key == 27:
+            self._handle_escape_key()
+        elif code == 6:
+            target_mode = "2" if self.cfg.modalita_scelta == "1" else "1"
+            if self._rebuild_queue_for_mode(target_mode):
+                return True
+            self._notify_mode_switch_unavailable(target_mode)
+        elif code == 17:
+            if self.run_training_validation() and self._rebuild_queue_for_mode(self.cfg.modalita_scelta):
+                return True
+        return False
+
+    def _wait_for_new_queue(self):
+        """Queue finished: keeps the window open on an idle screen until Switch Mode or Validation
+        loads new photos (True). Quit/Esc or closing the window exits. False without a GUI."""
+        if not self._keep_open_when_queue_empty():
+            return False
+        print("[INFO] No photo left: the window stays open -- Validation, Switch Mode or Quit.")
+        self.cfg.image_queue = []
+        self.cfg.queue_idle = True
+        try:
+            while True:
+                self._render_idle_screen()
+                self._pump_extra_events()
+                keys = list(self._pending_keys)
+                self._pending_keys.clear()
+                key = self._wait_key(30)
+                if key != -1:
+                    keys.append(key)
+                for k in keys:
+                    if self._handle_idle_key(k):
+                        return True
+        finally:
+            self.cfg.queue_idle = False
+
     def run(self):
         try:
             total_files = self._initialize_run_session()
             self._process_queue(0, total_files)
-            while self._offer_mode_switch_at_queue_end():
-                self._process_queue(0, len(self.cfg.image_queue))
+            while True:
+                if not self._offer_mode_switch_at_queue_end() and not self._wait_for_new_queue():
+                    break
+                self.cfg.queue_items_done = 0
+                self._process_queue(self._mode_start_position(), len(self.cfg.image_queue))
 
             print("\n--- PIPELINE EXHAUSTED ---")
 
