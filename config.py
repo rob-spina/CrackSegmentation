@@ -384,6 +384,41 @@ class Config:
         self.blue_visual_mask = np.zeros((100, 100), dtype=np.uint8)
         self.green_visual_mask = np.zeros((100, 100), dtype=np.uint8)
 
+    def _init_inspection_tools_state(self):
+        """v1.0.6 inspection aids: HWAV (viewed-window tracking), the Zoom window tool and the Crack report.
+        All three are button-only actions (sidebar), see process_keypress() codes 14-16."""
+        # HWAV: low-resolution map of the photo areas already shown in a zoomed view (None until first used).
+        self.viewed_mask = None
+        self.viewed_mask_scale = 1.0
+        # Longer side (px) of the viewed-area map; it only needs window-level precision.
+        self.VIEWED_MASK_MAX_DIM = 1024
+        self.show_viewed_windows = False
+        # Zoom window: drag a rectangle to zoom straight onto it; drag_start/drag_end are window coords.
+        self.zoom_window_state = {"active": False, "drag_start": None, "drag_end": None, "press_window_xy": None}
+        # Smallest rectangle side (window px) accepted as a drag, and the deepest zoom it may reach.
+        self.ZOOM_WINDOW_MIN_DRAG_PX = 8
+        self.ZOOM_WINDOW_MAX_FACTOR = 40.0
+        # Crack report: active = waiting for / showing a report; idx = saved_cracks index of the reported crack.
+        self.crack_report_state = {"active": False, "idx": None}
+
+    def _init_validation_settings(self):
+        """v1.0.6 [Validation]: which segmented photos are moved to 'Suitable for training'.
+        A photo qualifies when it has at least one crack with quality scores and meets every enabled rule below
+        (None disables a rule). Near-duplicate photos are then reduced to the best-scoring one."""
+        self.VALIDATION_DIR_NAME = "Suitable for training"
+        # Mean reliability_pct of the photo's cracks must reach this.
+        self.VALIDATION_MIN_MEAN_RELIABILITY_PCT = 60.0
+        # Mean confidence (0-1) of the photo's cracks must reach this.
+        self.VALIDATION_MIN_MEAN_CONFIDENCE = 0.60
+        # Share of uncertain cracks ([?]) in the photo must not exceed this.
+        self.VALIDATION_MAX_UNCERTAIN_RATIO = 0.25
+        # Two photos are "too similar" when their 256-bit difference hashes differ in at most this many bits.
+        self.VALIDATION_DUPLICATE_MAX_HASH_DISTANCE = 20
+        # Set once [Validation] moved photos out of 'Images': run()'s outer loop rebuilds the queue.
+        self.reload_queue_requested = False
+        # True while the window stays open with no photo left (queue finished): only Validation, Switch Mode and Quit act.
+        self.queue_idle = False
+
     def _init_queue_and_cache(self):
         """image_queue is the ordered list of photos to process; _SIFT_FEATURE_CACHE memoizes (keypoints, descriptors) per (path, mtime, size, max_dim) for building-group matching.
         """
@@ -411,4 +446,6 @@ class Config:
         self._init_manual_group_entry_state()
         self._init_calibration_and_misc()
         self._init_visual_masks()
+        self._init_inspection_tools_state()
+        self._init_validation_settings()
         self._init_queue_and_cache()

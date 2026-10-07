@@ -1283,7 +1283,9 @@ class TestGuiRunEndToEnd(unittest.TestCase):
                 return -1
 
             # Since v1.0.5 the saved photo is immediately available in Mode 2: decline the end-of-queue switch.
+            # The GUI now stays open once the queue is finished: end the session there instead.
             with mock.patch.object(app, "_prompt_mode_choice", return_value="1"), \
+                 mock.patch.object(app, "_wait_for_new_queue", return_value=False), \
                  mock.patch.object(app, "_prompt_queue_exhausted", return_value=False), \
                  mock.patch("cv2.getWindowImageRect", return_value=(0, 0, gm.CANVAS_W, gm.CANVAS_H)), \
                  _MockedHighGui() as hg:
