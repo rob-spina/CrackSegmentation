@@ -97,6 +97,8 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 |-----|--------|
 | Click, click | Crack tool (`C`): click the start and the end of a crack, the route is traced along the edge. **Shift+click** in between (since 1.0.7) adds up to two points the route must pass through, when it would otherwise follow a shadow line: through them the route follows the thin dark line of the crack on the photo (`TRACE_GUIDE_*` in `config.py`); `U` removes the last one |
 | `S` / `Q` / `Enter` | Save the current photo and move to the next one |
+| `C` / `D` / `I` | Crack tool / Detachment tool / Ignore region tool (occluded area) |
+| `Y` | Close the detachment or ignore polygon |
 | `W` / `L` | Import cracks from a previously saved photo of the same building group |
 | `T` | Elastic translation with automatic snap to the real fracture edge |
 | `V` | Batch re-trace of imported cracks onto the real edges (with plausibility check) |
@@ -123,10 +125,11 @@ For every saved photo `<name>`:
 
 | File | Content |
 |------|---------|
-| `JSON files/<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments), with the image embedded as base64. A crack merged with **Link** carries a `links` list (`from`/`to` points of each bridged gap, `method` `edge` or `straight`) |
+| `JSON files/<name>.json` | LabelMe annotation (`linestrip` shapes for cracks, polygons for detachments and ignore regions), with the image embedded as base64. A crack merged with **Link** carries a `links` list (`from`/`to` points of each bridged gap, `method` `edge` or `straight`) |
 | `Binary files/<name>-crack_mask.png` | Binary crack mask, single channel, same resolution as the photo (0 = background, 255 = crack) |
 | `Binary files/<name>-detachment_mask.png` | Binary filled-area mask of the detachments (same format) |
 | `Binary files/<name>-crack_uncertain_mask.png` | Only the cracks marked uncertain (same band as the crack mask), e.g. as an ignore region in training. Written when `CRACK_UNCERTAIN_EXPORT_MASK` is on and at least one crack is uncertain |
+| `Binary files/<name>-ignore_mask.png` | (since 1.0.7) Filled mask of the ignore regions (255 = exclude from loss and metrics). Written when `IGNORE_EXPORT_MASK` is on and the photo has at least one ignore region |
 | `Binary files/<name>-seg.jpg` | Colored overlay for visual inspection |
 
 Mask files are written only when the photo contains at least one active element.
@@ -136,7 +139,7 @@ Data folders (since 1.0.5):
 | Folder | Content |
 |--------|---------|
 | `Images/` | Every original photo. Photos are never moved: Mode 1 lists the ones without a JSON yet, Mode 2 the ones with a JSON |
-| `Binary files/` | Every exported PNG/overlay (crack, detachment and uncertain masks, `-seg` overlay) |
+| `Binary files/` | Every exported PNG/overlay (crack, detachment, uncertain and ignore masks, `-seg` overlay) |
 | `JSON files/` | Every LabelMe JSON |
 | `Suitable for training/` | (since 1.0.6) Photos picked by **Validation**, with their JSON and exports, in the same `Images/`, `Binary files/`, `JSON files/` layout, plus a `validation_report_<date>.csv` per run |
 
@@ -160,6 +163,8 @@ Main tunables live in `config.py`:
 | `CRACK_UNCERTAIN_CONFIDENCE` | Cracks below this confidence (0-1) are saved as uncertain. `None` (default) disables the rule |
 | `CRACK_UNCERTAIN_LABEL` | Label of uncertain cracks (default `crack_incerta`, photo name appended) |
 | `CRACK_UNCERTAIN_EXPORT_MASK` | Also write `<name>-crack_uncertain_mask.png` |
+| `IGNORE_LABEL` | Label of ignore regions (default `ignore`, photo name appended) |
+| `IGNORE_EXPORT_MASK` | Also write `<name>-ignore_mask.png` |
 | `CRACK_MULTIVIEW_ENABLED` | Check every crack in the other photos of its building group at save |
 | `CRACK_MULTIVIEW_MAX_VIEWS` | Maximum number of other photos checked |
 | `CRACK_MULTIVIEW_CONFIRM_CONFIDENCE` | Confidence a crack must reach in another photo to count as confirmed there |
@@ -177,6 +182,21 @@ Every crack shape in the JSON carries these scores, also shown per crack in the 
 - `multiview` (`views_checked`, `views_confirmed`, `confidence`): at save, the crack is projected into the other photos of its building group (SIFT + homography, then a local texture alignment) and its confidence is measured there. A real crack stays in place on the wall, while shadows, reflections and dirt move or vanish with light and viewpoint. A photo confirms the crack when its confidence there reaches `CRACK_MULTIVIEW_CONFIRM_CONFIDENCE`; photos that cannot be aligned, or where the crack is out of frame, are not counted. It measures the photos, not the annotations, so a crack imported with **W**/**L** is not confirmed just because it was copied. Permanent lines such as joints are confirmed too. `null` when the photo has no building group or no other photo of the group is available; computed at save, so the panel shows `v` only after saving.
 
 An uncertain crack gets the `CRACK_UNCERTAIN_LABEL` label and `"flags": {"uncertain": true}`; the regular crack mask still contains every crack. Scores and labels are recomputed at every save.
+
+### Ignore regions
+
+Some parts of a facade cannot be annotated reliably: a safety net, scaffolding, cables or vegetation in front of the wall. Cracks there are only partly visible, so marking those pixels as background would teach a model the wrong thing, and a correct prediction there would be scored as a false positive.
+
+Press **I** (or the **Ignore region** sidebar button): a small dialog asks for the shape and, for rectangles, which sides to extend to the photo edges.
+
+- **Rectangle** / **Square**: click two opposite corners (a live preview follows the cursor). Every side ticked in the dialog (*left*, *right*, *top*, *bottom*) is pushed exactly onto that photo edge, so a safety net across the bottom of the photo is one rectangle with left, right and bottom ticked: only its top edge needs placing. With nothing ticked the region can sit anywhere in the photo. A square uses the longer side of the two clicks.
+- **Free polygon**: click the corners (straight edges, no edge snapping) and close with **Y**; corners near a photo edge snap onto it.
+
+The dialog remembers the last choice; Cancel leaves the current tool unchanged. **U** cancels the corner(s) in progress, or the last saved region; with nothing in progress, a click inside a saved region deletes it (the most recent one where regions overlap). To draw a region overlapping another, place its first corner outside the existing one. Regions are drawn as magenta-hatched glass.
+
+Each region is saved in the JSON as a `polygon` shape with label `ignore_<photo>` and `"flags": {"ignore": true}`, and exported as `<name>-ignore_mask.png`. In training, exclude those pixels from the loss; in evaluation, exclude them from the metrics. They play no role at inference. Ignore regions belong to their own photo: **W**/**L** imports never project them onto another photo, and Validation does not count them as detachments.
+
+Stop crack traces at the edge of the occluded area rather than tracing through it. `I` used to be an alias of `+` (zoom in); since 1.0.7 zoom in is `+` or `=`.
 
 ## Companion tools
 

@@ -191,6 +191,8 @@ class Config:
         bookkeeping (building group, undo/redo, in-progress traces)."""
         self.saved_cracks = []
         self.saved_detachments = []
+        # [I] ignore regions: polygons over occluded areas (nets, scaffolding), excluded from training/evaluation.
+        self.saved_ignores = []
         # Keeps in memory the active building group index for the current session
         self.CURRENT_BUILDING_INDEX = None
         # Stores the mode chosen by the user at startup ("1" or "2")
@@ -341,6 +343,12 @@ class Config:
         self.CRACK_MULTIVIEW_MAX_SHIFT_PX = 12
         # Tolerance (px) around the projected line when reading the ridge response in the other photo.
         self.CRACK_MULTIVIEW_SEARCH_RADIUS_PX = 3
+
+    def _init_ignore_region_settings(self):
+        """[I] ignore regions: label in the JSON (photo name appended) and the <photo>-ignore_mask.png export."""
+        self.IGNORE_LABEL = "ignore"
+        # Write <photo>-ignore_mask.png (filled polygons, 255 = exclude from loss and metrics).
+        self.IGNORE_EXPORT_MASK = True
 
     def _init_gsd_calibration(self):
         """Millimeters of real wall per pixel of the current photo batch; 0.0 means uncalibrated, leaving CRACK_AUTO_EDGE_MAX_OFFSET_PX/CRACK_MASK_DILATION_PX at their fallback values.
@@ -508,6 +516,7 @@ class Config:
         self._init_crack_compat_thresholds()
         self._init_crack_mask_settings()
         self._init_crack_quality_settings()
+        self._init_ignore_region_settings()
         self._init_gsd_calibration()
         self._init_width_edit_state()
         self._init_manual_group_entry_state()

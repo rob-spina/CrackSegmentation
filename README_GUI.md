@@ -32,6 +32,32 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.0.7: strumento Ignore region (tasto I)
+
+Nuovo modulo `ignore_regions.py`, agganciato a `CrackSegmentation` come mixin.
+Il tasto **I** (o il pulsante **⊘ Ignore region** nella barra laterale, che
+resta premuto finché lo strumento è attivo) serve a delimitare le zone
+occluse (rete di cantiere, ponteggi, cavi, vegetazione). Si apre una
+finestrella in cui si sceglie la forma (**Rectangle**, **Square** o **Free
+polygon**) e quali lati portare sul bordo della foto (sinistro, destro,
+superiore, inferiore; nessuna spunta = regione libera in mezzo alla foto).
+Rettangolo e quadrato si disegnano con due clic sugli angoli opposti, con
+anteprima; i lati spuntati finiscono esattamente sul bordo (es. rete in basso:
+spunta sinistro, destro e inferiore e basta indicare il bordo superiore). Il
+poligono libero si disegna cliccando i vertici e si chiude con **Y**. La
+finestrella ricorda l'ultima scelta; Cancel lascia lo strumento invariato. **U**
+annulla il clic in corso o l'ultima regione; un clic dentro una regione già
+salvata la cancella (se si sovrappongono, l'ultima disegnata). Per disegnare
+una regione sovrapposta a un'altra, il primo vertice va messo fuori. Le regioni compaiono velate e
+tratteggiate in magenta.
+
+Nel JSON ogni regione è un `polygon` con etichetta `ignore_<foto>` e
+`"flags": {"ignore": true}`; al salvataggio viene scritta anche
+`Binary files/<foto>-ignore_mask.png` (255 = da escludere da loss e
+metriche). Le regioni non vengono mai proiettate su altre foto da W/L e
+non vengono contate come distacchi da Validation. Il tasto `I` prima era un
+alias di zoom-in: ora lo zoom-in è `+` o `=`.
+
 ## Novità 1.0.6: quattro nuovi pulsanti nella barra laterale + Modo 2 riprende dall'ultima
 
 Nuovi moduli: `inspection_tools.py` (HWAV, Zoom window, Crack report) e

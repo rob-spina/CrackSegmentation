@@ -321,6 +321,7 @@ SIDEBAR_WIDTH = 210
 _SIDEBAR_SHORTCUTS = [
     ("\u26A1", "Crack tool", "C", ord('c')),
     ("\u25A6", "Detachment tool", "D", ord('d')),
+    ("\u2298", "Ignore region", "I", ord('i')),
     ("\U0001F535", "Toggle blue overlay", "N", ord('n')),
     ("\U0001F4CD", "Toggle markers", "Space", ord(' ')),
     ("\U0001F504", "Retrace cracks", "V", ord('v')),
@@ -348,6 +349,7 @@ _SIDEBAR_SHORTCUTS = [
 
 # Sidebar toggles shown pressed while their tool is on: code -> reads the state from cfg.
 _SIDEBAR_TOGGLE_STATES = {
+    ord('i'): lambda cfg: cfg.current_tool == 'ignore',
     14: lambda cfg: cfg.show_viewed_windows,
     15: lambda cfg: cfg.zoom_window_state["active"],
     16: lambda cfg: cfg.crack_report_state["active"],
@@ -654,6 +656,54 @@ class _ModeChoiceDialog:
         self.top.destroy()
 
 
+class _IgnoreOptionsDialog:
+    """[I] options: shape (rectangle / square / free polygon) and which photo edges a rectangle is extended to.
+    No edge ticked = the region can sit anywhere in the photo. OK/Enter applies, Cancel/Esc/close keeps the tool unchanged."""
+
+    SHAPES = (("rectangle", "Rectangle"), ("square", "Square"), ("polygon", "Free polygon (click corners, Y to close)"))
+    EDGES = (("left", "Extend to the LEFT edge of the photo"), ("right", "Extend to the RIGHT edge of the photo"),
+             ("top", "Extend to the TOP edge of the photo"), ("bottom", "Extend to the BOTTOM edge of the photo"))
+
+    def __init__(self, master, current):
+        self.result = None
+        self.top = tk.Toplevel(master)
+        self.top.title("Ignore region")
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.shape_var = tk.StringVar(master=self.top, value=current.get("shape", "rectangle"))
+        edges = current.get("edges") or {}
+        self.edge_vars = {key: tk.BooleanVar(master=self.top, value=bool(edges.get(key))) for key, _ in self.EDGES}
+        self._build()
+        self.top.bind("<Return>", lambda e: self._ok())
+        self.top.bind("<Escape>", lambda e: self._cancel())
+        self.top.grab_set()
+        self.top.focus_force()
+
+    def _build(self):
+        body = tk.Frame(self.top, padx=16, pady=12)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Shape", font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
+        for value, label in self.SHAPES:
+            tk.Radiobutton(body, text=label, value=value, variable=self.shape_var).pack(anchor="w")
+        tk.Label(body, text="Rectangle / square: sides pushed onto the photo edge",
+                 font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(10, 0))
+        tk.Label(body, text="(none ticked = free region anywhere in the photo)", fg="#6b7280").pack(anchor="w")
+        for key, label in self.EDGES:
+            tk.Checkbutton(body, text=label, variable=self.edge_vars[key]).pack(anchor="w")
+        buttons = tk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        tk.Button(buttons, text="Cancel", command=self._cancel).pack(side="right")
+        tk.Button(buttons, text="OK", command=self._ok).pack(side="right", padx=(0, 6))
+
+    def _ok(self):
+        self.result = {"shape": self.shape_var.get(), "edges": {k: bool(v.get()) for k, v in self.edge_vars.items()}}
+        self.top.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.top.destroy()
+
+
 # Menu bar command tables -- (label, key_code) matching process_keypress()'s
 # real key codes. Labels use a Unicode symbol prefix (plain text, no bitmap icons).
 
@@ -683,7 +733,8 @@ _EDIT_COMMANDS = [
 _TOOL_COMMANDS = [
     ("\u26A1 Tool: Crack\tC", ord('c')),
     ("\u25A6 Tool: Detachment\tD", ord('d')),
-    ("\u2705 Close detachment polygon\tY", ord('y')),
+    ("\u2298 Tool: Ignore region (occluded area)\tI", ord('i')),
+    ("\u2705 Close detachment / ignore polygon\tY", ord('y')),
     ("\u270E Toggle edit mode\tE", ord('e')),
     ("\U0001F9F2 Automatic snap / translate\tT", ord('t')),
     ("\U0001F504 Retrace imported cracks onto real edge\tV", ord('v')),
@@ -987,6 +1038,12 @@ class GuiCrackSegmentation(CrackSegmentation):
             "Crack numbers separated by ';' (e.g. 3;7;12).\nLeave empty to show every crack:",
             initialvalue=current_text, parent=self._tk_root,
         )
+
+    def _prompt_ignore_options(self, current):
+        # [I] / sidebar button: modal Tk dialog for shape and edges; None = cancelled.
+        dialog = _IgnoreOptionsDialog(self._tk_root, current)
+        self._tk_root.wait_window(dialog.top)
+        return dialog.result
 
     def _prompt_calibration_distance(self):
         return simpledialog.askfloat(

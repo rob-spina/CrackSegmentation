@@ -552,7 +552,7 @@ class TestPdfManualPanel(unittest.TestCase):
         root = fake_tkinter.Tk()
         panel = gm.PdfManualPanel(root, "/fake/path/manual.pdf")
         if fake_fitz_module is not None:
-            patcher = mock.patch.dict(sys.modules, {"fitz": fake_fitz_module})
+            patcher = mock.patch.dict(sys.modules, {"fitz": fake_fitz_module, "pymupdf": fake_fitz_module})
             patcher.start()
             self.addCleanup(patcher.stop)
         return panel
@@ -600,7 +600,7 @@ class TestPdfManualPanel(unittest.TestCase):
 
     def test_missing_fitz_shows_a_fallback_message_instead_of_crashing(self):
         panel = self._make_panel()
-        with mock.patch.dict(sys.modules, {"fitz": None}):
+        with mock.patch.dict(sys.modules, {"fitz": None, "pymupdf": None}):
             panel.show()  # must not raise
         self.assertEqual(panel._photo_refs, [], "no pages rendered when fitz is unavailable")
 
@@ -910,14 +910,14 @@ class TestGuiCrackSegmentationHooks(unittest.TestCase):
         # rendering in smart_segmentation.py's render_scene(), unused
         # once the real PDF manual takes over in GUI mode.
         fake_module = fake_fitz.FakeFitzModule(n_pages=1)
-        with mock.patch.dict(sys.modules, {"fitz": fake_module}):
+        with mock.patch.dict(sys.modules, {"fitz": fake_module, "pymupdf": fake_module}):
             self.app._toggle_help_menu()
         self.assertTrue(self.app._pdf_panel_visible)
         self.assertFalse(self.app.cfg.show_help_menu, "must not touch the headless-mode overlay flag")
 
     def test_toggle_help_menu_twice_returns_to_the_photo_canvas(self):
         fake_module = fake_fitz.FakeFitzModule(n_pages=1)
-        with mock.patch.dict(sys.modules, {"fitz": fake_module}):
+        with mock.patch.dict(sys.modules, {"fitz": fake_module, "pymupdf": fake_module}):
             self.app._toggle_help_menu()
             self.app._toggle_help_menu()
         self.assertFalse(self.app._pdf_panel_visible)
@@ -1019,7 +1019,7 @@ class TestGuiCrackSegmentationHooks(unittest.TestCase):
         # smart_segmentation.py) -- exercises that whole chain, not
         # just a direct call to _toggle_help_menu().
         fake_module = fake_fitz.FakeFitzModule(n_pages=1)
-        with mock.patch.dict(sys.modules, {"fitz": fake_module}):
+        with mock.patch.dict(sys.modules, {"fitz": fake_module, "pymupdf": fake_module}):
             self.app.process_keypress(ord('?'))
         self.assertTrue(self.app._pdf_panel_visible)
 
