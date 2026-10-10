@@ -3,7 +3,7 @@ v1.0.7 ignore regions mixed into CrackSegmentation (smart_segmentation.py).
 [I] (or the "Ignore region" sidebar button) opens a small options dialog, then selects the tool:
   - Rectangle / Square: two clicks (opposite corners); each side ticked in the dialog is pushed onto that photo edge.
   - Polygon: click the corners, close with [Y] (corners near a photo edge snap onto it).
-Click inside a saved region (with nothing in progress) to delete it. Occluders: safety nets, scaffolding, cables, vegetation.
+Click inside a saved region (with nothing in progress) to delete it; drag a corner (or a rectangle side) to reshape it. Occluders: safety nets, scaffolding, cables, vegetation.
 Saved in the JSON with label "ignore" and exported as <photo>-ignore_mask.png (255 = exclude from loss and metrics).
 """
 import time
@@ -16,6 +16,7 @@ IGNORE_OUTLINE_BGR = (255, 0, 255)   # magenta outline and corner markers
 IGNORE_FILL_BGR = (70, 70, 70)       # dark grey glass
 IGNORE_FILL_ALPHA = 0.45
 IGNORE_HATCH_SPACING_PX = 16         # window pixels between hatch lines
+IGNORE_HANDLE_WIN_PX = 12            # grab distance (window pixels) for a corner or a rectangle side
 IGNORE_EDGE_SNAP_WIN_PX = 15         # a polygon corner this close to a photo edge (window pixels) snaps onto it
 
 IGNORE_SHAPES = ("rectangle", "square", "polygon")
@@ -29,9 +30,10 @@ class IgnoreRegionsMixin:
     # --- tool selection ---------------------------------------------------------------
 
     def _discard_in_progress_ignore(self):
-        """Drops the corners of a polygon not yet closed with [Y]."""
+        """Drops the corners of a polygon not yet closed with [Y], and any half-done reshape."""
         if self.cfg.current_tool == 'ignore':
             self.cfg.temp_nodes, self.cfg.temp_path = [], []
+        self.cfg.ignore_drag = None
 
     def _ignore_options(self):
         """Current dialog choices (shape + edges to extend to), remembered for the session."""
@@ -153,7 +155,9 @@ class IgnoreRegionsMixin:
 
     def _ignore_tool_click(self, x, y):
         real_x, real_y = self.transform_window_to_real_coords(x, y)
-        # Deleting only while no polygon is in progress, so corners can still be placed over an existing region.
+        # Grabbing/deleting only while nothing is in progress, so corners can still be placed over an existing region.
+        if not self.cfg.temp_nodes and self._start_ignore_drag(x, y):
+            return
         if not self.cfg.temp_nodes and self._delete_ignore_at(real_x, real_y):
             return
         if self._ignore_options()["shape"] == "polygon":
@@ -176,7 +180,129 @@ class IgnoreRegionsMixin:
         if event == cv2.EVENT_LBUTTONDOWN:
             self._ignore_tool_click(x, y)
         elif event == cv2.EVENT_MOUSEMOVE:
-            self._ignore_tool_preview(x, y)
+            if self._ignore_drag_state() is not None:
+                self._drag_ignore_handle(x, y)
+            else:
+                self._ignore_tool_preview(x, y)
+        elif event == cv2.EVENT_LBUTTONUP:
+            self._end_ignore_drag()
+
+    # --- reshaping a saved region -------------------------------------------------------
+
+    @staticmethod
+    def _is_axis_rectangle(path):
+        """True for a 4-corner axis-aligned region (rectangle/square tool): edited by corners and sides."""
+        if len(path) != 4:
+            return False
+        xs = sorted({int(p[0]) for p in path})
+        ys = sorted({int(p[1]) for p in path})
+        return len(xs) == 2 and len(ys) == 2 and all((int(p[0]), int(p[1])) in
+                                                     {(xs[0], ys[0]), (xs[1], ys[0]), (xs[1], ys[1]), (xs[0], ys[1])}
+                                                     for p in path)
+
+    def _ignore_drag_state(self):
+        return getattr(self.cfg, "ignore_drag", None)
+
+    def _find_ignore_handle(self, x, y):
+        """(region, kind, key) of the corner or rectangle side under window point (x, y), most recent region first.
+        kind 'vertex' -> key = corner index (polygon) or ('l'|'r', 't'|'b') (rectangle); kind 'side' -> 'l'|'r'|'t'|'b'."""
+        tol = IGNORE_HANDLE_WIN_PX
+        for region in reversed(self.cfg.saved_ignores):
+            path = region.get('path') or []
+            if len(path) < 3:
+                continue
+            win = self._ignore_polygon_window_pts(path)
+            is_rect = self._is_axis_rectangle(path)
+            for i, (wx, wy) in enumerate(win):
+                if abs(wx - x) <= tol and abs(wy - y) <= tol:
+                    if not is_rect:
+                        return region, 'vertex', i
+                    l, t, r, b = self._rect_bounds(path)
+                    px, py = path[i]
+                    return region, 'vertex', ('l' if px == l else 'r', 't' if py == t else 'b')
+            if is_rect:
+                side = self._rect_side_under(win, x, y, tol)
+                if side is not None:
+                    return region, 'side', side
+        return None
+
+    @staticmethod
+    def _rect_bounds(path):
+        xs = [int(p[0]) for p in path]
+        ys = [int(p[1]) for p in path]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    @staticmethod
+    def _rect_side_under(win, x, y, tol):
+        wl, wt = int(min(p[0] for p in win)), int(min(p[1] for p in win))
+        wr, wb = int(max(p[0] for p in win)), int(max(p[1] for p in win))
+        if wt - tol <= y <= wb + tol:
+            if abs(x - wl) <= tol:
+                return 'l'
+            if abs(x - wr) <= tol:
+                return 'r'
+        if wl - tol <= x <= wr + tol:
+            if abs(y - wt) <= tol:
+                return 't'
+            if abs(y - wb) <= tol:
+                return 'b'
+        return None
+
+    def _start_ignore_drag(self, x, y):
+        """Press on a corner/side: starts reshaping that region. Returns True if one was grabbed."""
+        hit = self._find_ignore_handle(x, y)
+        if hit is None:
+            return False
+        region, kind, key = hit
+        self.cfg.ignore_drag = {"region": region, "kind": kind, "key": key, "old_path": list(region['path'])}
+        return True
+
+    def _drag_ignore_handle(self, x, y):
+        drag = self._ignore_drag_state()
+        region = drag["region"]
+        px, py = self._snap_to_photo_edges(*self.transform_window_to_real_coords(x, y))
+        if isinstance(drag["key"], int):
+            path = list(region['path'])
+            path[drag["key"]] = (px, py)
+            region['path'] = path
+        else:
+            l, t, r, b = self._rect_bounds(drag["old_path"])
+            sides = drag["key"] if drag["kind"] == 'vertex' else (drag["key"],)
+            for side in sides:
+                if side == 'l':
+                    l = px
+                elif side == 'r':
+                    r = px
+                elif side == 't':
+                    t = py
+                elif side == 'b':
+                    b = py
+            l, r = sorted((l, r))
+            t, b = sorted((t, b))
+            region['path'] = [(l, t), (r, t), (r, b), (l, b)]
+        self.refresh_zoom_viewport()
+
+    def _end_ignore_drag(self):
+        """Release: keeps the new shape (undoable with [U]); a degenerate result reverts to the old one."""
+        drag = self._ignore_drag_state()
+        if drag is None:
+            return
+        self.cfg.ignore_drag = None
+        region, old_path = drag["region"], drag["old_path"]
+        if self._ignore_area(region['path']) < 1:
+            region['path'] = old_path
+            print(" [IGNORE] Shape too small: change undone.")
+        elif list(region['path']) != list(old_path):
+            self.cfg.redo_history.clear()
+            self.cfg.action_history.append(('ignore_edit', (region, old_path)))
+            print(" [IGNORE] Region reshaped ([U] to undo).")
+        self.refresh_zoom_viewport()
+
+    @staticmethod
+    def _ignore_area(path):
+        if len(path) < 3:
+            return 0.0
+        return abs(cv2.contourArea(np.array(path, dtype=np.float32).reshape(-1, 1, 2)))
 
     def _close_ignore_polygon(self):
         """[Y] with the ignore tool: saves the polygon (needs >=3 corners)."""
@@ -221,6 +347,11 @@ class IgnoreRegionsMixin:
             self.cfg.saved_ignores.append(last_action[1])
             self.cfg.redo_history.append(('ignore_redelete', last_action[1]))
             return True
+        if isinstance(last_action, tuple) and last_action and last_action[0] == 'ignore_edit':
+            region, old_path = last_action[1]
+            self.cfg.redo_history.append(('ignore_edit', (region, list(region['path']))))
+            region['path'] = list(old_path)
+            return True
         return False
 
     def _redo_ignore_action(self, action_type, restored):
@@ -234,6 +365,12 @@ class IgnoreRegionsMixin:
             self.cfg.saved_ignores[:] = [r for r in self.cfg.saved_ignores if r is not restored]
             self.cfg.action_history.append(('ignore_delete', restored))
             print("[REDO] Ignore region deleted again.")
+            return True
+        if action_type == 'ignore_edit':
+            region, new_path = restored
+            self.cfg.action_history.append(('ignore_edit', (region, list(region['path']))))
+            region['path'] = list(new_path)
+            print("[REDO] Ignore region reshaped again.")
             return True
         return False
 
@@ -301,7 +438,17 @@ class IgnoreRegionsMixin:
         if polys:
             self._paint_hatched_glass(win_out, polys)
             cv2.polylines(win_out, polys, True, IGNORE_OUTLINE_BGR, 2)
+            if self.cfg.current_tool == 'ignore' and self.cfg.show_markers:
+                self._draw_ignore_handles(win_out, polys)
         self._draw_in_progress_ignore(win_out, marker_dim)
+
+    @staticmethod
+    def _draw_ignore_handles(win_out, polys):
+        """Small filled squares on every corner: drag them to reshape the region."""
+        for poly in polys:
+            for wx, wy in poly:
+                cv2.rectangle(win_out, (int(wx) - 5, int(wy) - 5), (int(wx) + 5, int(wy) + 5), IGNORE_OUTLINE_BGR, -1)
+                cv2.rectangle(win_out, (int(wx) - 5, int(wy) - 5), (int(wx) + 5, int(wy) + 5), (255, 255, 255), 1)
 
     @staticmethod
     def _draw_first_corner_marker(win_out, corner, marker_dim):

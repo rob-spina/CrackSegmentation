@@ -8,6 +8,7 @@ Headless tests for the v1.0.7 ignore-region tool [I]:
   5. [X] Clear All, W/L import projection, training validation counts
   6. GUI: sidebar button and Tools menu entry
   7. options dialog: rectangle / square by two clicks, with sides extended to the photo edges
+  8. reshaping: drag a polygon corner, or a rectangle corner/side; undo/redo
 
 Run with:  python3 -m unittest test_v107_ignore -v
 """
@@ -337,6 +338,109 @@ class TestIgnoreRectangle(unittest.TestCase):
         app._draw_ignore_regions(win, 22)
         lx, ly = app.transform_real_to_window_coords(60, 85)  # middle of the left side
         self.assertTrue(win[ly, lx - 1:lx + 2].any(), "the closing (left) side is drawn")
+
+
+def _drag(app, p_from, p_to):
+    for event, (x, y) in ((cv2.EVENT_LBUTTONDOWN, p_from), (cv2.EVENT_MOUSEMOVE, p_to), (cv2.EVENT_LBUTTONUP, p_to)):
+        wx, wy = app.transform_real_to_window_coords(x, y)
+        app.mouse_callback(event, wx, wy, 0, None)
+
+
+class TestIgnoreReshape(unittest.TestCase):
+
+    def _bounds(self, app, idx=0):
+        path = app.cfg.saved_ignores[idx]['path']
+        return (min(p[0] for p in path), min(p[1] for p in path), max(p[0] for p in path), max(p[1] for p in path))
+
+    def _rect(self):
+        app = _rect_app()
+        app.process_keypress(ord('i'))
+        _click(app, 60, 50)
+        _click(app, 160, 120)
+        return app
+
+    def test_drag_a_polygon_corner(self):
+        app = _poly_app()
+        _draw_square(app)
+        _drag(app, (140, 140), (180, 170))
+        path = app.cfg.saved_ignores[0]['path']
+        self.assertTrue(_close(path[2], (180, 170)), path)
+        self.assertTrue(_close(path[0], SQUARE[0]), "the other corners stay put")
+        self.assertEqual(len(app.cfg.saved_ignores), 1, "grabbing a corner never deletes")
+
+    def test_drag_a_rectangle_corner_keeps_it_rectangular(self):
+        app = self._rect()
+        _drag(app, (160, 120), (200, 150))
+        l, t, r, b = self._bounds(app)
+        self.assertTrue(abs(l - 60) <= 3 and abs(t - 50) <= 3 and abs(r - 200) <= 3 and abs(b - 150) <= 3)
+        self.assertTrue(app._is_axis_rectangle(app.cfg.saved_ignores[0]['path']))
+
+    def test_drag_a_rectangle_side(self):
+        app = self._rect()
+        _drag(app, (160, 85), (230, 95))  # right side, halfway down: only x moves
+        l, t, r, b = self._bounds(app)
+        self.assertTrue(abs(r - 230) <= 3)
+        self.assertTrue(abs(t - 50) <= 3 and abs(b - 120) <= 3, "top and bottom unchanged")
+
+    def test_dragging_a_side_onto_the_photo_edge_snaps(self):
+        app = self._rect()
+        _drag(app, (160, 85), (W - 3, 85))
+        self.assertEqual(self._bounds(app)[2], W - 1)
+
+    def test_rectangle_can_be_flipped_past_the_opposite_side(self):
+        app = self._rect()
+        _drag(app, (160, 85), (20, 85))
+        l, t, r, b = self._bounds(app)
+        self.assertTrue(abs(l - 20) <= 3 and abs(r - 60) <= 3)
+
+    def test_undo_and_redo_a_reshape(self):
+        app = self._rect()
+        before = list(app.cfg.saved_ignores[0]['path'])
+        _drag(app, (160, 120), (200, 150))
+        after = list(app.cfg.saved_ignores[0]['path'])
+        app.process_keypress(ord('u'))
+        self.assertEqual(app.cfg.saved_ignores[0]['path'], before)
+        app.process_keypress(ord('r'))
+        self.assertEqual(app.cfg.saved_ignores[0]['path'], after)
+
+    def test_collapsing_a_rectangle_reverts(self):
+        app = self._rect()
+        before = list(app.cfg.saved_ignores[0]['path'])
+        _drag(app, (160, 85), (60, 85))  # right side dragged onto the left one
+        self.assertEqual(app.cfg.saved_ignores[0]['path'], before)
+        self.assertNotIn('ignore_edit', [a[0] for a in app.cfg.action_history if isinstance(a, tuple)])
+
+    def test_click_without_moving_changes_nothing(self):
+        app = self._rect()
+        history = list(app.cfg.action_history)
+        _drag(app, (160, 120), (160, 120))
+        self.assertEqual(app.cfg.action_history, history)
+        self.assertEqual(len(app.cfg.saved_ignores), 1)
+
+    def test_click_in_the_middle_still_deletes(self):
+        app = self._rect()
+        _click(app, 110, 85)
+        self.assertEqual(app.cfg.saved_ignores, [])
+
+    def test_regions_loaded_from_json_are_editable_rectangles(self):
+        app = _rect_app()
+        loaded = app._build_loaded_ignore([(160, 120), (60, 120), (60, 50), (160, 50)])
+        app.cfg.saved_ignores = [loaded]
+        app.process_keypress(ord('i'))
+        _drag(app, (160, 85), (200, 85))
+        self.assertTrue(abs(self._bounds(app)[2] - 200) <= 3)
+        self.assertTrue(app._is_axis_rectangle(app.cfg.saved_ignores[0]['path']))
+
+    def test_handles_drawn_only_with_the_tool_on(self):
+        app = self._rect()
+        win = np.zeros((900, 1200, 3), dtype=np.uint8)
+        app._draw_ignore_regions(win, 22)
+        cx, cy = app.transform_real_to_window_coords(60, 50)
+        self.assertTrue((win[cy, cx] > 0).any())
+        app.process_keypress(ord('c'))
+        win2 = np.zeros((900, 1200, 3), dtype=np.uint8)
+        app._draw_ignore_regions(win2, 22)
+        self.assertLess(int((win2 > 0).sum()), int((win > 0).sum()), "fewer marks without the handles")
 
 
 class TestIgnoreExport(unittest.TestCase):
