@@ -334,7 +334,7 @@ _SIDEBAR_SHORTCUTS = [
     ("\U0001F9F2", "Snap / translate", "T", ord('t')),
     ("\u2194", "Width-edit mode", "A", ord('a')),
     ("\U0001F3F7", "Assign building", "B", ord('b')),
-    ("\u2B1C", "Building portion (import)", "", 20),
+    ("\u2B1C", "Building portion (import)", "5", 20),
     ("\U0001F50D", "Compatibility check", "G", ord('g')),
     ("\U0001F4D0", "Set scale", "K", ord('k')),
     ("\u26F6", "Fullscreen", "F", ord('f')),

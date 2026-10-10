@@ -462,8 +462,8 @@ class Config:
         # Intermediate points of the trace in progress, and the route traced so far through them.
         self.trace_waypoints = []
         self.trace_partial_path = []
-        # Most intermediate points per crack (3rd and 4th click).
-        self.TRACE_MAX_WAYPOINTS = 2
+        # Most intermediate points per crack; None = no limit (Shift+click as many as needed).
+        self.TRACE_MAX_WAYPOINTS = None
         # Guided route through those points (guided_trace.py): search padding and click snap radius (px).
         self.TRACE_GUIDE_PAD_PX = 60
         self.TRACE_GUIDE_SNAP_PX = 4
