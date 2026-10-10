@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.0.5</div>
+    <div class="meta-line">Version 1.0.7</div>
   </div>
 
   <div class="features">
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.0.5_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.0.7_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.5_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.7_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -575,29 +575,55 @@ sudo apt-get install -f</div>
 
 <table class="shortcuts">
 <tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
-<tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Click start and end; <span class="key">Shift</span>+click adds points to pass through.</td></tr>
-<tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Activates the mode for drawing polygons for plaster/material detachment areas.</td></tr>
-<tr><td>Save / Save &amp; Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Exports JSON and masks; <span class="key">S</span> stays on the photo, <span class="key">Enter</span> moves to the next.</td></tr>
-<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Projects the cracks of a previous photo of the same building (SIFT + homography, matched around the source cracks); an unreliable match imports nothing. <span class="key">5</span> limits it to a window.</td></tr>
-<tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Two clicks. Cut removes the part between them; Join re-routes it; Link merges two cracks (end or line) and saves JSON and mask; <span class="key">$</span> applies an <i>Alternative route</i>.</td></tr>
-
-<tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Re-traces all imported cracks (A*) onto the real edges of the new photo.</td></tr>
-<tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Allows manual, elastic repositioning of an imported crack that hasn&rsquo;t aligned correctly.</td></tr>
-<tr><td>Modify Crack Thickness</td><td><span class="key">A</span></td><td>Varies the thickness (px/side) of crack tracts: <span class="key">+</span> / <span class="key">-</span> widen or narrow the mask.</td></tr>
-<tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Manually assigns a unique code to the current building, useful for tracking across multiple frames.</td></tr>
-<tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Automatically removes cracks that don&rsquo;t match in shape and path between different photos of the same group.</td></tr>
-<tr><td>Scale Calibration</td><td><span class="key">K</span></td><td>Starts the mode to manually calibrate the measurement scale in centimeters relative to image pixels (Pixel-to-CM).</td></tr>
-<tr><td>Simple Navigation</td><td><span class="key">&#8592;</span> / <span class="key">&#8594;</span></td><td>Next/previous image without saving; wheel/trackpad pans when zoomed.</td></tr>
-<tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
+<tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Click the start and then the end of a crack: the route is traced along the edge. <span class="key">Shift</span>+click between them adds as many points as needed that the route must pass through (it then follows the thin dark line of the crack and never turns back at a point); <span class="key">U</span> removes the last point. With no trace in progress, a click on a crack&rsquo;s end marker deletes the crack; with the cursor on a crack end, the arrow keys nudge it by 1&nbsp;px.</td></tr>
+<tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Click the vertices of a plaster/material detachment: each side follows the outline; <span class="key">Y</span> closes the polygon. A click on a detachment&rsquo;s marker deletes it.</td></tr>
+<tr><td>Ignore Region</td><td><span class="key">I</span> / sidebar</td><td>Marks areas where the wall is only partly visible (nets, mesh fences, scaffolding, cables, sparse vegetation). A dialog chooses the shape (rectangle, square, free polygon) and the photo edges it extends to. Rectangle: two clicks on opposite corners; polygon: vertices, then <span class="key">Y</span>. With the tool on, drag a corner or side to reshape, click inside to delete. Saved as <span class="code">-ignore_mask.png</span> (255 = exclude from training loss and metrics); never imported by <span class="key">W</span>/<span class="key">L</span>.</td></tr>
+<tr><td>Edit Detachment Nodes</td><td><span class="key">E</span></td><td>Drag a detachment&rsquo;s clicked vertices; its outline is recomputed live. Press again to leave.</td></tr>
+<tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Two clicks; the same key again leaves the tool. <b>Cut</b>: start and end of the part to remove. <b>Join</b>: two points on one crack re-route the part between them along another edge, or the ends of two pieces reconnect them. <b>Link</b>: two different cracks, clicked at an end or anywhere on the line, become one (a leftover beyond the junction stays a separate crack); JSON and masks are saved at once.</td></tr>
+<tr><td>Alternative Route</td><td>Sidebar &#9654; / <span class="key">$</span></td><td>Each press shows another route for the crack traced last, in a new colour; when none is left the arrow turns to &#9664; and steps back. <span class="key">$</span> makes the route on screen the crack&rsquo;s path; a click on the photo closes the tool.</td></tr>
+<tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Re-traces all imported cracks (A*) onto the real edges of the new photo, discarding implausible results.</td></tr>
+<tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Elastic repositioning of an imported crack that hasn&rsquo;t aligned correctly, with automatic snap to the real edge.</td></tr>
+<tr><td>Modify Crack Thickness</td><td><span class="key">A</span></td><td>Click a crack tract, then <span class="key">+</span> / <span class="key">-</span> widen or narrow its training mask; <span class="key">[</span> <span class="key">]</span> widen the left / right side only, <span class="key">{</span> <span class="key">}</span> narrow it; <span class="key">Backspace</span> removes that tract&rsquo;s setting.</td></tr>
+<tr><td>Undo / Redo</td><td><span class="key">U</span> / <span class="key">R</span></td><td>Undoes / redoes the last action: trace, point, deletion, Cut/Join/Link, ignore region, Clear all.</td></tr>
+<tr><td>Clear All</td><td><span class="key">X</span></td><td>Removes every crack, detachment and ignore region of the photo, also from its JSON; <span class="key">U</span> restores them.</td></tr>
 </table>
 
-<h3 class="sub">Visual Mask Management</h3>
+<h3 class="sub">Import, Groups &amp; Saving</h3>
+<table class="shortcuts">
+<tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
+<tr><td>Save / Save &amp; Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Exports JSON and masks; <span class="key">S</span> stays on the photo, <span class="key">Enter</span> (or <span class="key">Q</span>) moves to the next.</td></tr>
+<tr><td>Previous / Next Image</td><td>Toolbar &#9664; / &#9654;</td><td>Moves through the queue without saving.</td></tr>
+<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Projects the cracks of another photo of the same building (<span class="key">W</span>: the last one saved; <span class="key">L</span>: the group photo with the most shapes). When the viewpoints differ a lot, the photo is re-seen in memory from the source viewpoint and matched again; cracks leaving the view are cut at its edge. An unreliable match imports nothing.</td></tr>
+<tr><td>Building Portion</td><td><span class="key">5</span> / sidebar</td><td>Tints <b>orange</b> the part of the photo shown by the other photos of the group and pre-sets a window around it; drag inside to move it, drag elsewhere for a new one, click outside to remove it, <span class="key">5</span> again when done. <span class="key">W</span>/<span class="key">L</span> then align on the window and import only inside it.</td></tr>
+<tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Type the group number by hand; <span class="key">Enter</span> confirms, <span class="key">Backspace</span> deletes a digit, <span class="key">B</span> cancels.</td></tr>
+<tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Removes cracks that don&rsquo;t match in shape and path between different photos of the same group (also run after each save).</td></tr>
+<tr><td>Validation</td><td>Sidebar</td><td>On the last image of the queue: moves the photos fit for training, with JSON and masks, to <span class="code">Suitable for training</span>, with a CSV report.</td></tr>
+<tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
+<tr><td>Scale</td><td><span class="key">K</span></td><td>Enters the image scale (cm per pixel) by hand, used for lengths and areas.</td></tr>
+</table>
+
+<h3 class="sub">View &amp; Navigation</h3>
+<table class="shortcuts">
+<tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
+<tr><td>Zoom</td><td><span class="key">+</span> <span class="key">=</span> / <span class="key">-</span> <span class="key">O</span> / <span class="key">0</span> <span class="key">Z</span></td><td>Zoom in / out / reset. Zoom in is no longer on <span class="key">I</span> (now Ignore Region).</td></tr>
+<tr><td>Pan</td><td><span class="key">&#8592;</span> <span class="key">&#8593;</span> <span class="key">&#8594;</span> <span class="key">&#8595;</span> / wheel</td><td>Moves the zoomed view (wheel or two-finger trackpad; Shift = sideways).</td></tr>
+<tr><td>Zoom Window</td><td>Sidebar</td><td>Drag a rectangle to zoom straight onto it (up to 40&times;); a plain click still traces. Press again to reset the zoom.</td></tr>
+<tr><td>Highlight Viewed (HWAV)</td><td>Sidebar</td><td>Tints green the areas already shown while panning a zoomed photo, with the share inspected; pressed again it starts a new pass.</td></tr>
+<tr><td>Crack Report</td><td>Sidebar</td><td>Click a crack to read its reliability report (length, reliability, confidence, multi-view confirmation, verdict) in the <span class="key">J</span> panel.</td></tr>
+<tr><td>Show Cracks by Number</td><td>Sidebar</td><td>Type numbers separated by <span class="code">;</span> (e.g. 3;7;12) to show only those cracks; empty = all. Display only: files keep every crack.</td></tr>
+<tr><td>Fullscreen / HUD Size</td><td><span class="key">F</span> / <span class="key">H</span></td><td>Toggles fullscreen; toggles large on-screen text.</td></tr>
+</table>
+
+<h3 class="sub">Visual Mask Management &amp; Other Keys</h3>
 <p>While tracing cracks and defects, transparency/overlay visibility can be managed to avoid obscuring the view:</p>
 <ul class="tight">
-  <li><span class="key">N</span> &nbsp;Shows or hides the blue band; <i>Show cracks by number</i> (e.g. 3;7) shows only those.</li>
+  <li><span class="key">N</span> &nbsp;Shows or hides the blue crack band.</li>
   <li><span class="key">Space</span> &nbsp;Hides the markers (each start marker shows the crack number); <span class="key">.</span> hides messages (auto after 15&nbsp;s).</li>
   <li><span class="key">J</span> &nbsp;Opens/closes the status info panel overlay, with each crack&rsquo;s reliability score (texture along the line) and confidence (0&ndash;1, ridge strength against the wall); <span class="code">[?]</span> marks an uncertain crack.</li>
-  <li><span class="key">?</span> &nbsp;Shows the on-screen user manual.</li>
+  <li><span class="key">M</span> &nbsp;Turns on/off the export of the coloured overlay preview (<span class="code">-seg</span> image) at each save.</li>
+  <li><span class="key">P</span> &nbsp;Pauses / resumes the session timer.</li>
+  <li><span class="key">Backspace</span> / <span class="key">Delete</span> &nbsp;Unlocks a &ldquo;stuck&rdquo; tool, clearing every operation in progress.</li>
+  <li><span class="key">?</span> &nbsp;Shows the on-screen user manual; <span class="key">Esc</span> closes the application.</li>
 </ul>
 
 <!-- ============ 5. WORKFLOW ============ -->
