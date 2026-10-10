@@ -6,7 +6,7 @@ Headless tests for 1.0.7:
   - Alternative route (sidebar, code 18): other edge routes between the ends of the crack traced last,
     one per press, each in its own color; the arrow turns left when none is left; [$] applies one.
   - Show cracks by number (sidebar, code 19): type e.g. 3;7;12 to show only those cracks (display only).
-  - Crack tracing: Shift+click between the start and the end adds up to two intermediate points the
+  - Crack tracing: Shift+click between the start and the end adds as many intermediate points as needed the
     route must pass through (a plain start-end trace is unchanged).
   - Import [W]/[L] between very different viewpoints: the target is re-seen in memory from the source viewpoint
     and matched again (perspective_match.py); cracks leaving the target view are cut, not squashed on its border.
@@ -797,17 +797,28 @@ class TestTraceWaypoints(unittest.TestCase):
         self.assertEqual((crack['start'], crack['end']), ((20, 100), (280, 100)))
         self.assertEqual(self.app.cfg.trace_waypoints, [], "ready for the next crack")
 
-    def test_two_intermediate_points_and_no_more(self):
+    def test_any_number_of_intermediate_points(self):
+        _click_flags(self.app, 20, 100)
+        for x, y in ((50, 70), (80, 40), (120, 40), (180, 40), (220, 40), (250, 70)):
+            _click_flags(self.app, x, y, SHIFT)
+        wps = list(self.app.cfg.trace_waypoints)
+        self.assertEqual(len(wps), 6, "no limit on the number of points")
+        _click_flags(self.app, 280, 100)
+        path = self.app.cfg.saved_cracks[0]['path']
+        pts = np.asarray(path, dtype=np.float64)
+        near = [np.hypot(pts[:, 0] - w[0], pts[:, 1] - w[1]) for w in wps]
+        self.assertTrue(all(d.min() <= 2.0 for d in near), "the route passes through every point")
+        idx = [int(np.argmin(d)) for d in near]
+        self.assertEqual(idx, sorted(idx), "points visited in click order")
+        self.assertFalse(_turns_back(path))
+
+    def test_a_configured_limit_is_still_honoured(self):
+        self.app.cfg.TRACE_MAX_WAYPOINTS = 2
         _click_flags(self.app, 20, 100)
         _click_flags(self.app, 80, 40, SHIFT)
         _click_flags(self.app, 220, 40, SHIFT)
         _click_flags(self.app, 150, 20, SHIFT)   # a third one is refused
-        wps = list(self.app.cfg.trace_waypoints)
-        self.assertEqual(len(wps), 2)
-        self.assertLess(wps[0][0], wps[1][0])
-        _click_flags(self.app, 280, 100)
-        path = self.app.cfg.saved_cracks[0]['path']
-        self.assertLess(path.index(wps[0]), path.index(wps[1]), "points visited in click order")
+        self.assertEqual(len(self.app.cfg.trace_waypoints), 2)
 
     def test_undo_removes_the_last_point_then_the_trace(self):
         _click_flags(self.app, 20, 100)

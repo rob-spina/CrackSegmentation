@@ -95,7 +95,7 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 
 | Key | Action |
 |-----|--------|
-| Click, click | Crack tool (`C`): click the start and the end of a crack, the route is traced along the edge. **Shift+click** in between (since 1.0.7) adds up to two points the route must pass through, when it would otherwise follow a shadow line: through them the route follows the thin dark line of the crack on the photo (`TRACE_GUIDE_*` in `config.py`); `U` removes the last one |
+| Click, click | Crack tool (`C`): click the start and the end of a crack, the route is traced along the edge. **Shift+click** in between (since 1.0.7) adds as many points as needed that the route must pass through, when it would otherwise follow a shadow line: through them the route follows the thin dark line of the crack on the photo (`TRACE_GUIDE_*` in `config.py`); `U` removes the last one |
 | `S` / `Q` / `Enter` | Save the current photo and move to the next one |
 | `C` / `D` / `I` | Crack tool / Detachment tool / Ignore region tool (occluded area) |
 | `Y` | Close the detachment or ignore polygon |

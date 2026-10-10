@@ -4122,9 +4122,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
     def _add_trace_waypoint(self, point):
         """Shift+click while tracing (v1.0.7): an intermediate point the crack must pass THROUGH, so the route
-        cannot follow a shadow edge instead. Up to TRACE_MAX_WAYPOINTS; the route so far is shown right away."""
+        cannot follow a shadow edge instead. As many as needed (TRACE_MAX_WAYPOINTS, None = no limit);
+        the route so far is shown right away."""
         cfg = self.cfg
-        if len(cfg.trace_waypoints) >= cfg.TRACE_MAX_WAYPOINTS:
+        if cfg.TRACE_MAX_WAYPOINTS is not None and len(cfg.trace_waypoints) >= cfg.TRACE_MAX_WAYPOINTS:
             print(f" [TRACE] At most {cfg.TRACE_MAX_WAYPOINTS} intermediate points: click (without Shift) on the END.")
             return
         partial = self._guided_route([cfg.temp_start] + cfg.trace_waypoints + [point])
