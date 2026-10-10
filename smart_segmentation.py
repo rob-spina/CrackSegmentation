@@ -20,6 +20,7 @@ from skimage.morphology import skeletonize
 
 from config import (Config, resolve_script_dir, migrate_legacy_folders,
                     IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME)
+from ignore_regions import IgnoreRegionsMixin
 from inspection_tools import InspectionToolsMixin
 from route_options import AlternativeRoutesMixin, ALT_ROUTE_CODE
 from crack_filter import CrackFilterMixin, CRACK_FILTER_CODE
@@ -30,7 +31,7 @@ from compatible_area import CompatibleAreaMixin
 from training_validation import TrainingValidationMixin
 
 
-class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
+class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
@@ -1243,7 +1244,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
     def _finalize_labelme_shapes(self):
         """Builds every shape (cracks + detachments), then cleans each
         one with a protected group_id/label."""
-        shapes = self._build_crack_shapes() + self._build_detachment_shapes()
+        shapes = self._build_crack_shapes() + self._build_detachment_shapes() + self._build_ignore_shapes()
         return [self._clean_labelme_shape(s) for s in shapes]
 
     def _write_labelme_json(self, labelme_data):
@@ -1260,7 +1261,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         img_name = os.path.splitext(os.path.basename(self.cfg.CURRENT_IMAGE_PATH))[0]
         return os.path.join(folder, f"{img_name}{suffix}{ext}")
 
-    _PHOTO_OUTPUT_SUFFIXES = ("-seg", "-crack_mask", "-crack_uncertain_mask", "-detachment_mask")
+    _PHOTO_OUTPUT_SUFFIXES = ("-seg", "-crack_mask", "-crack_uncertain_mask", "-detachment_mask", "-ignore_mask")
 
     @staticmethod
     def _untagged_photo_name(name):
@@ -1271,7 +1272,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         """{suffix: [file names]} of the overlay/mask files in folder that belong to photo_name,
         whatever building tag (or none) they carry."""
         clean = re.escape(self._untagged_photo_name(photo_name))
-        pattern = re.compile(rf"^{clean}(__BLDG\d+)?(?P<suffix>-seg|-crack_mask|-crack_uncertain_mask|-detachment_mask)\.[A-Za-z]+$")
+        suffixes = "|".join(re.escape(sfx) for sfx in self._PHOTO_OUTPUT_SUFFIXES)
+        pattern = re.compile(rf"^{clean}(__BLDG\d+)?(?P<suffix>{suffixes})\.[A-Za-z]+$")
         found = {}
         if os.path.isdir(folder):
             for f in os.listdir(folder):
@@ -1355,6 +1357,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
             if not self._write_mask_if_nonempty(detachment_mask_out, detachment_mask_path, "Binary detachment mask (filled area)"):
                 print("[MASK EXPORT] No active detachment: detachment mask not generated (nothing to save).")
             self._export_uncertain_crack_mask()
+            self._export_ignore_mask()
         except Exception as mask_error:
             print(f"[MASK EXPORT WARNING] Could not save the binary masks: {mask_error}", file=sys.stderr)
 
@@ -1643,6 +1646,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         projected_shapes = []
         n_rejected_implausible = 0
         for shape in shapes:
+            if self._is_ignore_shape(shape):
+                continue  # occluders differ from photo to photo: never projected
             result, implausible = self._project_one_shape(shape, H_matrix, w2, h2, PLAUSIBLE_MIN_RATIO, PLAUSIBLE_MAX_RATIO)
             if implausible:
                 n_rejected_implausible += 1
@@ -1663,7 +1668,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         for d in self.cfg.saved_detachments:
             if d.get('active', True) and d.get('session_id') == 'current' and 'path' in d:
                 current_workspace_shapes.append({"label": "detachment", "points": [[float(pt[0]), float(pt[1])] for pt in d['path']], "group_id": None, "shape_type": "polygon", "flags": {}})
-        return current_workspace_shapes
+        # Ignore regions all belong to this photo, so the import keeps every one of them.
+        return current_workspace_shapes + self._build_ignore_shapes()
 
     def _report_warp_outcome(self, output_json_path, n_rejected_implausible, num_inliers, n_good_matches):
         """Shows the WARP SYNC banner with the match quality; any implausible-crack rejections get their own warning."""
@@ -1842,7 +1848,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         """Rebuilds one detachment dict from its saved JSON shape."""
         return {'start': points[0], 'nodes': points, 'path': points, 'active': True, 'session_id': 'imported'}
 
-    def _load_one_shape(self, shape, loaded_cracks, loaded_detachments):
+    def _load_one_shape(self, shape, loaded_cracks, loaded_detachments, loaded_ignores=None):
         """Parses one JSON shape and appends it to the right list,
         based on its label/shape_type."""
         label = shape.get("label", "")
@@ -1850,7 +1856,10 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         points = [(int(pt[0]), int(pt[1])) for pt in shape.get("points", [])]
         if not points or len(points) < 2:
             return
-        if label in ["crack", "crepa"] or shape_type in ["linestrip", "linestring"]:
+        if self._is_ignore_shape(shape):
+            if loaded_ignores is not None and len(points) >= 3:
+                loaded_ignores.append(self._build_loaded_ignore(points))
+        elif label in ["crack", "crepa"] or shape_type in ["linestrip", "linestring"]:
             loaded_cracks.append(self._build_loaded_crack(shape, points))
         elif label in ["detachment", "distacco"] or shape_type == "polygon":
             loaded_detachments.append(self._build_loaded_detachment(points))
@@ -1864,15 +1873,16 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
                 labelme_data = json.load(f)
 
             self.cfg.PIXEL_TO_CM_SCALE = labelme_data.get("pixel_to_cm_scale", 0.05)
-            loaded_cracks, loaded_detachments = [], []
+            loaded_cracks, loaded_detachments, loaded_ignores = [], [], []
             self.cfg.action_history.clear()
             self.cfg.redo_history.clear()
 
             for shape in labelme_data.get("shapes", []):
-                self._load_one_shape(shape, loaded_cracks, loaded_detachments)
+                self._load_one_shape(shape, loaded_cracks, loaded_detachments, loaded_ignores)
 
             self.cfg.saved_cracks = loaded_cracks
             self.cfg.saved_detachments = loaded_detachments
+            self.cfg.saved_ignores = loaded_ignores
             self.recalculate_masks()
             print(f"[SUCCESS] Fast load restored: {len(self.cfg.saved_cracks)} cracks aligned.")
         except Exception as e:
@@ -2238,6 +2248,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
     def _reset_session_editing_state(self):
         """Clears every in-progress interaction/editing state for a fresh image."""
         self.cfg.saved_cracks, self.cfg.saved_detachments = [], []
+        self.cfg.saved_ignores = []
         self.cfg.action_history, self.cfg.redo_history = [], []
         self.cfg.temp_start, self.cfg.temp_path, self.cfg.temp_nodes = None, [], []
         self.cfg.translate_state["active"], self.cfg.translate_state["start"], self.cfg.translate_state["idx"] = False, None, None
@@ -2398,11 +2409,13 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         """[X]: full reset of the canvas AND the exported JSON. Itself undoable: [U] restores everything cleared, [R] re-clears it."""
         self._reset_translate_state()
         self._reset_width_edit_state()
-        backup = {'cracks': list(self.cfg.saved_cracks), 'detachments': list(self.cfg.saved_detachments)}
+        backup = {'cracks': list(self.cfg.saved_cracks), 'detachments': list(self.cfg.saved_detachments),
+                  'ignores': list(self.cfg.saved_ignores)}
         self.cfg.redo_history.clear()
         self.cfg.action_history.append(('clear_all', backup))
         self.cfg.saved_cracks.clear()
         self.cfg.saved_detachments.clear()
+        self.cfg.saved_ignores.clear()
         self.cfg.temp_start, self.cfg.temp_path, self.cfg.temp_nodes = None, [], []
         self.cfg.user_clicked_nodes.clear()
         self.recalculate_masks()
@@ -2552,6 +2565,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
 
     def _select_detachment_tool(self):
         """[D]: switches to the detachment tool, same cleanup as [C]."""
+        self._discard_in_progress_ignore()
         self._reset_translate_state()
         self._reset_width_edit_state()
         self._reset_cut_join_state()
@@ -3220,12 +3234,15 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         """Restores everything a [X] Clear All removed, and queues a matching redo entry so [R] can re-clear."""
         self.cfg.saved_cracks[:] = backup['cracks']
         self.cfg.saved_detachments[:] = backup['detachments']
+        self.cfg.saved_ignores[:] = backup.get('ignores', [])
         self.cfg.redo_history.append(('clear_all', backup))
         print("[UNDO] Canvas restored after Clear All.")
 
     def _undo_from_history(self, last_action):
         """Dispatches one popped action_history entry to the right undo
         handler based on its tag."""
+        if self._undo_ignore_action(last_action):
+            return
         if isinstance(last_action, tuple) and len(last_action) > 0 and last_action[0] == 'crack_extension':
             self._undo_crack_extension(last_action[1])
         elif isinstance(last_action, tuple) and len(last_action) > 0 and last_action[0] == 'crack_bulk_retrace':
@@ -3247,6 +3264,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
     def _undo_last_action(self):
         """[U]: the single Undo entry point -- cancels an in-progress trace, or reverses the last completed action_history entry."""
         if self._undo_in_progress_detachment_node():
+            pass
+        elif self._undo_in_progress_ignore_node():
             pass
         elif self._undo_in_progress_crack_trace():
             pass
@@ -3328,6 +3347,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
             self._select_crack_tool()
         elif key_clean in [ord('d'), ord('D')]:
             self._select_detachment_tool()
+        elif key_clean in [ord('i'), ord('I')]:
+            self._select_ignore_tool()
         elif key_clean in [ord('m'), ord('M')]:
             self._toggle_save_seg_image()
         elif key_clean in [ord('p'), ord('P')]:
@@ -3362,7 +3383,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         elif key_clean in [ord('g'), ord('G')]:
             self.filter_incompatible_cracks_for_current_group()
         elif key_clean in [ord('y'), ord('Y')]:
-            self._close_detachment_polygon()
+            self._close_polygon_for_current_tool()
         elif key_clean in [ord('u'), ord('U')]:
             self._undo_last_action()
         elif key_clean in [ord('r'), ord('R')]:
@@ -3449,8 +3470,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
 
             # Arrow-key pan step: 8% of the visible area (was a fixed 100 px / zoom, tiny on 12-20 MP photos).
             step = max(10, int(0.08 * max(self.cfg.W_img, self.cfg.H_img) / self.cfg.zoom_factor)) if self.cfg.zoom_factor > 1.0 else 100
-            # Shared by the zoom handlers and the width-edit [+]/[-] handlers (KEY A).
-            is_plus_key = key_clean in [ord('+'), ord('='), ord('i'), ord('I'), 43, 61] or key == 65451
+            # Shared by the zoom handlers and the width-edit [+]/[-] handlers (KEY A); [I] is the ignore tool since v1.0.7.
+            is_plus_key = key_clean in [ord('+'), ord('='), 43, 61] or key == 65451
             is_minus_key = key_clean in [ord('-'), ord('o'), ord('O'), 45] or key == 65453
             # [ / { / ] / } refine one side at a time of a focused [A] tract.
             is_widen_left_key = key_clean == ord('[')
@@ -4288,6 +4309,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
                 self._handle_crack_tool_mouse(event, x, y, flags)
             elif self.cfg.current_tool == 'detachment':
                 self._handle_detachment_tool_mouse(event, x, y)
+            elif self.cfg.current_tool == 'ignore':
+                self._handle_ignore_tool_mouse(event, x, y)
 
         except Exception as e:
             print(f"[MOUSE EXCEPTION] Error: {e}", file=sys.stderr)
@@ -5278,8 +5301,8 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
             "[Q] or [ENTER] : Save file and move to the next one",
             "[S] : Save current state without changing image",
             "[X] : Clear all (full reset of the canvas and the JSON)",
-            "[C] : Crack tool | [D] : Detachment tool",
-            "[Y] : Close detachment polygon smartly",
+            "[C] : Crack tool | [D] : Detachment tool | [I] : Ignore region (occluded area)",
+            "[Y] : Close the detachment / ignore polygon",
             "[E] : Toggle Edit Mode (user node editing)",
             "[U] : Undo last action | [R] : Redo action",
             "[AUTO] Building Group assigned automatically by comparing each new photo with those already grouped",
@@ -5426,6 +5449,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         self._update_total_cracks_length()
         total_detachments_area_cm2 = sum(self.calcola_area_poligono_cm2(d['path'], self.cfg.PIXEL_TO_CM_SCALE) for d in self.cfg.saved_detachments if d.get('active', True))
 
+        self._draw_ignore_regions(win_out, marker_dim)
         self._draw_tool_markers(win_out, marker_dim)
         self._draw_cut_join_indicator(win_out)
         self._draw_inspection_tools(win_out)
@@ -5551,6 +5575,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         """Redo case: re-applies a [X] Clear All that was just undone."""
         self.cfg.saved_cracks.clear()
         self.cfg.saved_detachments.clear()
+        self.cfg.saved_ignores.clear()
         self.cfg.action_history.append(('clear_all', backup))
         self._reset_json_shapes_on_disk()
         print("[REDO] Canvas cleared again.")
@@ -5571,7 +5596,7 @@ class CrackSegmentation(InspectionToolsMixin, AlternativeRoutesMixin, CrackFilte
         elif action_type == 'crack_snapshot':
             self.cfg.action_history.append(('crack_snapshot', self._swap_crack_snapshot(restored)))
             print("[REDO] Cut/Join re-applied.")
-        else:
+        elif not self._redo_ignore_action(action_type, restored):
             self._redo_restore_crack_or_detachment(action_type, restored)
             self._redo_redelete_crack_or_detachment(action_type, restored)
         self.recalculate_masks()

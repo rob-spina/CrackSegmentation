@@ -20,7 +20,7 @@ from config import IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME
 
 VALID_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
 # Exports of a photo in 'Binary files', named <photo><suffix><ext>.
-BINARY_EXPORT_SUFFIXES = ("-seg", "-crack_mask", "-detachment_mask", "-crack_uncertain_mask")
+BINARY_EXPORT_SUFFIXES = ("-seg", "-crack_mask", "-detachment_mask", "-crack_uncertain_mask", "-ignore_mask")
 REPORT_FIELDS = ["photo", "decision", "reason", "cracks", "mean_reliability_pct", "mean_confidence",
                  "uncertain_cracks", "detachments", "similar_to"]
 
@@ -29,6 +29,12 @@ REPORT_FIELDS = ["photo", "decision", "reason", "cracks", "mean_reliability_pct"
 
 def _is_crack_shape(shape):
     return shape.get("shape_type") in ("linestrip", "linestring", "line") and "detachment" not in str(shape.get("label", ""))
+
+
+def _is_ignore_shape(shape):
+    """[I] ignore polygons (label "ignore_<photo>" or the ignore flag): not detachments."""
+    label = str(shape.get("label", ""))
+    return bool((shape.get("flags") or {}).get("ignore")) or label == "ignore" or label.startswith("ignore_")
 
 
 def _is_uncertain_shape(shape, uncertain_label):
@@ -50,7 +56,7 @@ def photo_quality_from_json(json_path, uncertain_label="crack_incerta"):
     n_uncertain = sum(1 for s in cracks if _is_uncertain_shape(s, uncertain_label))
     return {
         "cracks": len(cracks),
-        "detachments": sum(1 for s in shapes if s.get("shape_type") == "polygon"),
+        "detachments": sum(1 for s in shapes if s.get("shape_type") == "polygon" and not _is_ignore_shape(s)),
         "mean_reliability_pct": float(np.mean(rel)) if rel else None,
         "mean_confidence": float(np.mean(conf)) if conf else None,
         "uncertain_cracks": n_uncertain,

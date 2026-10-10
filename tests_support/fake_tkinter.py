@@ -130,6 +130,34 @@ class Frame(_Widget):
     pass
 
 
+class Radiobutton(_Widget):
+    pass
+
+
+class Checkbutton(_Widget):
+    pass
+
+
+class _Var:
+    """StringVar/BooleanVar stand-in: holds a value, get()/set() only."""
+    def __init__(self, master=None, value=None, **kw):
+        self._value = value
+
+    def get(self):
+        return self._value
+
+    def set(self, value):
+        self._value = value
+
+
+class StringVar(_Var):
+    pass
+
+
+class BooleanVar(_Var):
+    pass
+
+
 class LabelFrame(_Widget):
     pass
 
@@ -311,6 +339,10 @@ mod = types.ModuleType("tkinter")
 mod.Tk = Tk
 mod.Toplevel = Toplevel
 mod.Frame = Frame
+mod.Radiobutton = Radiobutton
+mod.Checkbutton = Checkbutton
+mod.StringVar = StringVar
+mod.BooleanVar = BooleanVar
 mod.LabelFrame = LabelFrame
 mod.Label = Label
 mod.Button = Button
