@@ -4,7 +4,8 @@ Headless tests for 1.0.8:
   - The sidebar title reads "More Features".
   - Eraser (sidebar, code 21): a window follows the mouse; dragging it over a crack erases that part
     (a crack crossed in the middle is split in two) and updates the JSON and the binary crack mask.
-  - Remove uncertain (sidebar, code 22): deletes every crack marked [?] and updates the JSON and masks.
+  - Remove uncertain (sidebar, code 22): deletes every crack on screen marked [?] (cracks hidden by
+    Show cracks by number are kept) and updates the JSON and masks.
   (Validation available once every photo is segmented: see test_v106_features.TestValidationRun.)
 
 Run with:  python3 -m unittest test_v108_features -v
@@ -184,6 +185,15 @@ class TestRemoveUncertain(unittest.TestCase):
         mask = cv2.imread(os.path.join(self.tmpdir, "Binary files", "wall-crack_mask.png"), cv2.IMREAD_GRAYSCALE)
         self.assertEqual(mask[100, 200], 0)
         self.assertEqual(mask[100, 50], 255)
+
+    def test_cracks_hidden_by_number_filter_are_kept(self):
+        # Only crack 1 shown: the uncertain crack 2 is hidden, so nothing is removed.
+        self.app.cfg.crack_filter = {"numbers": [1],
+                                     "hidden_keys": {self.app._crack_path_key(self.uncertain_path)}}
+        with mock.patch.object(self.app, "_confirm_remove_uncertain") as confirm:
+            self.assertFalse(self.app._remove_uncertain_cracks())
+        confirm.assert_not_called()
+        self.assertEqual(len(self.app.cfg.saved_cracks), 2)
 
     def test_cancel_removes_nothing(self):
         with mock.patch.object(self.app, "_confirm_remove_uncertain", return_value=False):

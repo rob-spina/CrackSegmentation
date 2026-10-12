@@ -108,7 +108,7 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 | `K` | Enter the image scale manually |
 | `1` / `2` | Cut a crack part / Join (re-route or reconnect) — two clicks |
 | Eraser (sidebar) | (since 1.0.8) A red window follows the mouse: press and drag it over a crack to erase the part it touches; a crack crossed in the middle is split in two. `[` / `]` make the window smaller / larger. The JSON and binary masks are updated on release; `U` undoes |
-| Remove uncertain [?] (sidebar) | (since 1.0.8) After a confirmation, deletes every crack of the photo marked `[?]` (uncertain), and updates the JSON and binary masks right away; `U` undoes |
+| Remove uncertain [?] (sidebar) | (since 1.0.8) After a confirmation, deletes every crack on screen marked `[?]` (uncertain; cracks hidden by **Show cracks by number** are kept), and updates the JSON and binary masks right away; `U` undoes |
 | `3` | Link: click one crack and then another, at an end or anywhere on the blue line, to merge them into one; clicked inside a crack, its shorter leftover stays a separate crack. The JSON and binary masks are updated right away |
 | `$` | Use the route shown by the **Alternative route** sidebar button (see below) |
 | `R` | Redo |

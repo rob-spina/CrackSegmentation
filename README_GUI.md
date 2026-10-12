@@ -46,7 +46,8 @@ La barra laterale ora si intitola **More Features**.
   finché lo strumento è attivo; gli altri strumenti (C, D, I, 1/2/3, T, A,
   Zoom window, ...) lo chiudono.
 - **🗑 Remove uncertain [?]** (barra laterale, codice 22): dopo una conferma
-  elimina tutte le fratture della foto contrassegnate con `[?]` (incerte) e
+  elimina tutte le fratture visibili contrassegnate con `[?]` (incerte; quelle
+  nascoste da Show cracks by number restano) e
   aggiorna subito JSON e maschere binarie; **U** annulla.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare
