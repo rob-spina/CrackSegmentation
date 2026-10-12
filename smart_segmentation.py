@@ -31,11 +31,12 @@ from compatible_area import CompatibleAreaMixin
 from training_validation import TrainingValidationMixin
 from crack_cleanup import CrackCleanupMixin, ERASER_CODE, REMOVE_UNCERTAIN_CODE
 from dataset_split import DatasetSplitMixin, SPLIT_BY_CODE
+from cross_validation import CrossValidationMixin, CV_FOLDS_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
-                        CrackCleanupMixin, DatasetSplitMixin):
+                        CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -5744,6 +5745,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         elif key_clean == REMOVE_UNCERTAIN_CODE:
             self._remove_uncertain_cracks()
 
+        elif key_clean == CV_FOLDS_CODE:
+            self.make_cv_folds()
+
         elif key_clean in SPLIT_BY_CODE:
             return self._handle_dataset_split_key(key_clean)
 
@@ -6017,6 +6021,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         elif code == 17:
             if self.run_training_validation() and self._rebuild_queue_for_mode(self.cfg.modalita_scelta):
                 return True
+        elif code == CV_FOLDS_CODE:   # v1.0.8: folds need no photo on screen
+            self.make_cv_folds()
         return False
 
     def _wait_for_new_queue(self):

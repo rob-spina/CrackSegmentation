@@ -61,7 +61,13 @@ La barra laterale ora si intitola **More Features**.
   (`__BLDGnnn`), o il gruppo è già in un altro set, le elenca e chiede
   conferma prima di spostare. Passando con il mouse su uno dei tre pulsanti
   compare il numero di foto in ciascun set (Training, Validation, Test) e il
-  totale. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  totale.
+- **🗂 CV folds** (barra laterale e menu File, codice 26; modulo
+  `cross_validation.py`): divide le foto di `Training set` in K fold per la
+  cross-validation (default `CV_FOLDS = 5` in `config.py`), tenendo ogni
+  gruppo `__BLDGnnn` in un solo fold e i fold bilanciati. Mostra foto ed
+  edifici per fold e, dopo conferma, scrive `Training set/folds.csv` con
+  foto, gruppo, fold e percorsi di JSON e maschere. Non sposta né copia nulla. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
   `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare
