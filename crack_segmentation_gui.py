@@ -328,6 +328,9 @@ _SIDEBAR_SHORTCUTS = [
     ("\u2702", "Cut crack part", "1", ord('1')),
     ("\U0001F517", "Join / re-route", "2", ord('2')),
     ("\u26D3", "Link two cracks", "3", ord('3')),
+    # v1.0.8 button-only clean-up tools (codes 21-22, see crack_cleanup.py).
+    ("\u232B", "Eraser", "", 21),
+    ("\U0001F5D1", "Remove uncertain [?]", "", 22),
     # v1.0.7: the arrow turns left once no other route is left; [$] applies the route on screen.
     ("\u25B6", "Alternative route", "", 18),
     ("\U0001F522", "Show cracks by number", "", 19),
@@ -356,6 +359,7 @@ _SIDEBAR_TOGGLE_STATES = {
     18: lambda cfg: cfg.alt_route_state["active"],
     19: lambda cfg: cfg.crack_filter is not None,
     20: lambda cfg: cfg.portion_state["active"] or cfg.portion_state["rect"] is not None,
+    21: lambda cfg: cfg.eraser_state["active"],
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -377,7 +381,7 @@ class ShortcutsSidebar:
         self.frame.pack(side="right", fill="y", padx=(4, 2), pady=2)
         self.frame.pack_propagate(False)  # keeps a fixed width regardless of content
 
-        tk.Label(self.frame, text="More Shortcuts", font=("TkDefaultFont", 10, "bold"),
+        tk.Label(self.frame, text="More Features", font=("TkDefaultFont", 10, "bold"),
                  anchor="w").pack(anchor="w", fill="x", padx=8, pady=(8, 6))
 
         canvas = tk.Canvas(self.frame, highlightthickness=0)
@@ -403,7 +407,7 @@ class ShortcutsSidebar:
             self.buttons_by_code[code] = btn
 
     def refresh_states(self, cfg, validation_available):
-        """Toggle buttons look pressed while their tool is on; Validation is enabled only at the end of the queue."""
+        """Toggle buttons look pressed while their tool is on; Validation is enabled once every photo is segmented."""
         for code, is_on in _SIDEBAR_TOGGLE_STATES.items():
             btn = self.buttons_by_code.get(code)
             if btn is not None:
@@ -719,7 +723,7 @@ _FILE_COMMANDS = [
     # USER REQUEST: switch between "new images" and "reload segmented" data
     # sources without restarting the app (code 6, see process_keypress()).
     ("\U0001F504 Switch Mode (1 \u2194 2)", 6),
-    ("\u2705 Validation: move training-ready photos (end of queue)", 17),
+    ("\u2705 Validation: move training-ready photos (all photos segmented)", 17),
     ("\u23FB Quit\tEsc", 27),
 ]
 
@@ -741,6 +745,8 @@ _TOOL_COMMANDS = [
     ("\u2702 Cut a crack part (2 clicks)\t1", ord('1')),
     ("\U0001F517 Join / re-route cracks (2 clicks)\t2", ord('2')),
     ("\u26D3 Link two cracks end-to-start (2 clicks)\t3", ord('3')),
+    ("\u232B Eraser: drag over a crack to erase that part", 21),
+    ("\U0001F5D1 Remove uncertain cracks [?]", 22),
     ("\U0001F50D Building-group compatibility check\tG", ord('g')),
     ("\U0001F3F7 Manually assign building group\tB", ord('b')),
     ("\U0001F4CB Crack report (click a crack)", 16),
@@ -1089,6 +1095,11 @@ class GuiCrackSegmentation(CrackSegmentation):
             f"No images available for Mode {target_mode}.",
             parent=self._tk_root,
         )
+
+    def _confirm_remove_uncertain(self, count):
+        message = (f"Remove the {count} uncertain crack(s) [?] of this photo?\n\n"
+                   "The JSON and the binary masks are updated right away; [U] undoes it on screen.")
+        return bool(messagebox.askyesno("Crack Detector - Remove uncertain cracks", message, parent=self._tk_root))
 
     def _confirm_crack_filter_removal(self, bldg_tag, json_paths, incompatible):
         # Replaces the default's invisible cv2 popup with a real, modal Tk dialog.

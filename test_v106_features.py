@@ -451,20 +451,42 @@ class TestValidationRun(unittest.TestCase):
         self.assertEqual(len(os.listdir(self.images)), 4)
         self.assertFalse(os.path.exists(os.path.join(self.tmpdir, "Suitable for training")))
 
-    def test_not_available_before_the_last_image(self):
-        self.app.cfg.CURRENT_IMAGE_PATH = self.app.cfg.image_queue[0]
-        self.assertFalse(self.app._validation_available())
+    def test_not_available_while_a_photo_has_no_json(self):
+        # v1.0.8: the rule is "every photo segmented", not "on the last image".
+        cv2.imwrite(os.path.join(self.images, "zz_new.png"), _texture(4))
+        self.app.cfg.CURRENT_IMAGE_PATH = self.app.cfg.image_queue[-1]
+        self.assertFalse(self.app._validation_available(), "zz_new.png has no JSON yet")
         with mock.patch.object(self.app, "_confirm_training_validation") as confirm:
             self.assertFalse(self.app.process_keypress(17))
         confirm.assert_not_called()
-        self.assertEqual(len(os.listdir(self.images)), 4)
+        self.assertEqual(len(os.listdir(self.images)), 5)
 
-    def test_available_after_saving_the_last_mode1_photo_with_s(self):
-        # [S] in Mode 1 removes the photo from the queue but stays on it.
-        self.app.cfg.image_queue = self.app.cfg.image_queue[:3]
+    def test_available_on_any_image_once_every_photo_is_segmented(self):
+        # v1.0.8: re-entering Mode 2 no longer needs reaching the last image.
+        for path in self.app.cfg.image_queue:
+            self.app.cfg.CURRENT_IMAGE_PATH = path
+            self.assertTrue(self.app._validation_available(), os.path.basename(path))
+
+    def test_becomes_available_as_soon_as_the_last_json_appears(self):
+        cv2.imwrite(os.path.join(self.images, "zz_new.png"), _texture(4))
+        self.app.cfg.CURRENT_IMAGE_PATH = self.app.cfg.image_queue[0]
+        self.assertFalse(self.app._validation_available())
+        with open(os.path.join(self.jsons, "zz_new.json"), "w") as f:
+            json.dump({"shapes": [_crack(80, 0.8)]}, f)
+        self.app._all_segmented_cache = None   # same-second write on a coarse-mtime filesystem
         self.assertTrue(self.app._validation_available())
-        self.app.cfg.CURRENT_IMAGE_PATH = os.path.join(self.images, "a_first.png")
-        self.assertFalse(self.app._validation_available(), "photos still follow it in the queue")
+
+    def test_all_segmented_matches_names_like_mode1(self):
+        images, jsons = os.path.join(self.tmpdir, "chk_img"), os.path.join(self.tmpdir, "chk_json")
+        os.makedirs(images)
+        os.makedirs(jsons)
+        self.assertFalse(tv.photos_all_segmented(images, jsons), "no photo at all")
+        for name in ("A.PNG", "b.jpg", "b-seg.jpg"):
+            open(os.path.join(images, name), "w").close()
+        open(os.path.join(jsons, "a.json"), "w").close()
+        self.assertFalse(tv.photos_all_segmented(images, jsons))
+        open(os.path.join(jsons, "b-seg.json"), "w").close()
+        self.assertTrue(tv.photos_all_segmented(images, jsons), "case-insensitive, legacy -seg names")
 
     def test_existing_destination_files_are_never_overwritten(self):
         dest = os.path.join(self.tmpdir, "Suitable for training", "JSON files")
@@ -499,18 +521,29 @@ class TestSidebarButtons(unittest.TestCase):
             btn.command()
             self.assertEqual(self.app._pending_keys, [code])
 
-    def test_toggles_look_pressed_and_validation_follows_the_queue_end(self):
+    def test_toggles_look_pressed_and_validation_follows_the_segmented_photos(self):
+        tmpdir = tempfile.mkdtemp(prefix="crackseg_v108_sidebar_")
+        self.addCleanup(shutil.rmtree, tmpdir, True)
+        images, jsons = os.path.join(tmpdir, "Images"), os.path.join(tmpdir, "JSON files")
+        os.makedirs(images)
+        os.makedirs(jsons)
+        for name in ("a.png", "b.png"):
+            open(os.path.join(images, name), "w").close()
+        open(os.path.join(jsons, "a.json"), "w").close()
         cfg = self.app.cfg
-        cfg.image_queue = ["a.png", "b.png"]
-        cfg.CURRENT_IMAGE_PATH = "a.png"
+        cfg.SCRIPT_DIR = tmpdir
+        cfg.image_queue = [os.path.join(images, "a.png"), os.path.join(images, "b.png")]
+        cfg.CURRENT_IMAGE_PATH = cfg.image_queue[-1]
         cfg.zoom_window_state["active"] = True
         self.app._sidebar.refresh_states(cfg, self.app._validation_available())
         self.assertEqual(self._button("Zoom window").kw.get("relief"), "sunken")
         self.assertEqual(self._button("HWAV").kw.get("relief"), "raised")
-        self.assertEqual(self._button("Validation").kw.get("state"), "disabled")
-        cfg.CURRENT_IMAGE_PATH = "b.png"
+        self.assertEqual(self._button("Validation").kw.get("state"), "disabled", "b.png has no JSON yet")
+        open(os.path.join(jsons, "b.json"), "w").close()
+        self.app._all_segmented_cache = None
+        cfg.CURRENT_IMAGE_PATH = cfg.image_queue[0]
         self.app._sidebar.refresh_states(cfg, self.app._validation_available())
-        self.assertEqual(self._button("Validation").kw.get("state"), "normal")
+        self.assertEqual(self._button("Validation").kw.get("state"), "normal", "on the first image too")
 
 
 if __name__ == "__main__":

@@ -339,19 +339,19 @@
     border: 1px solid #dbe3e7;
     border-radius: 4px;
     overflow: hidden;
-    margin: 10px 0 10px 0;
+    margin: 6px 0 6px 0;
     page-break-inside: avoid;
   }
   .credits-head {
     background: #0f3460;
     color: #fff;
-    padding: 8px 16px;
+    padding: 5px 16px;
     font-size: 13px;
     font-weight: bold;
   }
   table.people { width: 100%; border-collapse: collapse; }
   table.people td {
-    padding: 7px 16px;
+    padding: 3px 16px;
     border-bottom: 1px solid #eef2f4;
     font-size: 12px;
   }
@@ -361,7 +361,7 @@
   table.people .pname sup { color: #16537e; font-weight: bold; margin-left: 1px; }
 
   .affiliations {
-    padding: 5px 16px 6px 16px;
+    padding: 3px 16px 4px 16px;
     font-size: 10.5px;
     color: #5b6472;
     border-top: 1px solid #eef2f4;
@@ -374,10 +374,10 @@
     border: 1px solid #cfe0e6;
     background: #f3f9fb;
     border-radius: 4px;
-    padding: 9px 16px;
+    padding: 5px 16px;
     font-size: 11.8px;
     color: #26424c;
-    margin-top: 4px;
+    margin-top: 2px;
   }
   .ai-box .aihead {
     font-weight: bold;
@@ -387,7 +387,7 @@
   }
 
   .footer-note {
-    margin-top: 4px;
+    margin-top: 2px;
     font-size: 10px;
     color: #8a97a0;
     text-align: center;
@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.0.7</div>
+    <div class="meta-line">Version 1.0.8</div>
   </div>
 
   <div class="features">
@@ -470,7 +470,7 @@
       <div class="ptext">The central area where the building photograph is displayed, and where you trace the outlines of cracks and detachments.</div>
     </div>
     <div class="panel">
-      <div class="ptitle">Shortcuts Sidebar</div>
+      <div class="ptitle">More Features Sidebar</div>
       <div class="ptext">To the right of the canvas. Clickable buttons for the commands not already on the toolbar (tool selection, view toggles, calibration) &mdash; each triggers the action directly, just like a toolbar click. Scrolls vertically if the window is too short to show every button at once.</div>
     </div>
     <div class="panel">
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.0.7_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.0.8_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.7_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.8_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -580,6 +580,8 @@ sudo apt-get install -f</div>
 <tr><td>Ignore Region</td><td><span class="key">I</span> / sidebar</td><td>Marks areas where the wall is only partly visible (nets, mesh fences, scaffolding, cables, sparse vegetation). A dialog chooses the shape (rectangle, square, free polygon) and the photo edges it extends to. Rectangle: two clicks on opposite corners; polygon: vertices, then <span class="key">Y</span>. With the tool on, drag a corner or side to reshape, click inside to delete. Saved as <span class="code">-ignore_mask.png</span> (255 = exclude from training loss and metrics); never imported by <span class="key">W</span>/<span class="key">L</span>.</td></tr>
 <tr><td>Edit Detachment Nodes</td><td><span class="key">E</span></td><td>Drag a detachment&rsquo;s clicked vertices; its outline is recomputed live. Press again to leave.</td></tr>
 <tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Two clicks; the same key again leaves the tool. <b>Cut</b>: start and end of the part to remove. <b>Join</b>: two points on one crack re-route the part between them along another edge, or the ends of two pieces reconnect them. <b>Link</b>: two different cracks, clicked at an end or anywhere on the line, become one (a leftover beyond the junction stays a separate crack); JSON and masks are saved at once.</td></tr>
+<tr><td>Eraser</td><td>Sidebar</td><td>Drag the red window over a crack to erase that part (a crack crossed in the middle is split in two); <span class="key">[</span> / <span class="key">]</span> resize it. JSON and masks are saved on release; <span class="key">U</span> undoes.</td></tr>
+<tr><td>Remove Uncertain [?]</td><td>Sidebar</td><td>After a confirmation, deletes every crack marked <span class="code">[?]</span>; JSON and masks are saved at once, <span class="key">U</span> undoes.</td></tr>
 <tr><td>Alternative Route</td><td>Sidebar &#9654; / <span class="key">$</span></td><td>Each press shows another route for the crack traced last, in a new colour; when none is left the arrow turns to &#9664; and steps back. <span class="key">$</span> makes the route on screen the crack&rsquo;s path; a click on the photo closes the tool.</td></tr>
 <tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Re-traces all imported cracks (A*) onto the real edges of the new photo, discarding implausible results.</td></tr>
 <tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Elastic repositioning of an imported crack that hasn&rsquo;t aligned correctly, with automatic snap to the real edge.</td></tr>
@@ -597,7 +599,7 @@ sudo apt-get install -f</div>
 <tr><td>Building Portion</td><td><span class="key">5</span> / sidebar</td><td>Tints <b>orange</b> the part of the photo shown by the other photos of the group and pre-sets a window around it; drag inside to move it, drag elsewhere for a new one, click outside to remove it, <span class="key">5</span> again when done. <span class="key">W</span>/<span class="key">L</span> then align on the window and import only inside it.</td></tr>
 <tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Type the group number by hand; <span class="key">Enter</span> confirms, <span class="key">Backspace</span> deletes a digit, <span class="key">B</span> cancels.</td></tr>
 <tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Removes cracks that don&rsquo;t match in shape and path between different photos of the same group (also run after each save).</td></tr>
-<tr><td>Validation</td><td>Sidebar</td><td>On the last image of the queue: moves the photos fit for training, with JSON and masks, to <span class="code">Suitable for training</span>, with a CSV report.</td></tr>
+<tr><td>Validation</td><td>Sidebar</td><td>Once every photo in <span class="code">Images</span> has its JSON: moves the photos fit for training, with JSON and masks, to <span class="code">Suitable for training</span>, with a CSV report.</td></tr>
 <tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
 <tr><td>Scale</td><td><span class="key">K</span></td><td>Enters the image scale (cm per pixel) by hand, used for lengths and areas.</td></tr>
 </table>
@@ -648,7 +650,7 @@ sudo apt-get install -f</div>
 
 <!-- ============ 6. AUTHORS & CREDITS ============ -->
 <div class="section-head">
-<h2 class="section"><span class="num">6</span>Authors &amp; Credits</h2>
+<h2 class="section" style="margin-top: 22px;"><span class="num">6</span>Authors &amp; Credits</h2>
 
 <p>This software was developed within the framework of the <b>ECHO&#8209;TWIN</b> project by the INAF (Istituto Nazionale di Astrofisica) Research Group.</p>
 </div>

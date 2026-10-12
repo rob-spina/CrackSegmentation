@@ -21,6 +21,8 @@ from config import IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME
 VALID_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
 # Exports of a photo in 'Binary files', named <photo><suffix><ext>.
 BINARY_EXPORT_SUFFIXES = ("-seg", "-crack_mask", "-detachment_mask", "-crack_uncertain_mask", "-ignore_mask")
+# v1.0.8: how long the "every photo segmented" answer may be reused while the folders look unchanged.
+ALL_SEGMENTED_CACHE_S = 2.0
 REPORT_FIELDS = ["photo", "decision", "reason", "cracks", "mean_reliability_pct", "mean_confidence",
                  "uncertain_cracks", "detachments", "similar_to"]
 
@@ -62,6 +64,23 @@ def photo_quality_from_json(json_path, uncertain_label="crack_incerta"):
         "uncertain_cracks": n_uncertain,
         "uncertain_ratio": (n_uncertain / float(len(cracks))) if cracks else None,
     }
+
+
+def photos_all_segmented(images_dir, json_dir):
+    """True when images_dir holds at least one photo and every photo has a JSON in json_dir
+    (matched by base name, case-insensitive; a legacy '-seg' JSON suffix is dropped, as in Mode 1)."""
+    try:
+        photos = [f for f in os.listdir(images_dir)
+                  if f.lower().endswith(VALID_IMAGE_EXTENSIONS) and not f.lower().endswith("-seg.jpg")]
+        json_names = os.listdir(json_dir)
+    except OSError:
+        return False
+    done = set()
+    for name in json_names:
+        base, ext = os.path.splitext(name)
+        if ext.lower() == ".json":
+            done.add((base[:-4] if base.endswith("-seg") else base).lower())
+    return bool(photos) and all(os.path.splitext(f)[0].lower() in done for f in photos)
 
 
 def evaluate_photo_quality(quality, cfg):
@@ -163,15 +182,28 @@ class TrainingValidationMixin:
         return os.path.join(str(self.cfg.SCRIPT_DIR), self.cfg.VALIDATION_DIR_NAME)
 
     def _validation_available(self):
-        """Only once the queue is finished: the current photo is the last one, so Next can no longer move on."""
-        queue = self.cfg.image_queue
-        if not queue or self.cfg.queue_idle:
+        """v1.0.8: as soon as every photo in 'Images' has its JSON, whatever photo is on screen
+        (Mode 2 no longer has to reach the last image)."""
+        if not self.cfg.image_queue or self.cfg.queue_idle:
             return True
-        current = self.cfg.CURRENT_IMAGE_PATH
-        if current in queue:
-            return queue.index(current) >= len(queue) - 1
-        # Mode 1 [S] already took the photo out of the (sorted) queue: last when nothing sorts after it.
-        return bool(current) and not any(p > current for p in queue)
+        return self._all_photos_segmented()
+
+    def _all_photos_segmented(self):
+        """True when 'Images' holds at least one photo and each has a JSON in 'JSON files'.
+        Called on every frame by the GUI, so the answer is cached until a folder changes (or 2 s pass)."""
+        images_dir = os.path.join(str(self.cfg.SCRIPT_DIR), IMAGES_DIR_NAME)
+        json_dir = os.path.join(str(self.cfg.SCRIPT_DIR), JSON_DIR_NAME)
+        try:
+            key = (images_dir, os.stat(images_dir).st_mtime_ns, json_dir, os.stat(json_dir).st_mtime_ns)
+        except OSError:
+            return False
+        cached = getattr(self, "_all_segmented_cache", None)
+        now = time.monotonic()
+        if cached is not None and cached[0] == key and now - cached[1] < ALL_SEGMENTED_CACHE_S:
+            return cached[2]
+        result = photos_all_segmented(images_dir, json_dir)
+        self._all_segmented_cache = (key, now, result)
+        return result
 
     def _collect_validation_candidates(self):
         """Every JSON in 'JSON files' whose photo is in 'Images', with its quality summary."""
@@ -345,7 +377,7 @@ class TrainingValidationMixin:
     def run_training_validation(self):
         """Code 17 [Validation]. Returns True when photos were moved (the image queue must then be reloaded)."""
         if not self._validation_available():
-            print(" [VALIDATION] Available only on the last image, once Next can no longer move on.")
+            print(" [VALIDATION] Available once every photo in 'Images' is segmented (has its JSON).")
             return False
         print("\n[VALIDATION] Evaluating the segmented photos...")
         plan = self.plan_training_validation()

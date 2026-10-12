@@ -476,6 +476,18 @@ class Config:
         # Extra cost factor for running back along the previous leg (what made the route turn back at a point).
         self.TRACE_GUIDE_BACKTRACK_FACTOR = 20.0
 
+    def _init_eraser_state(self):
+        """v1.0.8 [Eraser]: a square window that follows the mouse; dragging it over a crack erases that part
+        (sidebar, process_keypress() code 21). [ / ] shrink / enlarge the window while the tool is on."""
+        # pos = window centre in image px (None until the mouse moves); stroke = snapshot taken at the press
+        # (None with no button held); erased = points removed by the stroke, one list per erased run.
+        self.eraser_state = {"active": False, "pos": None, "stroke": None, "erased": [], "changed": False}
+        # Side of the eraser window in window pixels (same size on screen at every zoom), and its limits/step.
+        self.ERASER_SIZE_WIN_PX = 40
+        self.ERASER_MIN_SIZE_WIN_PX = 10
+        self.ERASER_MAX_SIZE_WIN_PX = 200
+        self.ERASER_SIZE_STEP_WIN_PX = 10
+
     def _init_validation_settings(self):
         """v1.0.6 [Validation]: which segmented photos are moved to 'Suitable for training'.
         A photo qualifies when it has at least one crack with quality scores and meets every enabled rule below
@@ -527,5 +539,6 @@ class Config:
         self._init_crack_filter_state()
         self._init_building_portion_state()
         self._init_trace_waypoint_state()
+        self._init_eraser_state()
         self._init_validation_settings()
         self._init_queue_and_cache()

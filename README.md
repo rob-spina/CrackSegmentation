@@ -107,6 +107,8 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 | `A` | Widen the training mask on a single crack stretch; refine with `+` / `-` and `[` `]` `{` `}` |
 | `K` | Enter the image scale manually |
 | `1` / `2` | Cut a crack part / Join (re-route or reconnect) — two clicks |
+| Eraser (sidebar) | (since 1.0.8) A red window follows the mouse: press and drag it over a crack to erase the part it touches; a crack crossed in the middle is split in two. `[` / `]` make the window smaller / larger. The JSON and binary masks are updated on release; `U` undoes |
+| Remove uncertain [?] (sidebar) | (since 1.0.8) After a confirmation, deletes every crack of the photo marked `[?]` (uncertain), and updates the JSON and binary masks right away; `U` undoes |
 | `3` | Link: click one crack and then another, at an end or anywhere on the blue line, to merge them into one; clicked inside a crack, its shorter leftover stays a separate crack. The JSON and binary masks are updated right away |
 | `$` | Use the route shown by the **Alternative route** sidebar button (see below) |
 | `R` | Redo |
@@ -143,7 +145,7 @@ Data folders (since 1.0.5):
 | `JSON files/` | Every LabelMe JSON |
 | `Suitable for training/` | (since 1.0.6) Photos picked by **Validation**, with their JSON and exports, in the same `Images/`, `Binary files/`, `JSON files/` layout, plus a `validation_report_<date>.csv` per run |
 
-Photos are moved out of `Images/` only by the **Validation** button (sidebar, available on the last image of the queue): a photo qualifies when its cracks reach the `VALIDATION_*` thresholds in `config.py` (mean reliability, mean confidence, share of uncertain cracks), and of several near-identical photos only the best-scoring one is kept.
+Photos are moved out of `Images/` only by the **Validation** button (sidebar, available as soon as every photo in `Images/` has its JSON, whichever photo is on screen): a photo qualifies when its cracks reach the `VALIDATION_*` thresholds in `config.py` (mean reliability, mean confidence, share of uncertain cracks), and of several near-identical photos only the best-scoring one is kept.
 
 Folders from earlier versions (`segmentated images/`, `already processed images/`) are migrated automatically at startup: each file is moved to the matching new folder, nothing is overwritten or deleted, and an old folder is removed only once it is empty.
 
