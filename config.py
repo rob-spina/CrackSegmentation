@@ -488,6 +488,11 @@ class Config:
         self.ERASER_MAX_SIZE_WIN_PX = 200
         self.ERASER_SIZE_STEP_WIN_PX = 10
 
+    def _init_dataset_split_settings(self):
+        """v1.0.8 [Training / Test / Validation set] (Mode 2, sidebar codes 23-25): folders the photo on screen is
+        moved to. Training set also takes the JSON and the binary exports; Test and Validation sets only the photo."""
+        self.DATASET_SPLIT_DIRS = {"training": "Training set", "test": "Test set", "validation": "Validation set"}
+
     def _init_validation_settings(self):
         """v1.0.6 [Validation]: which segmented photos are moved to 'Suitable for training'.
         A photo qualifies when it has at least one crack with quality scores and meets every enabled rule below
@@ -540,5 +545,6 @@ class Config:
         self._init_building_portion_state()
         self._init_trace_waypoint_state()
         self._init_eraser_state()
+        self._init_dataset_split_settings()
         self._init_validation_settings()
         self._init_queue_and_cache()

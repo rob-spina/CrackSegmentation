@@ -6,6 +6,8 @@ Headless tests for 1.0.8:
     (a crack crossed in the middle is split in two) and updates the JSON and the binary crack mask.
   - Remove uncertain (sidebar, code 22): deletes every crack on screen marked [?] (cracks hidden by
     Show cracks by number are kept) and updates the JSON and masks.
+  - Training / Test / Validation set (sidebar, codes 23-25, Mode 2): the photo on screen moves to its set
+    folder; the training set also takes its JSON and binary exports. The next photo is shown.
   (Validation available once every photo is segmented: see test_v106_features.TestValidationRun.)
 
 Run with:  python3 -m unittest test_v108_features -v
@@ -22,6 +24,7 @@ import cv2
 import numpy as np
 
 import crack_cleanup as cc
+import dataset_split as cc_split
 from test_v105_link import _two_crack_app
 
 
@@ -215,6 +218,110 @@ class TestRemoveUncertain(unittest.TestCase):
         self.assertEqual(len(self.app.cfg.saved_cracks), 2)
 
 
+class TestDatasetSplit(unittest.TestCase):
+
+    def setUp(self):
+        from test_gui_shell_parity import make_app
+        self.tmpdir = tempfile.mkdtemp(prefix="crackseg_v108_split_")
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+        d = lambda *p: os.path.join(self.tmpdir, *p)
+        for sub in ("Images", "JSON files", "Binary files"):
+            os.makedirs(d(sub))
+        for n in ("a", "b", "c"):
+            open(d("Images", f"{n}.png"), "w").close()
+            open(d("JSON files", f"{n}.json"), "w").close()
+            for suffix in ("-crack_mask.png", "-seg.png", "-crack_uncertain_mask.png"):
+                open(d("Binary files", f"{n}{suffix}"), "w").close()
+        self.d = d
+        app = make_app()
+        app.cfg.SCRIPT_DIR = self.tmpdir
+        app.cfg.modalita_scelta = "2"
+        app.cfg.OUTPUT_FOLDER = d("JSON files")
+        app.cfg.image_queue = [d("Images", f"{n}.png") for n in ("a", "b", "c")]
+        app.cfg.CURRENT_IMAGE_PATH = d("Images", "b.png")
+        app.cfg.JSON_OUTPUT_PATH = d("JSON files", "b.json")
+        self.app = app
+
+    def _ls(self, *p):
+        path = self.d(*p)
+        return sorted(os.listdir(path)) if os.path.isdir(path) else []
+
+    def test_training_set_moves_photo_json_and_binaries(self):
+        self.assertTrue(self.app.process_keypress(cc_split.TRAINING_SET_CODE), "the image loop moves on")
+        self.assertEqual(self._ls("Training set", "Images"), ["b.png"])
+        self.assertEqual(self._ls("Training set", "JSON files"), ["b.json"])
+        self.assertEqual(self._ls("Training set", "Binary files"),
+                         ["b-crack_mask.png", "b-crack_uncertain_mask.png", "b-seg.png"])
+        self.assertEqual(self._ls("Images"), ["a.png", "c.png"])
+        self.assertEqual(self._ls("JSON files"), ["a.json", "c.json"])
+        self.assertFalse(any(n.startswith("b") for n in self._ls("Binary files")))
+        self.assertEqual(len(self._ls("Binary files")), 6, "the other photos' files stay")
+
+    def test_test_and_validation_sets_move_only_the_photo(self):
+        for code, folder, photo in ((cc_split.TEST_SET_CODE, "Test set", "b"),
+                                    (cc_split.VALIDATION_SET_CODE, "Validation set", "c")):
+            self.app.cfg.CURRENT_IMAGE_PATH = self.d("Images", f"{photo}.png")
+            self.app.cfg.JSON_OUTPUT_PATH = self.d("JSON files", f"{photo}.json")
+            self.assertTrue(self.app.process_keypress(code))
+            self.assertEqual(self._ls(folder), ["Images"])
+            self.assertEqual(self._ls(folder, "Images"), [f"{photo}.png"])
+            self.assertIn(f"{photo}.json", self._ls("JSON files"), "the JSON stays")
+            self.assertIn(f"{photo}-crack_mask.png", self._ls("Binary files"), "the masks stay")
+        self.assertEqual(self._ls("Images"), ["a.png"])
+
+    def test_next_photo_takes_its_place_in_the_queue(self):
+        self.app.process_keypress(cc_split.TRAINING_SET_CODE)
+        self.assertEqual([os.path.basename(p) for p in self.app.cfg.image_queue], ["a.png", "c.png"])
+        pos, _ = self.app._advance_or_switch_mode(1, 3)
+        self.assertEqual(os.path.basename(self.app.cfg.image_queue[pos]), "c.png")
+
+    def test_last_photo_ends_the_queue(self):
+        self.app.cfg.CURRENT_IMAGE_PATH = self.d("Images", "c.png")
+        self.app.cfg.JSON_OUTPUT_PATH = self.d("JSON files", "c.json")
+        self.app.process_keypress(cc_split.TEST_SET_CODE)
+        pos, _ = self.app._advance_or_switch_mode(2, 3)
+        self.assertGreaterEqual(pos, len(self.app.cfg.image_queue))
+
+    def test_mode1_moves_nothing(self):
+        self.app.cfg.modalita_scelta = "1"
+        for code in cc_split.SPLIT_BY_CODE:
+            self.assertFalse(self.app.process_keypress(code))
+        self.assertEqual(len(self._ls("Images")), 3)
+        self.assertFalse(os.path.exists(self.d("Training set")))
+
+    def test_training_set_needs_a_saved_json(self):
+        os.remove(self.d("JSON files", "b.json"))
+        self.assertFalse(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+        self.assertIn("b.png", self._ls("Images"))
+
+    def test_existing_files_are_never_overwritten(self):
+        os.makedirs(self.d("Test set", "Images"))
+        open(self.d("Test set", "Images", "b.png"), "w").close()
+        self.app.process_keypress(cc_split.TEST_SET_CODE)
+        self.assertEqual(self._ls("Test set", "Images"), ["b.png", "b_1.png"])
+
+    def test_unsaved_changes_cancel_save_or_keep(self):
+        self.app.cfg.action_history.append("crack_start")
+        with mock.patch.object(self.app, "_ask_save_before_split", return_value=None), \
+                mock.patch.object(self.app, "_save_annotations_now") as save:
+            self.assertFalse(self.app.process_keypress(cc_split.TEST_SET_CODE))
+        save.assert_not_called()
+        self.assertIn("b.png", self._ls("Images"), "cancel moves nothing")
+        with mock.patch.object(self.app, "_ask_save_before_split", return_value=True), \
+                mock.patch.object(self.app, "_save_annotations_now") as save:
+            self.assertTrue(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+        save.assert_called_once()
+        self.assertEqual(self._ls("Training set", "Images"), ["b.png"])
+
+    def test_unsaved_changes_moved_as_last_saved_on_no(self):
+        self.app.cfg.action_history.append("crack_start")
+        with mock.patch.object(self.app, "_ask_save_before_split", return_value=False), \
+                mock.patch.object(self.app, "_save_annotations_now") as save:
+            self.assertTrue(self.app.process_keypress(cc_split.VALIDATION_SET_CODE))
+        save.assert_not_called()
+        self.assertEqual(self._ls("Validation set", "Images"), ["b.png"])
+
+
 class TestSidebar(unittest.TestCase):
 
     def setUp(self):
@@ -250,8 +357,23 @@ class TestSidebar(unittest.TestCase):
 
     def test_new_commands_are_in_the_menu(self):
         menu_codes = [code for _, commands in self.gm._ALL_MENU_GROUPS for _, code in commands]
-        self.assertIn(cc.ERASER_CODE, menu_codes)
-        self.assertIn(cc.REMOVE_UNCERTAIN_CODE, menu_codes)
+        for code in (cc.ERASER_CODE, cc.REMOVE_UNCERTAIN_CODE) + tuple(cc_split.SPLIT_BY_CODE):
+            self.assertIn(code, menu_codes)
+
+    def test_split_buttons_send_their_codes_and_follow_the_mode(self):
+        cfg = self.app.cfg
+        buttons = {code: next(b for b in self.app._sidebar.buttons if label in b.text)
+                   for code, label in ((23, "Training set"), (24, "Test set"), (25, "Validation set"))}
+        for code, btn in buttons.items():
+            self.app._pending_keys.clear()
+            btn.command()
+            self.assertEqual(self.app._pending_keys, [code])
+        cfg.modalita_scelta, cfg.queue_idle = "1", False
+        self.app._sidebar.refresh_states(cfg, False)
+        self.assertTrue(all(b.kw.get("state") == "disabled" for b in buttons.values()), "Mode 1: greyed out")
+        cfg.modalita_scelta = "2"
+        self.app._sidebar.refresh_states(cfg, False)
+        self.assertTrue(all(b.kw.get("state") == "normal" for b in buttons.values()))
 
 
 if __name__ == "__main__":

@@ -30,11 +30,12 @@ from perspective_match import PerspectiveMatchMixin
 from compatible_area import CompatibleAreaMixin
 from training_validation import TrainingValidationMixin
 from crack_cleanup import CrackCleanupMixin, ERASER_CODE, REMOVE_UNCERTAIN_CODE
+from dataset_split import DatasetSplitMixin, SPLIT_BY_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
-                        CrackCleanupMixin):
+                        CrackCleanupMixin, DatasetSplitMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -2867,6 +2868,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         return True
 
     def _save_annotations_now(self, tag="LINK", action="the link"):
+        # action=None: no Undo hint (the photo is about to leave the screen, e.g. a dataset split).
         """Writes the current photo's JSON and binary masks right away (after a LINK, an Eraser stroke or
         Remove uncertain), without the CSV row, the beep or the queue bookkeeping of a full [S] save."""
         if not self.cfg.CURRENT_IMAGE_PATH or not self.cfg.JSON_OUTPUT_PATH:
@@ -2879,7 +2881,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self._remove_stale_photo_outputs()
             self._export_segmented_preview_image()
             self._export_binary_masks()
-            print(f" [{tag}] JSON and binary masks updated. [U] undoes {action} on screen; [S] saves again.")
+            hint = f" [U] undoes {action} on screen; [S] saves again." if action else ""
+            print(f" [{tag}] JSON and binary masks updated.{hint}")
             return True
         except Exception as e:
             print(f" [{tag}] Could not update the files: {e}", file=sys.stderr)
@@ -5340,7 +5343,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             "[HWAV] (sidebar) : tint in green the windows already viewed while zoomed; press again to clear",
             "[Crack report] (sidebar) : click a crack to read its reliability report; press again to close it",
             "[Eraser] (sidebar) : drag the red window over a crack to erase that part ([ / ] window size)",
-            "[Remove uncertain] (sidebar) : delete every crack marked [?] in this photo",
+            "[Remove uncertain] (sidebar) : delete every crack on screen marked [?]",
+            "[Training set] (sidebar, Mode 2) : move photo, JSON and masks to 'Training set'",
+            "[Test set] / [Validation set] (sidebar, Mode 2) : move only the photo to 'Test set' / 'Validation set'",
             "[Validation] (sidebar, every photo segmented) : move training-ready photos to 'Suitable for training'"
         ]
 
@@ -5738,6 +5743,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == REMOVE_UNCERTAIN_CODE:
             self._remove_uncertain_cracks()
+
+        elif key_clean in SPLIT_BY_CODE:
+            return self._handle_dataset_split_key(key_clean)
 
         elif key_clean == ord('$'):
             self._apply_alt_route()
