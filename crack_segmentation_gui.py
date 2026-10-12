@@ -1097,7 +1097,7 @@ class GuiCrackSegmentation(CrackSegmentation):
         )
 
     def _confirm_remove_uncertain(self, count):
-        message = (f"Remove the {count} uncertain crack(s) [?] of this photo?\n\n"
+        message = (f"Remove the {count} uncertain crack(s) [?] shown on screen?\n\n"
                    "The JSON and the binary masks are updated right away; [U] undoes it on screen.")
         return bool(messagebox.askyesno("Crack Detector - Remove uncertain cracks", message, parent=self._tk_root))
 

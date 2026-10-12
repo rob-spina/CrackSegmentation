@@ -2,7 +2,8 @@
 v1.0.8 crack clean-up tools, mixed into CrackSegmentation (smart_segmentation.py):
   - Eraser (sidebar, code 21): a square window follows the mouse; press and drag it over a crack to erase
     the part it touches. A crack crossed in the middle is split in two. [ / ] shrink / enlarge the window.
-  - Remove uncertain (sidebar, code 22): deletes every crack of the photo marked [?] (uncertain).
+  - Remove uncertain (sidebar, code 22): deletes every crack on screen marked [?] (uncertain);
+    cracks hidden by Show cracks by number are kept.
 Both write the JSON and the binary masks right away when the change is done; [U] undoes it on screen
 and [S] saves again.
 """
@@ -199,23 +200,25 @@ class CrackCleanupMixin:
     # --- Remove uncertain -----------------------------------------------------------------
 
     def _uncertain_crack_indices(self):
-        """Indices of the active cracks marked [?] (same rule as the [J] list and the JSON)."""
+        """Indices of the active cracks on screen marked [?] (same rule as the [J] list and the JSON).
+        Cracks hidden by Show cracks by number are left alone."""
         return [i for i, f in enumerate(self.cfg.saved_cracks)
-                if f.get('active', True) and f.get('path') and self._crack_quality(f.get('path'))[2]]
+                if f.get('active', True) and f.get('path') and self._crack_shown(f)
+                and self._crack_quality(f.get('path'))[2]]
 
     def _confirm_remove_uncertain(self, count):
         """Asks before deleting. A GUI wrapper overrides this with a dialog."""
         try:
-            answer = input(f"Remove the {count} uncertain crack(s) [?] of this photo? [y/N]: ")
+            answer = input(f"Remove the {count} uncertain crack(s) [?] shown on screen? [y/N]: ")
         except EOFError:
             return False
         return answer.strip().lower() in ("y", "yes", "s", "si")
 
     def _remove_uncertain_cracks(self):
-        """Code 22 [Remove uncertain]: deletes every [?] crack of the photo, then updates JSON and masks."""
+        """Code 22 [Remove uncertain]: deletes every [?] crack on screen, then updates JSON and masks."""
         indices = self._uncertain_crack_indices()
         if not indices:
-            print(" [REMOVE UNCERTAIN] No uncertain crack [?] in this photo.")
+            print(" [REMOVE UNCERTAIN] No uncertain crack [?] on screen.")
             return False
         numbers = ", ".join(str(i + 1) for i in indices)
         if not self._confirm_remove_uncertain(len(indices)):
