@@ -143,9 +143,11 @@ Data folders (since 1.0.5):
 | `Images/` | Every original photo. Photos are never moved: Mode 1 lists the ones without a JSON yet, Mode 2 the ones with a JSON |
 | `Binary files/` | Every exported PNG/overlay (crack, detachment, uncertain and ignore masks, `-seg` overlay) |
 | `JSON files/` | Every LabelMe JSON |
+| `Training set/` | (since 1.0.8) Photos sent there with the **Training set** button (Mode 2), with their JSON and exports, in the same `Images/`, `JSON files/`, `Binary files/` layout |
+| `Test set/`, `Validation set/` | (since 1.0.8) Photos sent there with the **Test set** / **Validation set** buttons (Mode 2), in `Images/`; their JSON and masks stay in `JSON files/` and `Binary files/` |
 | `Suitable for training/` | (since 1.0.6) Photos picked by **Validation**, with their JSON and exports, in the same `Images/`, `Binary files/`, `JSON files/` layout, plus a `validation_report_<date>.csv` per run |
 
-Photos are moved out of `Images/` only by the **Validation** button (sidebar, available as soon as every photo in `Images/` has its JSON, whichever photo is on screen): a photo qualifies when its cracks reach the `VALIDATION_*` thresholds in `config.py` (mean reliability, mean confidence, share of uncertain cracks), and of several near-identical photos only the best-scoring one is kept.
+Photos are moved out of `Images/` only by the dataset buttons and by **Validation**. **Training set**, **Test set** and **Validation set** (sidebar, Mode 2, since 1.0.8) move the photo on screen to that folder, creating it when missing, and show the next photo; Training set also moves its JSON and `Binary files/` exports, Test and Validation set only the photo. Existing files are never overwritten (`_1`, `_2`, ... is appended), and unsaved changes are offered for saving first. The **Validation** button (sidebar, available as soon as every photo in `Images/` has its JSON, whichever photo is on screen) is a different tool: a photo qualifies when its cracks reach the `VALIDATION_*` thresholds in `config.py` (mean reliability, mean confidence, share of uncertain cracks), and of several near-identical photos only the best-scoring one is kept.
 
 Folders from earlier versions (`segmentated images/`, `already processed images/`) are migrated automatically at startup: each file is moved to the matching new folder, nothing is overwritten or deleted, and an old folder is removed only once it is empty.
 

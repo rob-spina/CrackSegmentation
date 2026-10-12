@@ -49,6 +49,16 @@ La barra laterale ora si intitola **More Features**.
   elimina tutte le fratture visibili contrassegnate con `[?]` (incerte; quelle
   nascoste da Show cracks by number restano) e
   aggiorna subito JSON e maschere binarie; **U** annulla.
+- **📚 Training set / 🧪 Test set / 📏 Validation set** (barra laterale e menu
+  File, solo in modalità 2, codici 23-25; modulo `dataset_split.py`): spostano
+  la foto a schermo nella cartella del set, creata se manca, e passano alla
+  foto successiva. Training set sposta foto, JSON e file di `Binary files`
+  (maschere e anteprima `-seg`) in `Training set/Images`, `JSON files`,
+  `Binary files`; Test set e Validation set spostano solo la foto originale in
+  `Test set/Images` o `Validation set/Images`, lasciando JSON e maschere al
+  loro posto. Nessun file viene sovrascritto; se ci sono modifiche non salvate
+  chiede se salvarle prima. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare
   all'ultima immagine.

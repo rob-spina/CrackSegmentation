@@ -330,6 +330,11 @@ class _messagebox:
         _messagebox.last_call = ("askyesno", title, message)
         return True
 
+    @staticmethod
+    def askyesnocancel(title, message, parent=None, **kw):
+        _messagebox.last_call = ("askyesnocancel", title, message)
+        return True
+
 
 messagebox = _messagebox
 

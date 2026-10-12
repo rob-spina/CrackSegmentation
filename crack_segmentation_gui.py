@@ -348,6 +348,10 @@ _SIDEBAR_SHORTCUTS = [
     ("\U0001F4CB", "Crack report", "", 16),
     ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
     ("\u2705", "Validation", "", 17),
+    # v1.0.8 dataset split, Mode 2 only (codes 23-25, see dataset_split.py).
+    ("\U0001F4DA", "Training set", "", 23),
+    ("\U0001F9EA", "Test set", "", 24),
+    ("\U0001F4CF", "Validation set", "", 25),
 ]
 
 # Sidebar toggles shown pressed while their tool is on: code -> reads the state from cfg.
@@ -367,6 +371,10 @@ _SIDEBAR_DYNAMIC_ICONS = {
     18: lambda cfg: "\u25C0" if cfg.alt_route_state["active"] and cfg.alt_route_state["direction"] < 0 else "\u25B6",
 }
 VALIDATION_CODE = 17
+# Sidebar buttons enabled only when this holds (greyed out otherwise): code -> reads it from cfg.
+_SIDEBAR_ENABLED_STATES = {
+    code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
+}
 
 
 class ShortcutsSidebar:
@@ -415,6 +423,10 @@ class ShortcutsSidebar:
         btn = self.buttons_by_code.get(VALIDATION_CODE)
         if btn is not None:
             btn.configure(state=("normal" if validation_available else "disabled"))
+        for code, enabled in _SIDEBAR_ENABLED_STATES.items():
+            btn = self.buttons_by_code.get(code)
+            if btn is not None:
+                btn.configure(state=("normal" if enabled(cfg) else "disabled"))
         for code, icon_of in _SIDEBAR_DYNAMIC_ICONS.items():
             self._set_icon(code, icon_of(cfg))
 
@@ -724,6 +736,9 @@ _FILE_COMMANDS = [
     # sources without restarting the app (code 6, see process_keypress()).
     ("\U0001F504 Switch Mode (1 \u2194 2)", 6),
     ("\u2705 Validation: move training-ready photos (all photos segmented)", 17),
+    ("\U0001F4DA Move to Training set (photo, JSON, masks - Mode 2)", 23),
+    ("\U0001F9EA Move to Test set (photo only - Mode 2)", 24),
+    ("\U0001F4CF Move to Validation set (photo only - Mode 2)", 25),
     ("\u23FB Quit\tEsc", 27),
 ]
 
@@ -1095,6 +1110,11 @@ class GuiCrackSegmentation(CrackSegmentation):
             f"No images available for Mode {target_mode}.",
             parent=self._tk_root,
         )
+
+    def _ask_save_before_split(self, set_name):
+        message = (f"This photo has changes not saved yet.\n\nSave them before moving it to '{set_name}'?\n\n"
+                   "Yes = save, then move\nNo = move it as last saved\nCancel = do nothing")
+        return messagebox.askyesnocancel("Crack Detector - Unsaved changes", message, parent=self._tk_root)
 
     def _confirm_remove_uncertain(self, count):
         message = (f"Remove the {count} uncertain crack(s) [?] shown on screen?\n\n"
