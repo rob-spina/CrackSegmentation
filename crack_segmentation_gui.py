@@ -1111,6 +1111,9 @@ class GuiCrackSegmentation(CrackSegmentation):
             parent=self._tk_root,
         )
 
+    def _confirm_same_group_split(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Same building group", message, parent=self._tk_root))
+
     def _ask_save_before_split(self, set_name):
         message = (f"This photo has changes not saved yet.\n\nSave them before moving it to '{set_name}'?\n\n"
                    "Yes = save, then move\nNo = move it as last saved\nCancel = do nothing")

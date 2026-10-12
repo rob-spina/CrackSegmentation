@@ -57,7 +57,9 @@ La barra laterale ora si intitola **More Features**.
   `Binary files`; Test set e Validation set spostano solo la foto originale in
   `Test set/Images` o `Validation set/Images`, lasciando JSON e maschere al
   loro posto. Nessun file viene sovrascritto; se ci sono modifiche non salvate
-  chiede se salvarle prima. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  chiede se salvarle prima. Se nel set ci sono già foto dello stesso gruppo
+  (`__BLDGnnn`), o il gruppo è già in un altro set, le elenca e chiede
+  conferma prima di spostare. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
   `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare
