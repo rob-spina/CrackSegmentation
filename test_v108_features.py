@@ -294,6 +294,60 @@ class TestDatasetSplit(unittest.TestCase):
         self.assertFalse(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
         self.assertIn("b.png", self._ls("Images"))
 
+    def _group_photo(self, name):
+        """Puts a photo named name in 'Images' with its JSON, and shows it."""
+        open(self.d("Images", f"{name}.png"), "w").close()
+        open(self.d("JSON files", f"{name}.json"), "w").close()
+        self._show_photo(name)
+
+    def _show_photo(self, name):
+        self.app.cfg.CURRENT_IMAGE_PATH = self.d("Images", f"{name}.png")
+        self.app.cfg.JSON_OUTPUT_PATH = self.d("JSON files", f"{name}.json")
+
+    def test_first_photo_of_a_group_moves_without_asking(self):
+        self._group_photo("x__BLDG007")
+        with mock.patch.object(self.app, "_confirm_same_group_split") as confirm:
+            self.assertTrue(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+        confirm.assert_not_called()
+
+    def test_same_group_in_the_set_is_listed_and_waits_for_confirmation(self):
+        self._group_photo("x__BLDG007")
+        self.app.process_keypress(cc_split.TRAINING_SET_CODE)
+        self._group_photo("y__BLDG007")
+        with mock.patch.object(self.app, "_confirm_same_group_split", return_value=False) as confirm:
+            self.assertFalse(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+        message = confirm.call_args[0][0]
+        self.assertIn("BLDG007", message)
+        self.assertIn("x__BLDG007.png", message)
+        self.assertIn("'Training set' already holds", message)
+        self.assertIn("y__BLDG007.png", self._ls("Images"), "No = nothing moved")
+        with mock.patch.object(self.app, "_confirm_same_group_split", return_value=True):
+            self.assertTrue(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+        self.assertEqual(self._ls("Training set", "Images"), ["x__BLDG007.png", "y__BLDG007.png"])
+
+    def test_same_group_in_another_set_is_reported_too(self):
+        self._group_photo("x__BLDG007")
+        self.app.process_keypress(cc_split.TRAINING_SET_CODE)
+        self._group_photo("y__bldg007")
+        with mock.patch.object(self.app, "_confirm_same_group_split", return_value=False) as confirm:
+            self.assertFalse(self.app.process_keypress(cc_split.TEST_SET_CODE))
+        self.assertIn("'Training set' holds (the same building in two sets)", confirm.call_args[0][0])
+        self.assertFalse(os.path.exists(self.d("Test set")))
+
+    def test_other_group_or_no_group_moves_without_asking(self):
+        self._group_photo("x__BLDG007")
+        self.app.process_keypress(cc_split.TRAINING_SET_CODE)
+        self._group_photo("z__BLDG009")
+        with mock.patch.object(self.app, "_confirm_same_group_split") as confirm:
+            self.assertTrue(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+            self._show_photo("a")   # no __BLDG tag at all
+            self.assertTrue(self.app.process_keypress(cc_split.TRAINING_SET_CODE))
+        confirm.assert_not_called()
+
+    def test_group_tag(self):
+        self.assertEqual(cc_split.building_group_tag("DJI_20250307092515_0349_D__BLDG028.JPG"), "BLDG028")
+        self.assertIsNone(cc_split.building_group_tag("IMG_0001.png"))
+
     def test_existing_files_are_never_overwritten(self):
         os.makedirs(self.d("Test set", "Images"))
         open(self.d("Test set", "Images", "b.png"), "w").close()
