@@ -375,6 +375,52 @@ VALIDATION_CODE = 17
 _SIDEBAR_ENABLED_STATES = {
     code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
 }
+# Dataset split buttons: hovering one shows how many photos each set holds (code -> DATASET_SPLIT_DIRS key).
+_SPLIT_SET_BUTTONS = {23: "training", 24: "test", 25: "validation"}
+
+
+class HoverTip:
+    """Small borderless window next to a widget while the mouse is over it; its text is built
+    when the mouse enters, so it always shows the current state."""
+
+    def __init__(self, widget, text_fn):
+        self.widget, self.text_fn, self.tip = widget, text_fn, None
+        widget.bind("<Enter>", self.show)
+        widget.bind("<Leave>", self.hide)
+        widget.bind("<ButtonPress>", self.hide)   # a click moves the photo: the counts change
+
+    def show(self, event=None):
+        self.hide()
+        try:
+            text = self.text_fn()
+        except Exception as e:
+            text = f"(not available: {e})"
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        tk.Label(self.tip, text=text, justify="left", anchor="w", background="#ffffe0", foreground="#000000",
+                 relief="solid", borderwidth=1, font=("TkDefaultFont", 10), padx=8, pady=5).pack()
+        self.tip.update_idletasks()
+        # Left of the button (the sidebar is at the window's right edge), top-aligned with it.
+        x = self.widget.winfo_rootx() - self.tip.winfo_reqwidth() - 6
+        self.tip.wm_geometry(f"+{max(0, x)}+{self.widget.winfo_rooty()}")
+
+    def hide(self, event=None):
+        if self.tip is not None:
+            try:
+                self.tip.destroy()
+            except tk.TclError:
+                pass
+            self.tip = None
+
+
+def split_counts_text(counts, hovered):
+    """Hover text of the set buttons: photos per set, the hovered set marked, and the total."""
+    lines = ["Photos per set:"]
+    for name, n in counts:
+        mark = "\u25B6" if name == hovered else "  "
+        lines.append(f"{mark} {name}: {n}")
+    lines.append(f"   Total: {sum(n for _, n in counts)}")
+    return "\n".join(lines)
 
 
 class ShortcutsSidebar:
@@ -413,6 +459,11 @@ class ShortcutsSidebar:
             btn = self._add_row(inner, icon, label, key, code)
             self.buttons.append(btn)
             self.buttons_by_code[code] = btn
+        self.hover_tips = {code: HoverTip(self.buttons_by_code[code], self._split_tip_text(split))
+                           for code, split in _SPLIT_SET_BUTTONS.items() if code in self.buttons_by_code}
+
+    def _split_tip_text(self, split):
+        return lambda: split_counts_text(self.app.dataset_split_counts(), self.app.cfg.DATASET_SPLIT_DIRS[split])
 
     def refresh_states(self, cfg, validation_available):
         """Toggle buttons look pressed while their tool is on; Validation is enabled once every photo is segmented."""

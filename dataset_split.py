@@ -50,6 +50,16 @@ class DatasetSplitMixin:
     def _split_root(self, split):
         return os.path.join(str(self.cfg.SCRIPT_DIR), self.cfg.DATASET_SPLIT_DIRS[split])
 
+    def dataset_split_counts(self):
+        """[(set name, number of photos in its 'Images')] in Training, Validation, Test order (shown on hover)."""
+        counts = []
+        for split in ("training", "validation", "test"):
+            folder = os.path.join(self._split_root(split), IMAGES_DIR_NAME)
+            names = os.listdir(folder) if os.path.isdir(folder) else []
+            counts.append((self.cfg.DATASET_SPLIT_DIRS[split],
+                           sum(1 for f in names if f.lower().endswith(VALID_IMAGE_EXTENSIONS))))
+        return counts
+
     def _same_group_in_sets(self, split, tag):
         """[(set name, [photos of the group])] for the target set first, then the other sets holding the group."""
         found = []
