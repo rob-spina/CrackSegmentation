@@ -352,6 +352,7 @@ _SIDEBAR_SHORTCUTS = [
     ("\U0001F4DA", "Training set", "", 23),
     ("\U0001F9EA", "Test set", "", 24),
     ("\U0001F4CF", "Validation set", "", 25),
+    ("\U0001F5C2", "CV folds (Training set)", "", 26),
 ]
 
 # Sidebar toggles shown pressed while their tool is on: code -> reads the state from cfg.
@@ -790,6 +791,7 @@ _FILE_COMMANDS = [
     ("\U0001F4DA Move to Training set (photo, JSON, masks - Mode 2)", 23),
     ("\U0001F9EA Move to Test set (photo only - Mode 2)", 24),
     ("\U0001F4CF Move to Validation set (photo only - Mode 2)", 25),
+    ("\U0001F5C2 Cross-validation folds of the Training set (folds.csv)", 26),
     ("\u23FB Quit\tEsc", 27),
 ]
 
@@ -1164,6 +1166,16 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _confirm_same_group_split(self, message):
         return bool(messagebox.askyesno("Crack Detector - Same building group", message, parent=self._tk_root))
+
+    def _ask_cv_fold_count(self, default):
+        return simpledialog.askinteger("Crack Detector - Cross-validation", "Number of folds (each building in one fold):",
+                                       initialvalue=default, minvalue=2, maxvalue=20, parent=self._tk_root)
+
+    def _confirm_cv_folds(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Cross-validation", message, parent=self._tk_root))
+
+    def _notify_cv_folds(self, message):
+        messagebox.showinfo("Crack Detector - Cross-validation", message, parent=self._tk_root)
 
     def _ask_save_before_split(self, set_name):
         message = (f"This photo has changes not saved yet.\n\nSave them before moving it to '{set_name}'?\n\n"

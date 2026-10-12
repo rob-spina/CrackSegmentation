@@ -310,6 +310,13 @@ class _simpledialog:
         _simpledialog.last_call = (title, prompt)
         return _simpledialog.next_string
 
+    next_int = None
+
+    @staticmethod
+    def askinteger(title, prompt, parent=None, **kw):
+        _simpledialog.last_call = (title, prompt)
+        return _simpledialog.next_int if _simpledialog.next_int is not None else kw.get("initialvalue")
+
 
 simpledialog = _simpledialog
 

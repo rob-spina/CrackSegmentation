@@ -492,6 +492,9 @@ class Config:
         """v1.0.8 [Training / Test / Validation set] (Mode 2, sidebar codes 23-25): folders the photo on screen is
         moved to. Training set also takes the JSON and the binary exports; Test and Validation sets only the photo."""
         self.DATASET_SPLIT_DIRS = {"training": "Training set", "test": "Test set", "validation": "Validation set"}
+        # v1.0.8 [CV folds] (sidebar, code 26): default number of folds, and the file written in 'Training set'.
+        self.CV_FOLDS = 5
+        self.CV_FOLDS_FILE = "folds.csv"
 
     def _init_validation_settings(self):
         """v1.0.6 [Validation]: which segmented photos are moved to 'Suitable for training'.
