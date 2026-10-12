@@ -102,6 +102,10 @@ class _Widget:
     def lift(self): return self
     def update(self): self.updated = getattr(self, "updated", 0) + 1
     def update_idletasks(self): return self
+    def winfo_rootx(self): return getattr(self, "_test_rootx", 900)
+    def winfo_rooty(self): return getattr(self, "_test_rooty", 300)
+    def wm_overrideredirect(self, flag=None): self.overrideredirect_flag = flag
+    def wm_geometry(self, *a): return self.geometry(*a)
     def winfo_screenwidth(self): return 1440
     def winfo_screenheight(self): return 900
     def winfo_reqwidth(self): return 1200

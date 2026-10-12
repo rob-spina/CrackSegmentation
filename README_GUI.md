@@ -59,7 +59,9 @@ La barra laterale ora si intitola **More Features**.
   loro posto. Nessun file viene sovrascritto; se ci sono modifiche non salvate
   chiede se salvarle prima. Se nel set ci sono già foto dello stesso gruppo
   (`__BLDGnnn`), o il gruppo è già in un altro set, le elenca e chiede
-  conferma prima di spostare. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  conferma prima di spostare. Passando con il mouse su uno dei tre pulsanti
+  compare il numero di foto in ciascun set (Training, Validation, Test) e il
+  totale. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
   `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare

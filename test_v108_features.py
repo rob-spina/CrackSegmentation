@@ -432,3 +432,57 @@ class TestSidebar(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSplitCountsOnHover(unittest.TestCase):
+    """Hovering Training / Test / Validation set shows how many photos each set holds."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests_support"))
+        import fake_tkinter  # noqa: F401
+        from test_gui_panel_wiring import make_app as make_gui_app
+        import crack_segmentation_gui as gm
+        self.gm = gm
+        self.app = make_gui_app(self)
+        self.tmpdir = tempfile.mkdtemp(prefix="crackseg_v108_hover_")
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+        self.app.cfg.SCRIPT_DIR = self.tmpdir
+        for folder, n in (("Training set", 3), ("Validation set", 1)):
+            os.makedirs(os.path.join(self.tmpdir, folder, "Images"))
+            for i in range(n):
+                open(os.path.join(self.tmpdir, folder, "Images", f"p{i}.JPG"), "w").close()
+        open(os.path.join(self.tmpdir, "Training set", "Images", "notes.txt"), "w").close()
+
+    def _tip_text(self, tip):
+        label = tip.tip.children[0]
+        return label.kw["text"]
+
+    def test_counts_per_set(self):
+        self.assertEqual(self.app.dataset_split_counts(),
+                         [("Training set", 3), ("Validation set", 1), ("Test set", 0)])
+
+    def test_hover_shows_and_leave_hides(self):
+        btn = self.app._sidebar.buttons_by_code[cc_split.TEST_SET_CODE]
+        btn.fire("<Enter>")
+        tip = self.app._sidebar.hover_tips[cc_split.TEST_SET_CODE]
+        text = self._tip_text(tip)
+        for line in ("Training set: 3", "Validation set: 1", "\u25B6 Test set: 0", "Total: 4"):
+            self.assertIn(line, text)
+        shown = tip.tip
+        btn.fire("<Leave>")
+        self.assertIsNone(tip.tip)
+        self.assertTrue(shown.destroyed)
+
+    def test_counts_are_read_at_each_hover(self):
+        btn = self.app._sidebar.buttons_by_code[cc_split.TRAINING_SET_CODE]
+        tip = self.app._sidebar.hover_tips[cc_split.TRAINING_SET_CODE]
+        btn.fire("<Enter>")
+        self.assertIn("\u25B6 Training set: 3", self._tip_text(tip))
+        btn.fire("<ButtonPress>")
+        self.assertIsNone(tip.tip, "a click hides it")
+        open(os.path.join(self.tmpdir, "Training set", "Images", "p9.png"), "w").close()
+        btn.fire("<Enter>")
+        self.assertIn("Training set: 4", self._tip_text(tip))
+
+    def test_every_set_button_has_its_tip(self):
+        self.assertEqual(sorted(self.app._sidebar.hover_tips), [23, 24, 25])
