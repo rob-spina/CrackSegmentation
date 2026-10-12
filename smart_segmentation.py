@@ -29,10 +29,12 @@ from guided_trace import GuidedTraceMixin
 from perspective_match import PerspectiveMatchMixin
 from compatible_area import CompatibleAreaMixin
 from training_validation import TrainingValidationMixin
+from crack_cleanup import CrackCleanupMixin, ERASER_CODE, REMOVE_UNCERTAIN_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
-                        GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin):
+                        GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
+                        CrackCleanupMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -2623,6 +2625,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
     def _reset_cut_join_state(self):
         self.cfg.crack_cut_join_state["mode"] = None
         self.cfg.crack_cut_join_state["first"] = None
+        # v1.0.8: every tool that closes CUT/JOIN also closes the Eraser (one click-priority tool at a time).
+        self._reset_eraser_state()
 
     def _toggle_cut_join_mode(self, mode):
         """[1] CUT / [2] JOIN / [3] LINK: two clicks on cracks. Pressing the same key again leaves the tool."""
@@ -2634,6 +2638,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         else:
             self._reset_translate_state()
             self._reset_width_edit_state()
+            self._reset_eraser_state()
             self.cfg.edit_mode = False
             self.cfg.current_tool = 'crack'
             self.cfg.temp_start = None
@@ -2861,9 +2866,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
               + (f"; {drop_a + drop_b} width tract(s) crossing the junction removed" if drop_a + drop_b else "") + ".")
         return True
 
-    def _save_annotations_now(self):
-        """Writes the current photo's JSON and binary masks right away (after a LINK),
-        without the CSV row, the beep or the queue bookkeeping of a full [S] save."""
+    def _save_annotations_now(self, tag="LINK", action="the link"):
+        """Writes the current photo's JSON and binary masks right away (after a LINK, an Eraser stroke or
+        Remove uncertain), without the CSV row, the beep or the queue bookkeeping of a full [S] save."""
         if not self.cfg.CURRENT_IMAGE_PATH or not self.cfg.JSON_OUTPUT_PATH:
             return False
         try:
@@ -2874,10 +2879,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self._remove_stale_photo_outputs()
             self._export_segmented_preview_image()
             self._export_binary_masks()
-            print(" [LINK] JSON and binary masks updated. [U] undoes the link on screen; [S] saves again.")
+            print(f" [{tag}] JSON and binary masks updated. [U] undoes {action} on screen; [S] saves again.")
             return True
         except Exception as e:
-            print(f" [LINK] Could not update the files: {e}", file=sys.stderr)
+            print(f" [{tag}] Could not update the files: {e}", file=sys.stderr)
             return False
 
     def _cut_crack_section(self, first, second):
@@ -3398,6 +3403,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self._toggle_help_menu()
             return
         if self._dispatch_window_and_reset_keys(key_clean):
+            return
+        if self._dispatch_eraser_keys(key_clean):
             return
         if self._dispatch_width_edit_keys(key_clean, is_plus_key, is_minus_key,
                                            is_widen_left_key, is_widen_right_key,
@@ -4274,6 +4281,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
             if self.cfg.portion_state["active"]:
                 self._handle_building_portion_mouse(event, x, y)
+                return
+
+            if self.cfg.eraser_state["active"]:
+                # v1.0.8: ahead of Zoom window, so dragging erases even while that tool is on.
+                self._handle_eraser_mouse(event, x, y)
                 return
 
             if self.cfg.zoom_window_state["active"]:
@@ -5327,7 +5339,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             "[Zoom window] (sidebar) : drag a rectangle to zoom onto a crack; press again to reset the zoom",
             "[HWAV] (sidebar) : tint in green the windows already viewed while zoomed; press again to clear",
             "[Crack report] (sidebar) : click a crack to read its reliability report; press again to close it",
-            "[Validation] (sidebar, last image) : move training-ready photos to 'Suitable for training'"
+            "[Eraser] (sidebar) : drag the red window over a crack to erase that part ([ / ] window size)",
+            "[Remove uncertain] (sidebar) : delete every crack marked [?] in this photo",
+            "[Validation] (sidebar, every photo segmented) : move training-ready photos to 'Suitable for training'"
         ]
 
     def _draw_help_menu_command_list(self, win_out, comandi):
@@ -5453,6 +5467,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_ignore_regions(win_out, marker_dim)
         self._draw_tool_markers(win_out, marker_dim)
         self._draw_cut_join_indicator(win_out)
+        self._draw_eraser(win_out)
         self._draw_inspection_tools(win_out)
         self._draw_alt_route(win_out)
         self._draw_crack_filter_label(win_out)
@@ -5717,6 +5732,12 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == BUILDING_PORTION_CODE:
             self._building_portion_button()
+
+        elif key_clean == ERASER_CODE:
+            self._toggle_eraser()
+
+        elif key_clean == REMOVE_UNCERTAIN_CODE:
+            self._remove_uncertain_cracks()
 
         elif key_clean == ord('$'):
             self._apply_alt_route()

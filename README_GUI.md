@@ -32,6 +32,26 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.0.8: Eraser, Remove uncertain, Validation
+
+Nuovo modulo `crack_cleanup.py`, agganciato a `CrackSegmentation` come mixin.
+La barra laterale ora si intitola **More Features**.
+
+- **⌫ Eraser** (barra laterale, codice 21): una finestrella rossa segue il
+  mouse; tenendo premuto e trascinandola sopra un crack si cancella la parte
+  toccata (un crack attraversato a metà viene diviso in due). **[** / **]**
+  rimpiccioliscono / ingrandiscono la finestra (`ERASER_*` in `config.py`).
+  Al rilascio del mouse JSON e maschere binarie vengono aggiornati subito;
+  **U** annulla a schermo, **S** salva di nuovo. Il pulsante resta premuto
+  finché lo strumento è attivo; gli altri strumenti (C, D, I, 1/2/3, T, A,
+  Zoom window, ...) lo chiudono.
+- **🗑 Remove uncertain [?]** (barra laterale, codice 22): dopo una conferma
+  elimina tutte le fratture della foto contrassegnate con `[?]` (incerte) e
+  aggiorna subito JSON e maschere binarie; **U** annulla.
+- **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
+  su qualunque immagine: rientrando in modalità 2 non serve più arrivare
+  all'ultima immagine.
+
 ## Novità 1.0.7: strumento Ignore region (tasto I)
 
 Nuovo modulo `ignore_regions.py`, agganciato a `CrackSegmentation` come mixin.
