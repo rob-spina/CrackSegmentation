@@ -7,6 +7,8 @@ The result is 'Training set/folds.csv', one row per photo with its fold and the 
 (relative to 'Training set'), and 'Training set/folds/fold_1 .. fold_K', each a COPY of its photos with their
 JSON and 'Binary files' exports (Images / JSON files / Binary files), ready for a training script that wants
 one folder per fold. Pressed again, both are replaced; 'Training set' itself is never changed.
+A photo saved without any crack (JSON with no crack shape, hence no crack mask) is a NEGATIVE example:
+its whole label is background. folds.csv marks it with negative = 1, so the training script uses it.
 """
 import csv
 import os
@@ -14,11 +16,11 @@ import re
 import shutil
 
 from config import IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME
-from training_validation import VALID_IMAGE_EXTENSIONS, binary_exports_of
+from training_validation import VALID_IMAGE_EXTENSIONS, binary_exports_of, photo_quality_from_json
 
 
 CV_FOLDS_CODE = 26
-FOLDS_FIELDS = ["photo", "group", "fold", "image", "json", "crack_mask", "uncertain_mask", "ignore_mask"]
+FOLDS_FIELDS = ["photo", "group", "fold", "image", "json", "crack_mask", "uncertain_mask", "ignore_mask", "negative"]
 _GROUP_TAG = re.compile(r"__(BLDG\d+)", re.IGNORECASE)
 
 
@@ -48,20 +50,34 @@ def _relative_if_exists(root, *parts):
     return "/".join(parts) if os.path.isfile(os.path.join(root, *parts)) else ""
 
 
+def is_negative_photo(root, json_rel, crack_mask_rel):
+    """True for a photo saved without any crack: a readable JSON with no crack shape and no crack mask."""
+    if crack_mask_rel or not json_rel:
+        return False
+    quality = photo_quality_from_json(os.path.join(root, json_rel))
+    return quality is not None and quality["cracks"] == 0
+
+
 def fold_rows(root, folds):
     """One folds.csv row per photo, with the paths of its annotation files ('' when missing)."""
     rows = []
     for photo in sorted(folds, key=lambda p: (folds[p], p)):
         base = os.path.splitext(photo)[0]
-        rows.append({
-            "photo": photo, "group": photo_group(photo), "fold": folds[photo],
-            "image": f"{IMAGES_DIR_NAME}/{photo}",
-            "json": _relative_if_exists(root, JSON_DIR_NAME, f"{base}.json"),
-            "crack_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-crack_mask.png"),
-            "uncertain_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-crack_uncertain_mask.png"),
-            "ignore_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-ignore_mask.png"),
-        })
+        rows.append(_fold_row(root, photo, base, folds[photo]))
     return rows
+
+
+def _fold_row(root, photo, base, fold):
+    row = {
+        "photo": photo, "group": photo_group(photo), "fold": fold,
+        "image": f"{IMAGES_DIR_NAME}/{photo}",
+        "json": _relative_if_exists(root, JSON_DIR_NAME, f"{base}.json"),
+        "crack_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-crack_mask.png"),
+        "uncertain_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-crack_uncertain_mask.png"),
+        "ignore_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-ignore_mask.png"),
+    }
+    row["negative"] = 1 if is_negative_photo(root, row["json"], row["crack_mask"]) else 0
+    return row
 
 
 def folds_summary(rows, k):
@@ -71,8 +87,10 @@ def folds_summary(rows, k):
         in_fold = [r for r in rows if r["fold"] == fold]
         groups = {r["group"] for r in in_fold}
         drone = sum(1 for r in in_fold if r["photo"].upper().startswith("DJI_"))
-        lines.append(f"Fold {fold}: {len(in_fold)} photo(s), {len(groups)} building(s), {drone} from drone")
-    missing = [r["photo"] for r in rows if not r["crack_mask"]]
+        negatives = sum(1 for r in in_fold if r["negative"])
+        lines.append(f"Fold {fold}: {len(in_fold)} photo(s), {len(groups)} building(s), {drone} from drone"
+                     + (f", {negatives} without cracks" if negatives else ""))
+    missing = [r["photo"] for r in rows if not r["crack_mask"] and not r["negative"]]
     if missing:
         lines.append(f"{len(missing)} photo(s) without a crack mask (they cannot be trained on): "
                      + ", ".join(missing[:5]) + (" ..." if len(missing) > 5 else ""))
