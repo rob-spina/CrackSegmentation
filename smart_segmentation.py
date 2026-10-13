@@ -1345,9 +1345,14 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             print(f"[MASK EXPORT] Removed outdated mask: {path}")
         return False
 
+    def _write_empty_crack_mask(self, path):
+        """v1.0.8: all-black crack mask of a photo saved with no crack (a negative example for training)."""
+        cv2.imwrite(path, np.zeros((self.cfg.H_img, self.cfg.W_img), dtype=np.uint8))
+        print(f"[SUCCESS] No crack in this photo: all-black crack mask saved (negative example): {path}")
+
     def _export_binary_masks(self):
-        """Writes the crack/detachment binary training masks, skipping
-        any that would be entirely empty."""
+        """Writes the crack/detachment binary training masks, skipping any that would be entirely empty --
+        except the crack mask, written all black when CRACK_MASK_WRITE_EMPTY is on (v1.0.8)."""
         try:
             crack_mask_out = self._build_variable_width_crack_mask(self.cfg.saved_cracks, self.cfg.H_img, self.cfg.W_img, self.cfg.CRACK_MASK_DILATION_PX)
             detachment_mask_out = self._build_detachment_area_mask()
@@ -1357,7 +1362,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             detachment_mask_path = self._segmented_output_path("-detachment_mask", ".png")
 
             if not self._write_mask_if_nonempty(crack_mask_out, crack_mask_path, "Binary crack mask"):
-                print("[MASK EXPORT] No active crack: crack mask not generated (nothing to save).")
+                if self.cfg.CRACK_MASK_WRITE_EMPTY:
+                    self._write_empty_crack_mask(crack_mask_path)
+                else:
+                    print("[MASK EXPORT] No active crack: crack mask not generated (nothing to save).")
             if not self._write_mask_if_nonempty(detachment_mask_out, detachment_mask_path, "Binary detachment mask (filled area)"):
                 print("[MASK EXPORT] No active detachment: detachment mask not generated (nothing to save).")
             self._export_uncertain_crack_mask()

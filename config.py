@@ -301,6 +301,9 @@ class Config:
     def _init_crack_mask_settings(self):
         """Pixels to dilate the exported crack mask by, on each side of the traced centerline."""
         self.CRACK_MASK_DILATION_PX = 2
+        # v1.0.8: a photo saved with no crack still gets an all-black <photo>-crack_mask.png (a negative example
+        # for training, so every photo has its mask). False = no crack mask for such photos, as before 1.0.8.
+        self.CRACK_MASK_WRITE_EMPTY = True
 
         # CRACK_AUTO_EDGE_MAX_OFFSET_PX caps automatic edge detection's per-side reach (px); CRACK_MASK_AUTO_EDGE_ENABLED disables it in favor of flat dilation.
         self.CRACK_AUTO_EDGE_MAX_OFFSET_PX = 2

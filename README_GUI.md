@@ -73,8 +73,10 @@ La barra laterale ora si intitola **More Features**.
   `fold_k` e si addestra sulle altre. Premuto di nuovo sostituisce CSV e
   cartelle `folds/`; `Training set` non viene mai modificato. Una foto salvata
   senza nessuna frattura (muro sano con pluviali, cavi, ringhiere, giunti) è un
-  esempio negativo: ha il JSON ma non la maschera, e in `folds.csv` ha
-  `negative = 1`, così il training la usa con etichetta tutta a sfondo. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  esempio negativo: dalla 1.0.8 il salvataggio scrive comunque una
+  `-crack_mask.png` tutta nera (`CRACK_MASK_WRITE_EMPTY` in `config.py`), così
+  ogni foto ha la sua maschera; in `folds.csv` ha `negative = 1` e il training
+  la usa con etichetta tutta a sfondo. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
   `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare

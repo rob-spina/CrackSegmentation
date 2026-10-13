@@ -195,3 +195,59 @@ class TestSidebar(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEmptyCrackMask(unittest.TestCase):
+    """v1.0.8: a photo saved with no crack gets an all-black crack mask (a negative example)."""
+
+    def setUp(self):
+        import cv2
+        import numpy as np
+        self.cv2, self.np = cv2, np
+        self.tmpdir = tempfile.mkdtemp(prefix="crackseg_v108_empty_")
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+        os.makedirs(os.path.join(self.tmpdir, "Images"))
+        self.photo = os.path.join(self.tmpdir, "Images", "clean_wall.png")
+        cv2.imwrite(self.photo, np.full((300, 400, 3), 180, np.uint8))
+        from config import Config
+        from smart_segmentation import CrackSegmentation
+        cfg = Config()
+        cfg.SCRIPT_DIR = self.tmpdir
+        self.app = CrackSegmentation(cfg)
+        self.app.cfg.modalita_scelta = "1"
+        self.app._set_queue_folders()
+        self.app.cfg.image_queue = [self.photo]
+
+    def _save(self):
+        with mock.patch.object(self.app, "_acknowledge_save_warning"), \
+                mock.patch.object(self.app, "run_post_save_group_crack_check"), \
+                mock.patch.object(self.app, "_play_save_beep"), \
+                mock.patch("smart_segmentation.resolve_script_dir", return_value=self.tmpdir):
+            self.app.initialize_image_session(self.photo)
+            self.app.process_keypress(ord('s'))
+        binary = os.path.join(self.tmpdir, "Binary files")
+        return [f for f in os.listdir(binary) if f.endswith("-crack_mask.png")], binary
+
+    def test_all_black_mask_of_the_photo_size(self):
+        masks, binary = self._save()
+        self.assertEqual(len(masks), 1)
+        mask = self.cv2.imread(os.path.join(binary, masks[0]), self.cv2.IMREAD_GRAYSCALE)
+        self.assertEqual(mask.shape, (300, 400))
+        self.assertEqual(int(mask.max()), 0)
+
+    def test_switch_off_restores_the_old_behaviour(self):
+        self.app.cfg.CRACK_MASK_WRITE_EMPTY = False
+        masks, _ = self._save()
+        self.assertEqual(masks, [])
+
+    def test_photo_with_black_mask_is_a_negative_in_folds(self):
+        root = os.path.join(self.tmpdir, "TS")
+        for sub in ("JSON files", "Binary files"):
+            os.makedirs(os.path.join(root, sub))
+        with open(os.path.join(root, "JSON files", "w.json"), "w") as f:
+            f.write('{"shapes": []}')
+        self.cv2.imwrite(os.path.join(root, "Binary files", "w-crack_mask.png"), self.np.zeros((10, 10), self.np.uint8))
+        self.assertTrue(cv.is_negative_photo(root, "JSON files/w.json", "Binary files/w-crack_mask.png"))
+        with open(os.path.join(root, "JSON files", "w.json"), "w") as f:
+            f.write('{"shapes": [{"label": "crack_w", "shape_type": "linestrip", "points": [[0, 0], [5, 5]]}]}')
+        self.assertFalse(cv.is_negative_photo(root, "JSON files/w.json", "Binary files/w-crack_mask.png"))

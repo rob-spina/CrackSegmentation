@@ -7,8 +7,8 @@ The result is 'Training set/folds.csv', one row per photo with its fold and the 
 (relative to 'Training set'), and 'Training set/folds/fold_1 .. fold_K', each a COPY of its photos with their
 JSON and 'Binary files' exports (Images / JSON files / Binary files), ready for a training script that wants
 one folder per fold. Pressed again, both are replaced; 'Training set' itself is never changed.
-A photo saved without any crack (JSON with no crack shape, hence no crack mask) is a NEGATIVE example:
-its whole label is background. folds.csv marks it with negative = 1, so the training script uses it.
+A photo saved without any crack (JSON with no crack shape; since 1.0.8 its crack mask is all black, older saves
+have none) is a NEGATIVE example: its whole label is background. folds.csv marks it with negative = 1.
 """
 import csv
 import os
@@ -50,9 +50,10 @@ def _relative_if_exists(root, *parts):
     return "/".join(parts) if os.path.isfile(os.path.join(root, *parts)) else ""
 
 
-def is_negative_photo(root, json_rel, crack_mask_rel):
-    """True for a photo saved without any crack: a readable JSON with no crack shape and no crack mask."""
-    if crack_mask_rel or not json_rel:
+def is_negative_photo(root, json_rel, crack_mask_rel=""):
+    """True for a photo saved without any crack: a readable JSON with no crack shape (its crack mask, when
+    present, is all black)."""
+    if not json_rel:
         return False
     quality = photo_quality_from_json(os.path.join(root, json_rel))
     return quality is not None and quality["cracks"] == 0
