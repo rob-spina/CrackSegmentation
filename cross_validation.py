@@ -4,14 +4,17 @@ Splits the photos of 'Training set' into K folds for cross-validation, by buildi
 group (__BLDGnnn) lands in the same fold, so no building is seen in training and validation of the same
 round. Groups are dealt largest first to the fold with the fewest photos, which keeps the folds even.
 The result is 'Training set/folds.csv', one row per photo with its fold and the paths of its JSON and masks
-(relative to 'Training set'), read by the training script. Nothing is moved or copied.
+(relative to 'Training set'), and 'Training set/folds/fold_1 .. fold_K', each a COPY of its photos with their
+JSON and 'Binary files' exports (Images / JSON files / Binary files), ready for a training script that wants
+one folder per fold. Pressed again, both are replaced; 'Training set' itself is never changed.
 """
 import csv
 import os
 import re
+import shutil
 
 from config import IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME
-from training_validation import VALID_IMAGE_EXTENSIONS
+from training_validation import VALID_IMAGE_EXTENSIONS, binary_exports_of
 
 
 CV_FOLDS_CODE = 26
@@ -129,10 +132,34 @@ class CrossValidationMixin:
 
     def _cv_folds_message(self, path, rows, k):
         n_groups = len({r["group"] for r in rows})
+        folds_dir = os.path.join(os.path.dirname(path), self.cfg.CV_FOLDS_DIR)
         head = [f"{len(rows)} photo(s) of {n_groups} building(s) into {k} folds (each building in one fold):", ""]
-        tail = ["", f"Replace the existing {os.path.basename(path)}?" if os.path.exists(path)
-                else f"Write {os.path.basename(path)} in '{self.cfg.DATASET_SPLIT_DIRS['training']}'?"]
-        return "\n".join(head + folds_summary(rows, k) + tail)
+        action = (f"Write {os.path.basename(path)} and copy the photos, JSON and masks into "
+                  f"'{self.cfg.CV_FOLDS_DIR}/fold_1' .. 'fold_{k}'?")
+        if os.path.exists(path) or os.path.isdir(folds_dir):
+            action += f"\nThe existing {os.path.basename(path)} and '{self.cfg.CV_FOLDS_DIR}' folder are replaced."
+        return "\n".join(head + folds_summary(rows, k) + ["", action])
+
+    def _copy_fold_folders(self, root, rows):
+        """Fresh 'folds/fold_k/{Images, JSON files, Binary files}' copies. Returns how many files were copied."""
+        folds_dir = os.path.join(root, self.cfg.CV_FOLDS_DIR)
+        if os.path.isdir(folds_dir):
+            shutil.rmtree(folds_dir)   # only ever the folder this button generated
+        binary_dir = os.path.join(root, BINARY_DIR_NAME)
+        binary_names = os.listdir(binary_dir) if os.path.isdir(binary_dir) else []
+        copied = 0
+        for row in rows:
+            dest = os.path.join(folds_dir, f"fold_{row['fold']}")
+            base = os.path.splitext(row["photo"])[0]
+            sources = [(row["image"], IMAGES_DIR_NAME)]
+            if row["json"]:
+                sources.append((row["json"], JSON_DIR_NAME))
+            sources += [(f"{BINARY_DIR_NAME}/{n}", BINARY_DIR_NAME) for n in binary_exports_of(base, binary_names)]
+            for rel, sub in sources:
+                os.makedirs(os.path.join(dest, sub), exist_ok=True)
+                shutil.copy2(os.path.join(root, rel), os.path.join(dest, sub))
+                copied += 1
+        return copied
 
     def make_cv_folds(self):
         """Code 26 [CV folds]: asks K, shows the split, writes 'Training set/folds.csv'. Returns its path or None."""
@@ -150,6 +177,17 @@ class CrossValidationMixin:
         if not self._confirm_cv_folds(self._cv_folds_message(path, rows, k)):
             print(" [CV FOLDS] Cancelled: nothing written.")
             return None
-        self._write_folds_csv(path, rows)
-        print(f" [CV FOLDS] {len(rows)} photo(s) in {k} folds written to {path}")
+        self._write_folds_and_copies(root, path, rows, k)
         return path
+
+    def _write_folds_and_copies(self, root, path, rows, k):
+        self._write_folds_csv(path, rows)
+        try:
+            copied = self._copy_fold_folders(root, rows)
+        except OSError as e:
+            self._notify_cv_folds(f"{os.path.basename(path)} written, but copying the fold folders failed: {e}")
+            return
+        folds_dir = os.path.join(root, self.cfg.CV_FOLDS_DIR)
+        print(f" [CV FOLDS] {len(rows)} photo(s) in {k} folds: {path}; {copied} file(s) copied into {folds_dir}")
+        self._notify_cv_folds(f"{k} fold folders ready in:\n{folds_dir}\n\n"
+                              f"{copied} file(s) copied (photos, JSON, masks); folds.csv lists the same split.")
