@@ -81,19 +81,41 @@ class EmbeddedCanvas:
 
         self._bind_canvas_events()
 
-    def _compute_content_offset(self):
-        """Offset (x, y) to center the fixed 1200x900 photo within a larger viewport. Zero in either axis once the viewport isn't bigger."""
+    MIN_LAID_OUT_WIDTH = 200   # below this the canvas is not laid out yet: no scaling
+
+    def _compute_display_scale(self):
+        """v1.0.8: < 1 when the canvas is narrower than the 1200 px frame (e.g. between the two sidebars on a
+        laptop screen): the frame is shrunk to the width so no part of the photo is cut off. Height scrolls."""
+        viewport_w = self.canvas.winfo_width()
+        if viewport_w < self.MIN_LAID_OUT_WIDTH:
+            return 1.0
+        return min(1.0, viewport_w / float(CANVAS_W))
+
+    def _compute_content_offset(self, scale=1.0):
+        """Offset (x, y) to center the (scaled) 1200x900 photo within a larger viewport. Zero in either axis once the viewport isn't bigger."""
         viewport_w = max(1, self.canvas.winfo_width())
         viewport_h = max(1, self.canvas.winfo_height())
-        x_offset = max(0, (viewport_w - CANVAS_W) // 2)
-        y_offset = max(0, (viewport_h - CANVAS_H) // 2)
+        x_offset = max(0, (viewport_w - int(CANVAS_W * scale)) // 2)
+        y_offset = max(0, (viewport_h - int(CANVAS_H * scale)) // 2)
         return x_offset, y_offset
 
+    def _fit_frame(self, bgr_frame):
+        """The frame shrunk by the display scale (unchanged when it fits); keeps the scroll region in step."""
+        scale = self._compute_display_scale()
+        if scale != getattr(self, "_display_scale", 1.0):
+            self.canvas.configure(scrollregion=(0, 0, int(CANVAS_W * scale), int(CANVAS_H * scale)))
+        self._display_scale = scale
+        if scale >= 1.0:
+            return bgr_frame
+        h, w = bgr_frame.shape[:2]
+        return cv2.resize(bgr_frame, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
+
     def update_frame(self, bgr_frame):
+        bgr_frame = self._fit_frame(bgr_frame)
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(rgb)
         photo = ImageTk.PhotoImage(pil_image)
-        self._content_offset = self._compute_content_offset()
+        self._content_offset = self._compute_content_offset(self._display_scale)
         x_offset, y_offset = self._content_offset
         if self._image_id is None:
             self._image_id = self.canvas.create_image(x_offset, y_offset, anchor="nw", image=photo)
@@ -105,9 +127,11 @@ class EmbeddedCanvas:
     def _canvas_xy(self, event):
         # Subtracts the same centering offset update_frame() positions the
         # photo with, so a click still maps onto the exact pixel under the cursor.
+        # v1.0.8: and divides by the display scale, back to the 1200x900 frame the app works in.
         x_offset, y_offset = getattr(self, "_content_offset", (0, 0))
-        cx = int(self.canvas.canvasx(event.x)) - x_offset
-        cy = int(self.canvas.canvasy(event.y)) - y_offset
+        scale = getattr(self, "_display_scale", 1.0) or 1.0
+        cx = int(round((self.canvas.canvasx(event.x) - x_offset) / scale))
+        cy = int(round((self.canvas.canvasy(event.y) - y_offset) / scale))
         return cx, cy
 
     @staticmethod
@@ -318,42 +342,63 @@ class PdfManualPanel:
 # the commands that aren't already toolbar buttons -- icons match the ones
 # already used for the same commands in _TOOL_COMMANDS/_VIEW_COMMANDS/etc.
 SIDEBAR_WIDTH = 210
-_SIDEBAR_SHORTCUTS = [
-    ("\u26A1", "Crack tool", "C", ord('c')),
-    ("\u25A6", "Detachment tool", "D", ord('d')),
-    ("\u2298", "Ignore region", "I", ord('i')),
-    ("\U0001F535", "Toggle blue overlay", "N", ord('n')),
-    ("\U0001F4CD", "Toggle markers", "Space", ord(' ')),
-    ("\U0001F504", "Retrace cracks", "V", ord('v')),
-    ("\u2702", "Cut crack part", "1", ord('1')),
-    ("\U0001F517", "Join / re-route", "2", ord('2')),
-    ("\u26D3", "Link two cracks", "3", ord('3')),
-    # v1.0.8 button-only clean-up tools (codes 21-22, see crack_cleanup.py).
-    ("\u232B", "Eraser", "", 21),
-    ("\U0001F5D1", "Remove uncertain [?]", "", 22),
-    # v1.0.7: the arrow turns left once no other route is left; [$] applies the route on screen.
-    ("\u25B6", "Alternative route", "", 18),
-    ("\U0001F522", "Show cracks by number", "", 19),
-    ("\U0001F9F2", "Snap / translate", "T", ord('t')),
-    ("\u2194", "Width-edit mode", "A", ord('a')),
-    ("\U0001F3F7", "Assign building", "B", ord('b')),
-    ("\u2B1C", "Building portion (import)", "5", 20),
-    ("\U0001F50D", "Compatibility check", "G", ord('g')),
-    ("\U0001F4D0", "Set scale", "K", ord('k')),
-    ("\u26F6", "Fullscreen", "F", ord('f')),
-    ("\U0001F50E", "Reset zoom", "0", ord('0')),
-    # v1.0.6 button-only actions (codes 14-17, see process_keypress()).
-    ("\u2B1A", "Zoom window", "", 15),
-    ("\U0001F7E9", "Highlight viewed (HWAV)", "", 14),
-    ("\U0001F4CB", "Crack report", "", 16),
-    ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
-    ("\u2705", "Validation", "", 17),
-    # v1.0.8 dataset split, Mode 2 only (codes 23-25, see dataset_split.py).
-    ("\U0001F4DA", "Training set", "", 23),
-    ("\U0001F9EA", "Test set", "", 24),
-    ("\U0001F4CF", "Validation set", "", 25),
-    ("\U0001F5C2", "CV folds (Training set)", "", 26),
+# v1.0.8: two sidebars, each split into sections of similar commands (heading, [(icon, label, key, code)]).
+# Right ("More Features"): tracing, crack editing and crack inspection -- what is used while working on a photo.
+_RIGHT_SIDEBAR_SECTIONS = [
+    ("Tools", [
+        ("\u26A1", "Crack tool", "C", ord('c')),
+        ("\u25A6", "Detachment tool", "D", ord('d')),
+        ("\u2298", "Ignore region", "I", ord('i')),
+    ]),
+    ("Edit cracks", [
+        ("\u2702", "Cut crack part", "1", ord('1')),
+        ("\U0001F517", "Join / re-route", "2", ord('2')),
+        ("\u26D3", "Link two cracks", "3", ord('3')),
+        # v1.0.8 button-only clean-up tools (codes 21-22, see crack_cleanup.py).
+        ("\u232B", "Eraser", "", 21),
+        ("\U0001F5D1", "Remove uncertain [?]", "", 22),
+        # v1.0.7: the arrow turns left once no other route is left; [$] applies the route on screen.
+        ("\u25B6", "Alternative route", "", 18),
+        ("\U0001F9F2", "Snap / translate", "T", ord('t')),
+        ("\u2194", "Width-edit mode", "A", ord('a')),
+        ("\U0001F504", "Retrace cracks", "V", ord('v')),
+    ]),
+    ("Inspect cracks", [
+        ("\U0001F522", "Show cracks by number", "", 19),
+        ("\U0001F4CB", "Crack report", "", 16),
+        ("\U0001F7E9", "Highlight viewed (HWAV)", "", 14),
+    ]),
 ]
+# Left ("View & Dataset"): display, building group / scale, and the dataset (mode, validation, sets, folds).
+_LEFT_SIDEBAR_SECTIONS = [
+    ("View", [
+        ("\U0001F535", "Toggle blue overlay", "N", ord('n')),
+        ("\U0001F4CD", "Toggle markers", "Space", ord(' ')),
+        ("\u2B1A", "Zoom window", "", 15),
+        ("\U0001F50E", "Reset zoom", "0", ord('0')),
+        ("\u26F6", "Fullscreen", "F", ord('f')),
+    ]),
+    ("Building & scale", [
+        ("\U0001F3F7", "Assign building", "B", ord('b')),
+        ("\u2B1C", "Building portion (import)", "5", 20),
+        ("\U0001F50D", "Compatibility check", "G", ord('g')),
+        ("\U0001F4D0", "Set scale", "K", ord('k')),
+    ]),
+    ("Dataset", [
+        ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
+        ("\u2705", "Validation", "", 17),
+        # v1.0.8 dataset split, Mode 2 only (codes 23-25, see dataset_split.py).
+        ("\U0001F4DA", "Training set", "", 23),
+        ("\U0001F9EA", "Test set", "", 24),
+        ("\U0001F4CF", "Validation set", "", 25),
+        ("\U0001F5C2", "CV folds (Training set)", "", 26),
+    ]),
+]
+RIGHT_SIDEBAR_TITLE = "More Features"
+LEFT_SIDEBAR_TITLE = "View & Dataset"
+# Every sidebar command, right panel first then left, in on-screen order.
+_SIDEBAR_SHORTCUTS = [entry for sections in (_RIGHT_SIDEBAR_SECTIONS, _LEFT_SIDEBAR_SECTIONS)
+                      for _, entries in sections for entry in entries]
 
 # Sidebar toggles shown pressed while their tool is on: code -> reads the state from cfg.
 _SIDEBAR_TOGGLE_STATES = {
@@ -384,8 +429,8 @@ class HoverTip:
     """Small borderless window next to a widget while the mouse is over it; its text is built
     when the mouse enters, so it always shows the current state."""
 
-    def __init__(self, widget, text_fn):
-        self.widget, self.text_fn, self.tip = widget, text_fn, None
+    def __init__(self, widget, text_fn, side="left"):
+        self.widget, self.text_fn, self.tip, self.side = widget, text_fn, None, side
         widget.bind("<Enter>", self.show)
         widget.bind("<Leave>", self.hide)
         widget.bind("<ButtonPress>", self.hide)   # a click moves the photo: the counts change
@@ -401,8 +446,11 @@ class HoverTip:
         tk.Label(self.tip, text=text, justify="left", anchor="w", background="#ffffe0", foreground="#000000",
                  relief="solid", borderwidth=1, font=("TkDefaultFont", 10), padx=8, pady=5).pack()
         self.tip.update_idletasks()
-        # Left of the button (the sidebar is at the window's right edge), top-aligned with it.
-        x = self.widget.winfo_rootx() - self.tip.winfo_reqwidth() - 6
+        # Towards the canvas, top-aligned with the button: left of a right-sidebar button, right of a left one.
+        if self.side == "left":
+            x = self.widget.winfo_rootx() - self.tip.winfo_reqwidth() - 6
+        else:
+            x = self.widget.winfo_rootx() + self.widget.winfo_width() + 6
         self.tip.wm_geometry(f"+{max(0, x)}+{self.widget.winfo_rooty()}")
 
     def hide(self, event=None):
@@ -425,18 +473,37 @@ def split_counts_text(counts, hovered):
 
 
 class ShortcutsSidebar:
-    """Panel of real, clickable shortcut buttons to the right of the
-    canvas, for the commands not already on the toolbar. Vertically
-    scrollable so a button is never simply unreachable on a shorter
-    window (USER REPORT -- the last one used to be clipped)."""
+    """v1.0.8: both sidebars, one on each side of the canvas, seen as one: buttons, buttons_by_code and
+    refresh_states() cover the two panels (right panel first). frame / _canvas are the right panel's."""
 
     def __init__(self, master, app):
         self.app = app
+        self.right = SidebarPanel(master, app, RIGHT_SIDEBAR_TITLE, _RIGHT_SIDEBAR_SECTIONS, side="right")
+        self.left = SidebarPanel(master, app, LEFT_SIDEBAR_TITLE, _LEFT_SIDEBAR_SECTIONS, side="left")
+        self.panels = (self.right, self.left)
+        self.frame, self._canvas = self.right.frame, self.right._canvas
+        self.buttons = self.right.buttons + self.left.buttons
+        self.buttons_by_code = {**self.right.buttons_by_code, **self.left.buttons_by_code}
+        self.hover_tips = {**self.right.hover_tips, **self.left.hover_tips}
+
+    def refresh_states(self, cfg, validation_available):
+        for panel in self.panels:
+            panel.refresh_states(cfg, validation_available)
+
+
+class SidebarPanel:
+    """Panel of real, clickable shortcut buttons beside the canvas, for the
+    commands not already on the toolbar, grouped under section headings.
+    Vertically scrollable so a button is never simply unreachable on a
+    shorter window (USER REPORT -- the last one used to be clipped)."""
+
+    def __init__(self, master, app, title, sections, side="right"):
+        self.app, self.side = app, side
         self.frame = ttk.Frame(master, width=SIDEBAR_WIDTH)
-        self.frame.pack(side="right", fill="y", padx=(4, 2), pady=2)
+        self.frame.pack(side=side, fill="y", padx=(4, 2) if side == "right" else (2, 4), pady=2)
         self.frame.pack_propagate(False)  # keeps a fixed width regardless of content
 
-        tk.Label(self.frame, text="More Features", font=("TkDefaultFont", 10, "bold"),
+        tk.Label(self.frame, text=title, font=("TkDefaultFont", 10, "bold"),
                  anchor="w").pack(anchor="w", fill="x", padx=8, pady=(8, 6))
 
         canvas = tk.Canvas(self.frame, highlightthickness=0)
@@ -454,14 +521,24 @@ class ShortcutsSidebar:
 
         self.buttons = []
         self.buttons_by_code = {}
-        self._labels_by_code = {code: (label, key) for _, label, key, code in _SIDEBAR_SHORTCUTS}
+        self.headings = []
+        self._labels_by_code = {code: (label, key) for _, entries in sections for _, label, key, code in entries}
         self._shown_texts = {}  # code -> text last set by _set_icon()
-        for icon, label, key, code in _SIDEBAR_SHORTCUTS:
-            btn = self._add_row(inner, icon, label, key, code)
-            self.buttons.append(btn)
-            self.buttons_by_code[code] = btn
-        self.hover_tips = {code: HoverTip(self.buttons_by_code[code], self._split_tip_text(split))
+        for heading, entries in sections:
+            self.headings.append(self._add_heading(inner, heading))
+            for icon, label, key, code in entries:
+                btn = self._add_row(inner, icon, label, key, code)
+                self.buttons.append(btn)
+                self.buttons_by_code[code] = btn
+        self.hover_tips = {code: HoverTip(self.buttons_by_code[code], self._split_tip_text(split), side=side)
                            for code, split in _SPLIT_SET_BUTTONS.items() if code in self.buttons_by_code}
+
+    @staticmethod
+    def _add_heading(master, text):
+        """Small grey section title above a group of similar commands."""
+        label = tk.Label(master, text=text.upper(), font=("TkDefaultFont", 8, "bold"), fg="#6b7280", anchor="w")
+        label.pack(fill="x", padx=6, pady=(8, 1))
+        return label
 
     def _split_tip_text(self, split):
         return lambda: split_counts_text(self.app.dataset_split_counts(), self.app.cfg.DATASET_SPLIT_DIRS[split])
@@ -921,7 +998,7 @@ class GuiCrackSegmentation(CrackSegmentation):
         chrome_allowance = 260
         default_canvas_viewport_h = 650  # comfortable default; resize the window to see more/less
         screen_capped_w = max(900, screen_w - 40)
-        canvas_and_sidebar_w = CANVAS_W + 24 + SIDEBAR_WIDTH
+        canvas_and_sidebar_w = CANVAS_W + 24 + 2 * SIDEBAR_WIDTH   # v1.0.8: a sidebar on each side
         # USER REPORT: forcing the window wider than the screen (so the
         # toolbar never had to scroll) instead pushed the Shortcuts
         # sidebar's own right edge off-screen -- unlike the toolbar, the

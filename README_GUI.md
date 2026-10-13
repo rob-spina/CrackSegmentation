@@ -32,6 +32,24 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.0.8: due barre laterali
+
+I pulsanti sono divisi tra due barre laterali, una per lato della tela,
+raggruppati per funzione con un titoletto per gruppo (`_RIGHT_SIDEBAR_SECTIONS` e
+`_LEFT_SIDEBAR_SECTIONS` in `crack_segmentation_gui.py`):
+
+- **destra, More Features**: Tools (Crack, Detachment, Ignore region), Edit cracks
+  (Cut, Join, Link, Eraser, Remove uncertain, Alternative route, Snap,
+  Width-edit, Retrace), Inspect cracks (Show cracks by number, Crack report, HWAV);
+- **sinistra, View & Dataset**: View (overlay blu, marker, Zoom window, Reset
+  zoom, Fullscreen), Building & scale (Assign building, Building portion,
+  Compatibility check, Set scale), Dataset (Switch Mode, Validation, Training /
+  Test / Validation set, CV folds).
+
+Se la tela è più stretta del fotogramma da 1200 px (es. su un portatile), il
+fotogramma viene rimpicciolito per entrare tutto in larghezza invece di essere
+tagliato; i clic vengono riportati al pixel esatto.
+
 ## Novità 1.0.8: Eraser, Remove uncertain, Validation
 
 Nuovo modulo `crack_cleanup.py`, agganciato a `CrackSegmentation` come mixin.

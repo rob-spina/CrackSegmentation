@@ -91,6 +91,8 @@ No sample photos are included in this repository (facade photos are typically pr
 
 3. Trace cracks and detachments, then save with **S** (stays on the photo), **Q** or **Enter** (moves on to the next photo). The JSON goes to `JSON files/`, the masks to `Binary files/`; the photo stays in `Images/`.
 
+**Sidebars** (since 1.0.8): the buttons for the commands not on the toolbar are split between two sidebars, one on each side of the canvas, grouped by purpose. Right, *More Features*: **Tools** (Crack, Detachment, Ignore region), **Edit cracks** (Cut, Join, Link, Eraser, Remove uncertain, Alternative route, Snap, Width-edit, Retrace), **Inspect cracks** (Show cracks by number, Crack report, HWAV). Left, *View & Dataset*: **View** (blue overlay, markers, Zoom window, Reset zoom, Fullscreen), **Building & scale** (Assign building, Building portion, Compatibility check, Set scale), **Dataset** (Switch Mode, Validation, Training / Test / Validation set, CV folds). When the canvas is narrower than the 1200 px frame (e.g. on a laptop screen), the frame is shown slightly smaller so that no part of the photo is cut off; clicks still land on the exact pixel.
+
 The complete list of shortcuts is available in the in-app help menu. The most used ones:
 
 | Key | Action |
@@ -107,7 +109,7 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 | `A` | Widen the training mask on a single crack stretch; refine with `+` / `-` and `[` `]` `{` `}` |
 | `K` | Enter the image scale manually |
 | `1` / `2` | Cut a crack part / Join (re-route or reconnect) — two clicks |
-| Eraser (sidebar) | (since 1.0.8) A red window follows the mouse: press and drag it over a crack to erase the part it touches; a crack crossed in the middle is split in two. `[` / `]` make the window smaller / larger. The JSON and binary masks are updated on release; `U` undoes |
+| Eraser (right sidebar) | (since 1.0.8) A red window follows the mouse: press and drag it over a crack to erase the part it touches; a crack crossed in the middle is split in two. `[` / `]` make the window smaller / larger. The JSON and binary masks are updated on release; `U` undoes |
 | Remove uncertain [?] (sidebar) | (since 1.0.8) After a confirmation, deletes every crack on screen marked `[?]` (uncertain; cracks hidden by **Show cracks by number** are kept), and updates the JSON and binary masks right away; `U` undoes |
 | `3` | Link: click one crack and then another, at an end or anywhere on the blue line, to merge them into one; clicked inside a crack, its shorter leftover stays a separate crack. The JSON and binary masks are updated right away |
 | `$` | Use the route shown by the **Alternative route** sidebar button (see below) |
