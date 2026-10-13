@@ -80,6 +80,15 @@ La barra laterale ora si intitola **More Features**.
   conferma prima di spostare. Passando con il mouse su uno dei tre pulsanti
   compare il numero di foto in ciascun set (Training, Validation, Test) e il
   totale.
+- **⇶ Auto split** (barra sinistra e menu File, codice 28; modulo
+  `auto_split.py`): divide in un colpo solo **tutte** le foto segmentate di
+  `Images` nei tre set, invece di una alla volta. Chiede le percentuali
+  Training / Validation / Test (default `AUTO_SPLIT_PERCENT = "70/15/15"`;
+  `80/0/20` con la cross-validation), tiene ogni edificio in un solo set,
+  lascia nel loro set i gruppi già assegnati a mano e bilancia in ogni set la
+  quota di foto da drone e di foto senza crepe. Mostra il piano e sposta solo
+  dopo conferma, con le stesse regole dei pulsanti singoli. Funziona in
+  entrambe le modalità, anche dalla schermata "No photo left".
 - **🗂 CV folds** (barra laterale e menu File, codice 26; modulo
   `cross_validation.py`): divide le foto di `Training set` in K fold per la
   cross-validation (default `CV_FOLDS = 5` in `config.py`), tenendo ogni

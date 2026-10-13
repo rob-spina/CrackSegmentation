@@ -115,14 +115,18 @@ class DatasetSplitMixin:
     def _move_photo_to_split(self, split):
         """Moves the photo on screen (plus JSON and binary exports for the training set).
         Returns the list of moved destination paths."""
+        return self._move_files_to_split(split, self.cfg.CURRENT_IMAGE_PATH, self.cfg.JSON_OUTPUT_PATH)
+
+    def _move_files_to_split(self, split, photo, json_path):
+        """Moves one photo into a set (plus its JSON and binary exports for the training set; also used by
+        [Auto split]). Returns the list of moved destination paths."""
         cfg = self.cfg
         root = self._split_root(split)
-        photo = cfg.CURRENT_IMAGE_PATH
         moved = [self._move_into(photo, os.path.join(root, IMAGES_DIR_NAME))]
         if not SPLIT_MOVES_ANNOTATIONS[split]:
             return moved
-        if cfg.JSON_OUTPUT_PATH and os.path.exists(cfg.JSON_OUTPUT_PATH):
-            moved.append(self._move_into(cfg.JSON_OUTPUT_PATH, os.path.join(root, JSON_DIR_NAME)))
+        if json_path and os.path.exists(json_path):
+            moved.append(self._move_into(json_path, os.path.join(root, JSON_DIR_NAME)))
         binary_dir = os.path.join(str(cfg.SCRIPT_DIR), BINARY_DIR_NAME)
         if os.path.isdir(binary_dir):
             base = os.path.splitext(os.path.basename(photo))[0]

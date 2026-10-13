@@ -32,11 +32,13 @@ from training_validation import TrainingValidationMixin
 from crack_cleanup import CrackCleanupMixin, ERASER_CODE, REMOVE_UNCERTAIN_CODE
 from dataset_split import DatasetSplitMixin, SPLIT_BY_CODE
 from cross_validation import CrossValidationMixin, CV_FOLDS_CODE
+from auto_split import AutoSplitMixin, AUTO_SPLIT_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
-                        CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin):
+                        CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin,
+                        AutoSplitMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -5679,6 +5681,14 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self.cfg.switch_mode_requested = True
         return True
 
+    def _handle_auto_split_key(self):
+        """Code 28 [Auto split]: photos left 'Images', so run()'s outer loop reloads the queue (as after Validation)."""
+        if not self.run_auto_split():
+            return False
+        self.cfg.translate_state["active"] = False
+        self.cfg.reload_queue_requested = True
+        return True
+
     def _handle_validation_key(self):
         """Code 17 [Validation]: once photos were moved out of 'Images', run()'s outer loop reloads the queue."""
         if not self.run_training_validation():
@@ -5755,6 +5765,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == CV_FOLDS_CODE:
             self.make_cv_folds()
+
+        elif key_clean == AUTO_SPLIT_CODE:
+            return self._handle_auto_split_key()
 
         elif key_clean in SPLIT_BY_CODE:
             return self._handle_dataset_split_key(key_clean)
@@ -6007,6 +6020,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         lines = [("No photo left to process in Mode " + str(self.cfg.modalita_scelta), 1.0, (235, 235, 235)),
                  ("", 0.7, (0, 0, 0)),
                  ("Validation : select the photos suitable for training", 0.7, (170, 255, 200)),
+                 ("Auto split : every segmented photo into Training / Validation / Test set", 0.7, (200, 230, 255)),
                  ("Switch Mode : review the segmented photos / load new ones", 0.7, (170, 220, 255)),
                  ("Quit (Esc) : close the application", 0.7, (200, 200, 200))]
         y = 360
@@ -6031,6 +6045,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 return True
         elif code == CV_FOLDS_CODE:   # v1.0.8: folds need no photo on screen
             self.make_cv_folds()
+        elif code == AUTO_SPLIT_CODE:  # v1.0.8: idle screen, nothing to reload
+            self.run_auto_split()
         return False
 
     def _wait_for_new_queue(self):
