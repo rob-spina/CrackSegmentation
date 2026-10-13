@@ -497,6 +497,9 @@ class Config:
         self.DATASET_SPLIT_DIRS = {"training": "Training set", "test": "Test set", "validation": "Validation set"}
         # v1.0.8 [CV folds] (sidebar, code 26): default number of folds, and the file written in 'Training set'.
         self.CV_FOLDS = 5
+        # v1.0.8 [Auto split] (sidebar, code 28): default Training / Validation / Test percentages
+        # (80/0/20 when cross-validation replaces the validation set).
+        self.AUTO_SPLIT_PERCENT = "70/15/15"
         self.CV_FOLDS_FILE = "folds.csv"
         # Folder inside 'Training set' where the button copies each fold (fold_1 .. fold_K); replaced every time.
         self.CV_FOLDS_DIR = "folds"

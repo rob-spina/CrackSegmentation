@@ -391,6 +391,7 @@ _LEFT_SIDEBAR_SECTIONS = [
         ("\U0001F4DA", "Training set", "", 23),
         ("\U0001F9EA", "Test set", "", 24),
         ("\U0001F4CF", "Validation set", "", 25),
+        ("\u21F6", "Auto split (all photos)", "", 28),
         ("\U0001F5C2", "CV folds (Training set)", "", 26),
     ]),
 ]
@@ -868,6 +869,7 @@ _FILE_COMMANDS = [
     ("\U0001F4DA Move to Training set (photo, JSON, masks - Mode 2)", 23),
     ("\U0001F9EA Move to Test set (photo only - Mode 2)", 24),
     ("\U0001F4CF Move to Validation set (photo only - Mode 2)", 25),
+    ("\u21F6 Auto split: every segmented photo into the sets, by building", 28),
     ("\U0001F5C2 Cross-validation folds of the Training set (folds.csv)", 26),
     ("\u23FB Quit\tEsc", 27),
 ]
@@ -1243,6 +1245,18 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _confirm_same_group_split(self, message):
         return bool(messagebox.askyesno("Crack Detector - Same building group", message, parent=self._tk_root))
+
+    def _ask_auto_split_percent(self, default):
+        return simpledialog.askstring("Crack Detector - Auto split",
+                                      "Training / Validation / Test percentages (e.g. 70/15/15;\n"
+                                      "80/0/20 when cross-validation replaces the validation set):",
+                                      initialvalue=default, parent=self._tk_root)
+
+    def _confirm_auto_split(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Auto split", message, parent=self._tk_root))
+
+    def _notify_auto_split(self, message):
+        messagebox.showinfo("Crack Detector - Auto split", message, parent=self._tk_root)
 
     def _ask_cv_fold_count(self, default):
         return simpledialog.askinteger("Crack Detector - Cross-validation", "Number of folds (each building in one fold):",
