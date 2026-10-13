@@ -174,6 +174,8 @@ class Config:
         # Which direction to move the queue once the current image's loop
         # exits without saving (Next/Previous Image); None advances forward.
         self.navigate_direction = None
+        # v1.0.9 [Go to image]: queue position to show next (None = follow navigate_direction).
+        self.navigate_target = None
         # True once the current image's loop exits because the operator
         # asked to switch Mode 1 <-> 2 (Switch Mode button) -- run()'s outer
         # loop rebuilds image_queue for the other mode instead of just

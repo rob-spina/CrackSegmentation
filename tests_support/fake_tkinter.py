@@ -292,7 +292,116 @@ class Scrollbar(_Widget):
         self.command = command
 
 
-ttk = types.SimpleNamespace(Frame=Frame, LabelFrame=LabelFrame, Button=TtkButton, Label=Label, Scrollbar=Scrollbar)
+class Combobox(_Widget):
+    """ttk.Combobox stand-in: values, current(), get()/set() and the <<ComboboxSelected>> binding."""
+    def __init__(self, master=None, values=(), **kw):
+        super().__init__(master, **kw)
+        self.kw["values"] = list(values)
+        self._text = ""
+
+    def config(self, **kw):
+        if "values" in kw:
+            kw["values"] = list(kw["values"])
+        return super().config(**kw)
+
+    configure = config
+
+    def current(self, index=None):
+        values = self.kw.get("values", [])
+        if index is None:
+            return values.index(self._text) if self._text in values else -1
+        self._text = values[index]
+        return index
+
+    def get(self):
+        return self._text
+
+    def set(self, text):
+        self._text = text
+
+    def pick(self, index):
+        """Test helper: the user picks the entry at index, as Tk would, then <<ComboboxSelected>> fires."""
+        self.current(index)
+        handler = self._bindings.get("<<ComboboxSelected>>")
+        if handler is not None:
+            handler(_Event())
+
+
+class Treeview(_Widget):
+    """ttk.Treeview stand-in: items with text/values/tags, parents, selection, headings."""
+    def __init__(self, master=None, **kw):
+        super().__init__(master, **kw)
+        self._items, self._order, self._selection, self._count = {}, {"": []}, [], 0
+        self.headings, self.tags = {}, {}
+
+    def heading(self, column, **kw):
+        self.headings.setdefault(column, {}).update(kw)
+
+    def column(self, column, **kw):
+        return None
+
+    def tag_configure(self, tag, **kw):
+        self.tags[tag] = kw
+
+    def insert(self, parent, index, iid=None, **kw):
+        self._count += 1
+        iid = iid or f"I{self._count:04d}"
+        self._items[iid] = dict(kw, parent=parent)
+        self._order.setdefault(parent, []).append(iid)
+        self._order.setdefault(iid, [])
+        return iid
+
+    def delete(self, *iids):
+        for iid in iids:
+            for child in list(self._order.get(iid, [])):
+                self.delete(child)
+            parent = self._items.pop(iid, {}).get("parent", "")
+            if iid in self._order.get(parent, []):
+                self._order[parent].remove(iid)
+            self._order.pop(iid, None)
+            if iid in self._selection:
+                self._selection.remove(iid)
+
+    def get_children(self, item=""):
+        return tuple(self._order.get(item, []))
+
+    def item(self, iid, option=None, **kw):
+        if kw:
+            self._items[iid].update(kw)
+        return self._items[iid] if option is None else self._items[iid].get(option)
+
+    def parent(self, iid):
+        return self._items[iid]["parent"]
+
+    def selection(self):
+        return tuple(self._selection)
+
+    def selection_set(self, *iids):
+        flat = []
+        for i in iids:
+            flat.extend(i if isinstance(i, (list, tuple)) else [i])
+        self._selection = list(flat)
+
+    def see(self, iid):
+        return None
+
+
+class Style:
+    def __init__(self, *a, **kw):
+        self.configured = {}
+
+    def configure(self, name, **kw):
+        self.configured.setdefault(name, {}).update(kw)
+
+    def map(self, name, **kw):
+        return None
+
+    def theme_use(self, *a):
+        return "default"
+
+
+ttk = types.SimpleNamespace(Frame=Frame, LabelFrame=LabelFrame, Button=TtkButton, Label=Label, Scrollbar=Scrollbar,
+                            Combobox=Combobox, Treeview=Treeview, Style=Style)
 
 
 class _simpledialog:

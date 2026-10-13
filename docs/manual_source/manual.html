@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.0.8</div>
+    <div class="meta-line">Version 1.0.9</div>
   </div>
 
   <div class="features">
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.0.8_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.0.9_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.8_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.9_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -594,13 +594,13 @@ sudo apt-get install -f</div>
 <table class="shortcuts">
 <tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
 <tr><td>Save / Save &amp; Next</td><td><span class="key">S</span> / <span class="key">Enter</span></td><td>Exports JSON and masks; <span class="key">S</span> stays on the photo, <span class="key">Enter</span> (or <span class="key">Q</span>) moves to the next.</td></tr>
-<tr><td>Previous / Next Image</td><td>Toolbar &#9664; / &#9654;</td><td>Moves through the queue without saving.</td></tr>
+<tr><td>Prev / Next / Go to</td><td>Toolbar</td><td>Moves without saving; <b>Go to image</b>: first, last or from a list of 10.</td></tr>
 <tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Projects the cracks of another photo of the same building (<span class="key">W</span>: the last one saved; <span class="key">L</span>: the group photo with the most shapes). When the viewpoints differ a lot, the photo is re-seen in memory from the source viewpoint and matched again; cracks leaving the view are cut at its edge. An unreliable match imports nothing.</td></tr>
 <tr><td>Building Portion</td><td><span class="key">5</span> / sidebar</td><td>Tints <b>orange</b> the part of the photo shown by the other photos of the group and pre-sets a window around it; drag inside to move it, drag elsewhere for a new one, click outside to remove it, <span class="key">5</span> again when done. <span class="key">W</span>/<span class="key">L</span> then align on the window and import only inside it.</td></tr>
 <tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Type the group number by hand; <span class="key">Enter</span> confirms, <span class="key">Backspace</span> deletes a digit, <span class="key">B</span> cancels.</td></tr>
 <tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Removes cracks that don&rsquo;t match in shape and path between different photos of the same group (also run after each save).</td></tr>
 <tr><td>Validation</td><td>Sidebar</td><td>Once every photo in <span class="code">Images</span> has its JSON: moves the photos fit for training, with JSON and masks, to <span class="code">Suitable for training</span>, with a CSV report.</td></tr>
-<tr><td>Dataset Split</td><td>Sidebar</td><td><b>Auto split</b>: all segmented photos into Training / Validation / Test by building. Single buttons (Mode 2): the photo on screen. <b>CV folds</b>: <span class="code">folds/fold_k</span>.</td></tr>
+<tr><td>Dataset Split</td><td>Sidebar</td><td><b>Auto split</b>: all photos into the sets by building; single buttons (Mode 2): the photo on screen. <b>Reset pipeline</b>: all back. <b>Dataset browser</b>: list, moves between sets. <b>CV folds</b>.</td></tr>
 <tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
 <tr><td>Scale</td><td><span class="key">K</span></td><td>Enters the image scale (cm per pixel) by hand, used for lengths and areas.</td></tr>
 </table>

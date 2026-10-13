@@ -10,6 +10,7 @@ from PIL import Image, ImageTk
 
 from config import Config
 from smart_segmentation import CrackSegmentation
+from go_to_image import PagedChooser
 
 
 # Keyboard translation: Tk <KeyPress> event -> the same integer code
@@ -335,6 +336,140 @@ class PdfManualPanel:
         self.frame.pack_forget()
 
 
+class DatasetBrowserPanel:
+    """v1.0.9 [Dataset browser] (code 31): covers the window like the manual. Lists every photo of Training,
+    Validation and Test set with its building group number on a white, scrollable list, and moves the selected
+    photos to another set (see dataset_browser.py for the rules)."""
+
+    NAVY, TEAL, INK, ZEBRA = "#0f3460", "#1f8a9e", "#1f2937", "#f3f7f9"
+    SPLITS = ("training", "validation", "test")
+
+    def __init__(self, master, app):
+        self.app = app
+        self.frame = tk.Frame(master, bg="white")
+        header = tk.Frame(self.frame, bg=self.NAVY)
+        header.pack(fill="x")
+        tk.Label(header, text="Dataset browser", bg=self.NAVY, fg="white",
+                 font=("TkDefaultFont", 15, "bold")).pack(side="left", padx=14, pady=8)
+        self.summary = tk.Label(header, text="", bg=self.NAVY, fg="#cfe3ea", font=("TkDefaultFont", 10))
+        self.summary.pack(side="left", padx=10)
+        tk.Button(header, text="✕ Close", command=self.app._toggle_dataset_browser,
+                  cursor="hand2").pack(side="right", padx=12, pady=6)
+
+        actions = tk.Frame(self.frame, bg="#e8f1f4")
+        actions.pack(fill="x")
+        tk.Label(actions, text="Move the selected photos to:", bg="#e8f1f4", fg=self.INK,
+                 font=("TkDefaultFont", 10, "bold")).pack(side="left", padx=(14, 6), pady=6)
+        self.move_buttons = {}
+        for split in self.SPLITS:
+            btn = tk.Button(actions, text=self.app.cfg.DATASET_SPLIT_DIRS[split], cursor="hand2",
+                            command=lambda t=split: self.move_selected(t))
+            btn.pack(side="left", padx=3, pady=6)
+            self.move_buttons[split] = btn
+        self.whole_building = tk.BooleanVar(value=True)
+        tk.Checkbutton(actions, text="Whole building", variable=self.whole_building, bg="#e8f1f4",
+                       fg=self.INK).pack(side="left", padx=10)
+        tk.Button(actions, text="↻ Refresh", command=self.refresh, cursor="hand2").pack(side="right", padx=12)
+
+        body = tk.Frame(self.frame, bg="white")
+        body.pack(fill="both", expand=True)
+        style = ttk.Style()
+        style.configure("Dataset.Treeview", background="white", fieldbackground="white", foreground=self.INK,
+                        rowheight=24, font=("TkDefaultFont", 10))
+        style.configure("Dataset.Treeview.Heading", background=self.NAVY, foreground="white",
+                        font=("TkDefaultFont", 10, "bold"))
+        style.map("Dataset.Treeview", background=[("selected", self.TEAL)], foreground=[("selected", "white")])
+        self.tree = ttk.Treeview(body, columns=("building", "kind"), style="Dataset.Treeview",
+                                 selectmode="extended")
+        self.tree.heading("#0", text="Photo")
+        self.tree.heading("building", text="Building group")
+        self.tree.heading("kind", text="Notes")
+        self.tree.column("#0", width=520, anchor="w")
+        self.tree.column("building", width=140, anchor="center")
+        self.tree.column("kind", width=160, anchor="w")
+        self.tree.tag_configure("set", background="#dbe9ef", foreground=self.NAVY, font=("TkDefaultFont", 11, "bold"))
+        self.tree.tag_configure("odd", background=self.ZEBRA)
+        scroll = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        self.status = tk.Label(self.frame, text="", bg="white", fg=self.INK, anchor="w")
+        self.status.pack(fill="x", padx=14, pady=4)
+        self._photo_of = {}    # tree item -> (split, photo)
+        self._set_item = {}    # split -> section item
+
+    def refresh(self):
+        """Rebuilds the list from the folders."""
+        children = self.tree.get_children()
+        if children:
+            self.tree.delete(*children)
+        self._photo_of, self._set_item = {}, {}
+        rows = self.app.dataset_inventory()
+        names = self.app.cfg.DATASET_SPLIT_DIRS
+        counts = []
+        for split in self.SPLITS:
+            mine = [r for r in rows if r["split"] == split]
+            buildings = len({r["group"] for r in mine})
+            section = self.tree.insert("", "end", text=f"{names[split]}  ({len(mine)} photo(s))",
+                                       values=(f"{buildings} building(s)", ""), open=True, tags=("set",))
+            self._set_item[split] = section
+            for i, r in enumerate(mine):
+                notes = ", ".join(n for n, on in (("drone", r["drone"]), ("no cracks", r["negative"])) if on)
+                item = self.tree.insert(section, "end", text=r["photo"], values=(r["number"], notes),
+                                        tags=("odd",) if i % 2 else ())
+                self._photo_of[item] = (split, r["photo"])
+            counts.append(f"{names[split]}: {len(mine)}")
+        self.summary.configure(text="   ".join(counts))
+
+    def selected_photos(self):
+        """[(split, photo)] selected; a selected set row stands for all its photos."""
+        picked = []
+        for item in self.tree.selection():
+            if item in self._photo_of:
+                picked.append(self._photo_of[item])
+            else:
+                picked += [self._photo_of[c] for c in self.tree.get_children(item) if c in self._photo_of]
+        return sorted(set(picked))
+
+    def move_selected(self, target):
+        picked = self.selected_photos()
+        names = self.app.cfg.DATASET_SPLIT_DIRS
+        if not picked:
+            self.status.configure(text="Select one or more photos first (Ctrl/Shift + click for several).")
+            return False
+        whole = bool(self.whole_building.get())
+        plan = self.app.plan_set_move(picked, target, whole)
+        if not plan:
+            self.status.configure(text=f"The selected photos are already in {names[target]}.")
+            return False
+        extra = len(plan) - len([p for p in picked if p[0] != target])
+        lines = [f"Move {len(plan)} photo(s) to {names[target]}?"]
+        if extra > 0:
+            lines.append(f"{extra} of them are other photos of the same building(s), moved too so no building "
+                         "is in two sets.")
+        lines.append("Training set keeps photo, JSON and masks; Validation and Test set keep the photo only.")
+        if target == "training" or any(s == "training" for s, _ in plan):
+            lines.append("The Training set changes: press CV folds again afterwards.")
+        if not messagebox.askyesno("Crack Detector - Dataset browser", "\n".join(lines), parent=self.frame):
+            return False
+        moved, problems = self.app.move_photos_between_sets(picked, target, whole)
+        self.app._all_segmented_cache = None
+        self.refresh()
+        text = f"{moved} photo(s) moved to {names[target]}."
+        if problems:
+            text += f" {len(problems)} not moved: " + "; ".join(problems[:3])
+        self.status.configure(text=text)
+        print(f" [DATASET BROWSER] {text}")
+        return moved > 0
+
+    def show(self):
+        self.frame.pack(fill="both", expand=True)
+        self.refresh()
+
+    def hide(self):
+        self.frame.pack_forget()
+
+
 # Status strip: fixed panel at the bottom showing console output continuously
 # (a double-clicked .app/.exe otherwise has no visible console).
 
@@ -392,6 +527,8 @@ _LEFT_SIDEBAR_SECTIONS = [
         ("\U0001F9EA", "Test set", "", 24),
         ("\U0001F4CF", "Validation set", "", 25),
         ("\u21F6", "Auto split (all photos)", "", 28),
+        ("\u21BA", "Reset pipeline training", "", 30),
+        ("\U0001F4C2", "Dataset browser", "", 31),
         ("\U0001F5C2", "CV folds (Training set)", "", 26),
     ]),
 ]
@@ -850,6 +987,79 @@ class _IgnoreOptionsDialog:
         self.top.destroy()
 
 
+class _GoToImageDialog:
+    """v1.0.9 [Go to image]: First / Last, or an image picked from a list of 10 names at a time
+    (paging as in go_to_image.PagedChooser). Go/Enter shows the picked image, Cancel/Esc does nothing."""
+
+    def __init__(self, master, names, current):
+        self.result = None
+        self.chooser = PagedChooser(names, current)
+        self.selected = current
+        self.top = tk.Toplevel(master)
+        self.top.title("Go to image")
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self._cancel)
+        self._build(len(names), current)
+        self.top.bind("<Return>", lambda e: self._go())
+        self.top.bind("<Escape>", lambda e: self._cancel())
+        self.top.grab_set()
+        self.top.focus_force()
+
+    def _build(self, total, current):
+        body = tk.Frame(self.top, padx=16, pady=12)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text=f"Image {current + 1} of {total} on screen", font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
+        ends = tk.Frame(body)
+        ends.pack(fill="x", pady=(8, 10))
+        tk.Button(ends, text="\u23EE First image", command=lambda: self._finish(0)).pack(side="left")
+        tk.Button(ends, text="Last image \u23ED", command=lambda: self._finish(total - 1)).pack(side="right")
+        tk.Label(body, text="Or choose an image (10 at a time):").pack(anchor="w")
+        row = tk.Frame(body)
+        row.pack(fill="x", pady=(2, 0))
+        tk.Button(row, text="\u25C0 10", command=self._previous_page).pack(side="left")
+        self.combo = ttk.Combobox(row, state="readonly", width=46, values=self.chooser.labels())
+        self.combo.pack(side="left", padx=6)
+        self.combo.bind("<<ComboboxSelected>>", self._on_pick)
+        tk.Button(row, text="10 \u25B6", command=self._next_page).pack(side="left")
+        self.page_label = tk.Label(body, fg="#6b7280")
+        self.page_label.pack(anchor="w", pady=(2, 0))
+        self.combo.set(f"{current + 1}. {self.chooser.names[current]}")
+        self._refresh_page_label()
+        buttons = tk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        tk.Button(buttons, text="Cancel", command=self._cancel).pack(side="right")
+        tk.Button(buttons, text="Go", command=self._go).pack(side="right", padx=(0, 6))
+
+    def _refresh_page_label(self):
+        first, last = self.chooser.page_range()
+        self.page_label.configure(text=f"Images {first + 1}-{last + 1} of {len(self.chooser.names)}")
+        self.combo.configure(values=self.chooser.labels())
+
+    def _on_pick(self, event=None):
+        self.selected = self.chooser.choose(self.combo.current())
+        self.combo.set(f"{self.selected + 1}. {self.chooser.names[self.selected]}")
+        self._refresh_page_label()
+
+    def _next_page(self):
+        self.chooser.next_page()
+        self._refresh_page_label()
+
+    def _previous_page(self):
+        self.chooser.previous_page()
+        self._refresh_page_label()
+
+    def _go(self):
+        self._finish(self.selected)
+
+    def _finish(self, index):
+        self.result = index
+        self.top.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.top.destroy()
+
+
 # Menu bar command tables -- (label, key_code) matching process_keypress()'s
 # real key codes. Labels use a Unicode symbol prefix (plain text, no bitmap icons).
 
@@ -862,6 +1072,7 @@ _FILE_COMMANDS = [
     # unlike Save/Enter/S above, neither of these ever saves.
     ("\u25C0 Previous Image (no save)", 5),
     ("\u25B6 Next Image (no save)", 4),
+    ("\u2316 Go to image: first / last / choose (no save)", 29),
     # USER REQUEST: switch between "new images" and "reload segmented" data
     # sources without restarting the app (code 6, see process_keypress()).
     ("\U0001F504 Switch Mode (1 \u2194 2)", 6),
@@ -870,6 +1081,8 @@ _FILE_COMMANDS = [
     ("\U0001F9EA Move to Test set (photo only - Mode 2)", 24),
     ("\U0001F4CF Move to Validation set (photo only - Mode 2)", 25),
     ("\u21F6 Auto split: every segmented photo into the sets, by building", 28),
+    ("\u21BA Reset pipeline training: every set back to Images / JSON / Binary files", 30),
+    ("\U0001F4C2 Dataset browser: every photo of the sets, with its building", 31),
     ("\U0001F5C2 Cross-validation folds of the Training set (folds.csv)", 26),
     ("\u23FB Quit\tEsc", 27),
 ]
@@ -978,6 +1191,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._canvas.canvas.focus_set()
         self._pdf_panel = PdfManualPanel(self._tk_root, self._resolve_manual_pdf_path())
         self._pdf_panel_visible = False
+        self._dataset_panel = DatasetBrowserPanel(self._tk_root, self)
+        self._dataset_panel_visible = False
         self._status_bar = StatusBar(self._tk_root)
         placeholder = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
         self._canvas.update_frame(placeholder)
@@ -1083,6 +1298,7 @@ class GuiCrackSegmentation(CrackSegmentation):
         return [
             ("\u25C0 Previous Image", 5),
             ("\u25B6 Next Image", 4),
+            ("\u2316 Go to image", 29),
             ("\U0001F4BE Save [S]", ord('s')),
             ("\U0001F4BE Save & next [Enter]", 13),
             ("\U0001F4E5 Import W", ord('w')),
@@ -1252,11 +1468,22 @@ class GuiCrackSegmentation(CrackSegmentation):
                                       "80/0/20 when cross-validation replaces the validation set):",
                                       initialvalue=default, parent=self._tk_root)
 
+    def _confirm_reset_pipeline(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Reset pipeline training", message, parent=self._tk_root))
+
+    def _notify_reset_pipeline(self, message):
+        messagebox.showinfo("Crack Detector - Reset pipeline training", message, parent=self._tk_root)
+
     def _confirm_auto_split(self, message):
         return bool(messagebox.askyesno("Crack Detector - Auto split", message, parent=self._tk_root))
 
     def _notify_auto_split(self, message):
         messagebox.showinfo("Crack Detector - Auto split", message, parent=self._tk_root)
+
+    def _choose_image_index(self, names, current):
+        dialog = _GoToImageDialog(self._tk_root, names, current)
+        self._tk_root.wait_window(dialog.top)
+        return dialog.result
 
     def _ask_cv_fold_count(self, default):
         return simpledialog.askinteger("Crack Detector - Cross-validation", "Number of folds (each building in one fold):",
@@ -1336,9 +1563,26 @@ class GuiCrackSegmentation(CrackSegmentation):
             self._middle_row.pack(fill="both", expand=True)
             self._pdf_panel_visible = False
         else:
+            if getattr(self, "_dataset_panel_visible", False):
+                self._dataset_panel.hide()
+                self._dataset_panel_visible = False
             self._middle_row.pack_forget()
             self._pdf_panel.show()
             self._pdf_panel_visible = True
+
+    def _toggle_dataset_browser(self):
+        """GUI override (code 31): shows/hides the Dataset browser over the whole image, like the manual."""
+        if self._dataset_panel_visible:
+            self._dataset_panel.hide()
+            self._middle_row.pack(fill="both", expand=True)
+            self._dataset_panel_visible = False
+            return
+        if self._pdf_panel_visible:
+            self._pdf_panel.hide()
+            self._pdf_panel_visible = False
+        self._middle_row.pack_forget()
+        self._dataset_panel.show()
+        self._dataset_panel_visible = True
 
     def _toggle_fullscreen(self):
         """GUI override: toggles the real Tk window between filling the
