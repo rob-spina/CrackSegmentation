@@ -121,6 +121,27 @@ class TestButton(unittest.TestCase):
         n = sum(len(os.listdir(os.path.join(folds_dir, f, "Images"))) for f in os.listdir(folds_dir))
         self.assertEqual(n, len(self.photos), "no stale copy left from the 3-fold split")
 
+    def test_photo_saved_without_cracks_is_a_negative(self):
+        ts = os.path.join(self.tmpdir, "Training set")
+        open(os.path.join(ts, "Images", "clean__BLDG050.JPG"), "w").close()
+        with open(os.path.join(ts, "JSON files", "clean__BLDG050.json"), "w") as f:
+            f.write('{"shapes": []}')
+        with open(os.path.join(ts, "JSON files", "IMG_free_01.json"), "w") as f:   # has a crack, mask missing
+            f.write('{"shapes": [{"label": "crack_x", "shape_type": "linestrip", "points": [[0, 0], [5, 5]]}]}')
+        asked, _ = self._press(k=3)
+        rows = {r["photo"]: r for r in self._rows()}
+        self.assertEqual(rows["clean__BLDG050.JPG"]["negative"], "1")
+        self.assertEqual(rows["clean__BLDG050.JPG"]["crack_mask"], "")
+        self.assertEqual(rows["IMG_free_01.JPG"]["negative"], "0", "a crack without its mask is not a negative")
+        self.assertEqual(rows["IMG_BLDG001_00__BLDG001.JPG"]["negative"], "0")
+        message = asked.call_args[0][0]
+        self.assertIn("1 without cracks", message)
+        self.assertIn("1 photo(s) without a crack mask", message, "only the real problem is reported")
+        self.assertIn("IMG_free_01.JPG", message)
+        fold = rows["clean__BLDG050.JPG"]["fold"]
+        self.assertIn("clean__BLDG050.JPG",
+                      os.listdir(os.path.join(ts, "folds", f"fold_{fold}", "Images")), "negatives are copied too")
+
     def test_cancel_writes_nothing(self):
         self._press(confirm=False)
         self.assertFalse(os.path.exists(self.csv_path))

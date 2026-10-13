@@ -71,7 +71,10 @@ La barra laterale ora si intitola **More Features**.
   `Training set/folds/fold_1` .. `fold_K` (sottocartelle `Images`, `JSON files`,
   `Binary files`), pronti per un training a cartelle: al giro k si valida su
   `fold_k` e si addestra sulle altre. Premuto di nuovo sostituisce CSV e
-  cartelle `folds/`; `Training set` non viene mai modificato. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  cartelle `folds/`; `Training set` non viene mai modificato. Una foto salvata
+  senza nessuna frattura (muro sano con pluviali, cavi, ringhiere, giunti) è un
+  esempio negativo: ha il JSON ma non la maschera, e in `folds.csv` ha
+  `negative = 1`, così il training la usa con etichetta tutta a sfondo. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
   `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare
