@@ -387,10 +387,9 @@ class TestSidebar(unittest.TestCase):
         self.app = make_gui_app(self)
 
     def test_title_reads_more_features(self):
-        import inspect
-        src = inspect.getsource(self.gm.ShortcutsSidebar.__init__)
-        self.assertIn('"More Features"', src)
-        self.assertNotIn("More Shortcuts", src)
+        title = self.app._sidebar.right.frame.children[0]
+        self.assertEqual(title.kw.get("text"), "More Features")
+        self.assertEqual(self.app._sidebar.left.frame.children[0].kw.get("text"), "View & Dataset")
 
     def test_new_buttons_send_their_codes(self):
         for label, code in (("Eraser", cc.ERASER_CODE), ("Remove uncertain", cc.REMOVE_UNCERTAIN_CODE)):
@@ -486,3 +485,58 @@ class TestSplitCountsOnHover(unittest.TestCase):
 
     def test_every_set_button_has_its_tip(self):
         self.assertEqual(sorted(self.app._sidebar.hover_tips), [23, 24, 25])
+
+
+class TestTwoSidebars(unittest.TestCase):
+    """v1.0.8: a sidebar on each side of the canvas, each grouped into sections of similar commands."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests_support"))
+        import fake_tkinter  # noqa: F401
+        from test_gui_panel_wiring import make_app as make_gui_app
+        import crack_segmentation_gui as gm
+        self.gm = gm
+        self.app = make_gui_app(self)
+        self.sb = self.app._sidebar
+
+    def _texts(self, panel):
+        return [b.text for b in panel.buttons]
+
+    def test_one_panel_each_side_of_the_canvas(self):
+        self.assertEqual(self.sb.right.side, "right")
+        self.assertEqual(self.sb.left.side, "left")
+        for panel in (self.sb.right, self.sb.left):
+            self.assertIn(panel.frame, self.app._middle_row.children)
+
+    def test_buttons_split_by_purpose(self):
+        right, left = " ".join(self._texts(self.sb.right)), " ".join(self._texts(self.sb.left))
+        for label in ("Crack tool", "Eraser", "Cut crack part", "Crack report"):
+            self.assertIn(label, right)
+            self.assertNotIn(label, left)
+        for label in ("Training set", "CV folds", "Switch Mode", "Assign building", "Zoom window"):
+            self.assertIn(label, left)
+            self.assertNotIn(label, right)
+
+    def test_every_command_once_and_both_panels_balanced(self):
+        codes = [code for *_, code in self.gm._SIDEBAR_SHORTCUTS]
+        self.assertEqual(len(codes), len(set(codes)))
+        self.assertEqual(sorted(self.sb.buttons_by_code), sorted(codes))
+        self.assertLessEqual(abs(len(self.sb.right.buttons) - len(self.sb.left.buttons)), 2)
+
+    def test_section_headings(self):
+        heads = [h.kw["text"] for h in self.sb.right.headings + self.sb.left.headings]
+        self.assertEqual(heads, ["TOOLS", "EDIT CRACKS", "INSPECT CRACKS", "VIEW", "BUILDING & SCALE", "DATASET"])
+
+    def test_states_refreshed_on_both_panels(self):
+        cfg = self.app.cfg
+        cfg.eraser_state["active"] = True          # right panel
+        cfg.zoom_window_state["active"] = True     # left panel
+        cfg.modalita_scelta, cfg.queue_idle = "1", False
+        self.sb.refresh_states(cfg, False)
+        self.assertEqual(self.sb.buttons_by_code[21].kw.get("relief"), "sunken")
+        self.assertEqual(self.sb.buttons_by_code[15].kw.get("relief"), "sunken")
+        self.assertEqual(self.sb.buttons_by_code[23].kw.get("state"), "disabled")
+        self.assertEqual(self.sb.buttons_by_code[17].kw.get("state"), "disabled")
+
+    def test_set_counts_tip_opens_towards_the_canvas(self):
+        self.assertEqual(self.sb.hover_tips[23].side, "left")

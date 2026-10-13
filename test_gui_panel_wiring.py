@@ -242,7 +242,7 @@ class TestMenuAndToolbarWiring(unittest.TestCase):
         # canvas+sidebar need -- the toolbar no longer factors in at all,
         # since it scrolls horizontally on its own.
         target_w, _, _ = self.app._compute_initial_window_geometry(screen_w=2400, screen_h=1200)
-        expected = gm.CANVAS_W + 24 + gm.SIDEBAR_WIDTH
+        expected = gm.CANVAS_W + 24 + 2 * gm.SIDEBAR_WIDTH   # v1.0.8: a sidebar on each side
         self.assertEqual(target_w, expected)
 
     def test_window_right_edge_never_lands_past_the_screen(self):
@@ -445,12 +445,33 @@ class TestEmbeddedCanvas(unittest.TestCase):
         self.assertEqual((image_item["x"], image_item["y"]), (0, 0))
 
     def test_content_offset_never_goes_negative_in_a_narrower_viewport(self):
+        # v1.0.8: a narrower viewport shrinks the frame to its width (400x300 here), centred vertically.
         self.app._canvas.canvas._test_width = 400  # narrower than 1200
         self.app._canvas.canvas._test_height = 900
         frame = np.zeros((900, 1200, 3), dtype=np.uint8)
         self.app._canvas.update_frame(frame)
         [image_item] = [v for v in self.app._canvas.canvas._items.values() if "image" in v]
-        self.assertEqual((image_item["x"], image_item["y"]), (0, 0))
+        self.assertEqual((image_item["x"], image_item["y"]), (0, (900 - 300) // 2))
+
+    def test_frame_shrinks_to_a_narrow_viewport_and_clicks_map_back(self):
+        # v1.0.8: between two sidebars on a laptop the canvas can be narrower than 1200 px: the whole frame is
+        # shown smaller instead of cut off, and a click still lands on the right pixel of the 1200x900 frame.
+        canvas = self.app._canvas
+        canvas.canvas._test_width, canvas.canvas._test_height = 960, 600
+        frame = np.zeros((900, 1200, 3), dtype=np.uint8)
+        with mock.patch.object(gm.Image, "fromarray", wraps=gm.Image.fromarray) as fromarray:
+            canvas.update_frame(frame)
+        self.assertEqual(fromarray.call_args[0][0].shape[:2], (720, 960), "scaled by 960/1200 = 0.8")
+        self.assertAlmostEqual(canvas._display_scale, 0.8)
+        calls = []
+        with mock.patch.object(self.app, "mouse_callback", side_effect=lambda *a: calls.append(a)):
+            canvas.canvas.fire("<Button-1>", x=480, y=400)
+        self.assertEqual(calls[0][1:3], (600, 500))
+
+    def test_no_scaling_before_the_canvas_is_laid_out(self):
+        self.app._canvas.canvas._test_width = 1   # not mapped yet
+        self.app._canvas.update_frame(np.zeros((900, 1200, 3), dtype=np.uint8))
+        self.assertEqual(self.app._canvas._display_scale, 1.0)
 
     def test_coordinates_go_through_canvasx_canvasy_for_scroll_correctness(self):
         # USER REQUEST (scrollbars on the photo): once the canvas can be
