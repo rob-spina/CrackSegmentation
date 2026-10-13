@@ -521,7 +521,8 @@ class TestTwoSidebars(unittest.TestCase):
         codes = [code for *_, code in self.gm._SIDEBAR_SHORTCUTS]
         self.assertEqual(len(codes), len(set(codes)))
         self.assertEqual(sorted(self.sb.buttons_by_code), sorted(codes))
-        self.assertLessEqual(abs(len(self.sb.right.buttons) - len(self.sb.left.buttons)), 2)
+        # v1.0.9 added Reset pipeline training and Dataset browser to the Dataset section (left).
+        self.assertLessEqual(abs(len(self.sb.right.buttons) - len(self.sb.left.buttons)), 3)
 
     def test_section_headings(self):
         heads = [h.kw["text"] for h in self.sb.right.headings + self.sb.left.headings]

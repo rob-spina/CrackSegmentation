@@ -14,7 +14,7 @@
 ; automatically if it finds ISCC.exe already installed).
 
 #define MyAppName "CrackSegmentation"
-#define MyAppVersion "1.0.8"
+#define MyAppVersion "1.0.9"
 #define MyAppExeName "CrackSegmentation.exe"
 
 [Setup]

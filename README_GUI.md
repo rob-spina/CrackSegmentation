@@ -32,6 +32,26 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.0.9: Go to image, Reset pipeline training, Dataset browser
+
+- **⌖ Go to image** (barra strumenti e menu File, codice 29; `go_to_image.py`):
+  finestra con **First** / **Last**, un menu a tendina con 10 immagini alla volta
+  (scegliendo la 10ª compaiono le 10 successive, scegliendo la 1ª di una pagina le
+  10 precedenti) e i pulsanti ◀ 10 / 10 ▶. Funziona in Modo 1 e Modo 2, senza
+  salvare (come Previous / Next Image).
+- **↺ Reset pipeline training** (barra sinistra, menu File, codice 30;
+  `pipeline_reset.py`): riporta tutti i file di Training / Validation / Test set in
+  `Images`, `JSON files` e `Binary files`; cancella `folds.csv` e `folds/`; non
+  sovrascrive mai (i doppioni restano nel set e vengono elencati); rimuove le
+  cartelle dei set rimaste vuote e ricarica la coda.
+- **📂 Dataset browser** (barra sinistra, menu File, codice 31;
+  `dataset_browser.py` + `DatasetBrowserPanel`): pannello bianco a tutta finestra
+  come il manuale, con barra di scorrimento verticale; elenca le foto dei tre set
+  con il numero del gruppo edificio e sposta le foto selezionate in un altro set
+  (con **Whole building** si sposta l'intero edificio). Il Training set tiene
+  foto + JSON + maschere, Validation e Test set solo la foto.
+- **Auto split** (codice 28), già nel ramo dopo la 1.0.8, esce con la 1.0.9.
+
 ## Novità 1.0.8: due barre laterali
 
 I pulsanti sono divisi tra due barre laterali, una per lato della tela,
