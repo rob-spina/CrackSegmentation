@@ -495,6 +495,8 @@ class Config:
         # v1.0.8 [CV folds] (sidebar, code 26): default number of folds, and the file written in 'Training set'.
         self.CV_FOLDS = 5
         self.CV_FOLDS_FILE = "folds.csv"
+        # Folder inside 'Training set' where the button copies each fold (fold_1 .. fold_K); replaced every time.
+        self.CV_FOLDS_DIR = "folds"
 
     def _init_validation_settings(self):
         """v1.0.6 [Validation]: which segmented photos are moved to 'Suitable for training'.

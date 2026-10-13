@@ -67,7 +67,11 @@ La barra laterale ora si intitola **More Features**.
   cross-validation (default `CV_FOLDS = 5` in `config.py`), tenendo ogni
   gruppo `__BLDGnnn` in un solo fold e i fold bilanciati. Mostra foto ed
   edifici per fold e, dopo conferma, scrive `Training set/folds.csv` con
-  foto, gruppo, fold e percorsi di JSON e maschere. Non sposta né copia nulla. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
+  foto, gruppo, fold e percorsi di JSON e maschere. Copia inoltre ogni fold in
+  `Training set/folds/fold_1` .. `fold_K` (sottocartelle `Images`, `JSON files`,
+  `Binary files`), pronti per un training a cartelle: al giro k si valida su
+  `fold_k` e si addestra sulle altre. Premuto di nuovo sostituisce CSV e
+  cartelle `folds/`; `Training set` non viene mai modificato. Nomi delle cartelle: `DATASET_SPLIT_DIRS` in
   `config.py`.
 - **Validation** è disponibile appena ogni foto in `Images` ha il suo JSON,
   su qualunque immagine: rientrando in modalità 2 non serve più arrivare

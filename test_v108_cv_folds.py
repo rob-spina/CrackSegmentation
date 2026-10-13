@@ -95,9 +95,36 @@ class TestButton(unittest.TestCase):
         self.assertIn("Fold 1:", message)
         self.assertIn("1 photo(s) without a crack mask", message)
 
+    def test_copies_each_fold_into_its_folder(self):
+        self._press(k=3)
+        folds_dir = os.path.join(self.tmpdir, "Training set", "folds")
+        self.assertEqual(sorted(os.listdir(folds_dir)), ["fold_1", "fold_2", "fold_3"])
+        rows = self._rows()
+        for k in ("1", "2", "3"):
+            fold = os.path.join(folds_dir, f"fold_{k}")
+            expected = sorted(r["photo"] for r in rows if r["fold"] == k)
+            self.assertEqual(sorted(os.listdir(os.path.join(fold, "Images"))), expected)
+            jsons = sorted(os.listdir(os.path.join(fold, "JSON files")))
+            self.assertEqual(jsons, sorted(os.path.splitext(p)[0] + ".json" for p in expected))
+        row = next(r for r in rows if r["photo"] == "IMG_BLDG001_00__BLDG001.JPG")
+        binaries = os.listdir(os.path.join(folds_dir, f"fold_{row['fold']}", "Binary files"))
+        self.assertIn("IMG_BLDG001_00__BLDG001-crack_mask.png", binaries)
+        self.assertIn("IMG_BLDG001_00__BLDG001-ignore_mask.png", binaries)
+        self.assertEqual(len(os.listdir(os.path.join(self.tmpdir, "Training set", "Images"))), len(self.photos),
+                         "the Training set keeps every photo (copies, not moves)")
+
+    def test_pressed_again_replaces_the_fold_folders(self):
+        self._press(k=3)
+        self._press(k=2)
+        folds_dir = os.path.join(self.tmpdir, "Training set", "folds")
+        self.assertEqual(sorted(os.listdir(folds_dir)), ["fold_1", "fold_2"])
+        n = sum(len(os.listdir(os.path.join(folds_dir, f, "Images"))) for f in os.listdir(folds_dir))
+        self.assertEqual(n, len(self.photos), "no stale copy left from the 3-fold split")
+
     def test_cancel_writes_nothing(self):
         self._press(confirm=False)
         self.assertFalse(os.path.exists(self.csv_path))
+        self.assertFalse(os.path.exists(os.path.join(self.tmpdir, "Training set", "folds")))
 
     def test_more_folds_than_buildings_is_refused(self):
         asked, notified = self._press(k=7)   # 4 groups + 2 single photos = 6 groups
@@ -114,7 +141,7 @@ class TestButton(unittest.TestCase):
     def test_rewriting_asks_to_replace(self):
         self._press()
         asked, _ = self._press()
-        self.assertIn("Replace the existing folds.csv", asked.call_args[0][0])
+        self.assertIn("are replaced", asked.call_args[0][0])
 
     def test_works_while_idle(self):
         self.app.cfg.queue_idle = True
