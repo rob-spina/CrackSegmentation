@@ -204,7 +204,7 @@ class CrackCleanupMixin:
         Cracks hidden by Show cracks by number are left alone."""
         return [i for i, f in enumerate(self.cfg.saved_cracks)
                 if f.get('active', True) and f.get('path') and self._crack_shown(f)
-                and self._crack_quality(f.get('path'))[2]]
+                and self._crack_entry_uncertain(f)]
 
     def _confirm_remove_uncertain(self, count):
         """Asks before deleting. A GUI wrapper overrides this with a dialog."""

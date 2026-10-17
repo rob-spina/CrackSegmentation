@@ -156,8 +156,8 @@ class TestMenuAndToolbarWiring(unittest.TestCase):
         # always save.
         toolbar = self.app._toolbar_frame
         buttons = {c.text: c for c in toolbar.children if isinstance(c, gm.ttk.Button)}
-        next_btn = next(b for label, b in buttons.items() if "Next Image" in label)
-        prev_btn = next(b for label, b in buttons.items() if "Previous Image" in label)
+        next_btn = next(b for label, b in buttons.items() if "Next" in label and "Save" not in label)
+        prev_btn = next(b for label, b in buttons.items() if "Prev" in label)
 
         self.app._pending_keys.clear()
         next_btn.command()

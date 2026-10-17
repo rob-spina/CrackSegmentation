@@ -483,7 +483,9 @@ _RIGHT_SIDEBAR_SECTIONS = [
     ("Tools", [
         ("\u26A1", "Crack tool", "C", ord('c')),
         ("\u25A6", "Detachment tool", "D", ord('d')),
-        ("\u2298", "Ignore region", "I", ord('i')),
+        ("\U0001F6AB", "Ignore region", "I", ord('i')),
+        # v1.1.0: on = the next cracks are traced as uncertain (red); again = normal (code 7, uncertain_trace.py).
+        ("\U0001F534", "Uncertain crack", "", 7),
     ]),
     ("Edit cracks", [
         ("\u2702", "Cut crack part", "1", ord('1')),
@@ -548,6 +550,7 @@ _SIDEBAR_TOGGLE_STATES = {
     19: lambda cfg: cfg.crack_filter is not None,
     20: lambda cfg: cfg.portion_state["active"] or cfg.portion_state["rect"] is not None,
     21: lambda cfg: cfg.eraser_state["active"],
+    7: lambda cfg: cfg.uncertain_trace_mode,
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -1097,7 +1100,8 @@ _EDIT_COMMANDS = [
 _TOOL_COMMANDS = [
     ("\u26A1 Tool: Crack\tC", ord('c')),
     ("\u25A6 Tool: Detachment\tD", ord('d')),
-    ("\u2298 Tool: Ignore region (occluded area)\tI", ord('i')),
+    ("\U0001F6AB Tool: Ignore region (occluded area)\tI", ord('i')),
+    ("\U0001F534 Uncertain crack: next cracks traced as uncertain (red) / back to normal", 7),
     ("\u2705 Close detachment / ignore polygon\tY", ord('y')),
     ("\u270E Toggle edit mode\tE", ord('e')),
     ("\U0001F9F2 Automatic snap / translate\tT", ord('t')),
@@ -1295,30 +1299,32 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _toolbar_shortcuts(self):
         """The handful of most-used actions shown as toolbar buttons; every command is always reachable from the menu bar too."""
+        # v1.1.0: short labels so the row fits the window up to Manual; full names and keys are in the menus.
         return [
-            ("\u25C0 Previous Image", 5),
-            ("\u25B6 Next Image", 4),
-            ("\u2316 Go to image", 29),
-            ("\U0001F4BE Save [S]", ord('s')),
-            ("\U0001F4BE Save & next [Enter]", 13),
-            ("\U0001F4E5 Import W", ord('w')),
-            ("\U0001F517 Import L", ord('l')),
-            ("\u21B6 Undo [U]", ord('u')),
-            ("\u21B7 Redo [R]", ord('r')),
-            ("\U0001F5D1 Clear [X]", ord('x')),
-            ("\u2139 Info [J]", ord('j')),
-            ("\u2753 Manual [?]", ord('?')),
+            ("\u25C0 Prev", 5),
+            ("\u25B6 Next", 4),
+            ("\u2316 Go to", 29),
+            ("\U0001F4BE Save", ord('s')),
+            ("\U0001F4BE Save+next", 13),
+            ("\U0001F4E5 W", ord('w')),
+            ("\U0001F517 L", ord('l')),
+            ("\u21B6 Undo", ord('u')),
+            ("\u21B7 Redo", ord('r')),
+            ("\U0001F5D1 Clear", ord('x')),
+            ("\u2139 Info", ord('j')),
+            ("\u2753 Manual", ord('?')),
         ]
 
     def _create_one_toolbar_button(self, bar, label, code):
         """Creates one toolbar button, tracking it as the Previous/Next Image reference if it is one."""
         # takefocus=0: stops these buttons from grabbing keyboard focus on click.
-        btn = ttk.Button(bar, text=label, command=lambda c=code: self._send(c), takefocus=0)
-        btn.pack(side="left", padx=2)
+        # width=-1: as narrow as its text allows (no fixed minimum width).
+        btn = ttk.Button(bar, text=label, command=lambda c=code: self._send(c), takefocus=0, width=-1)
+        btn.pack(side="left", padx=1)
         # Greyed out at the start/end of the queue -- see _update_navigation_button_states().
-        if "Previous Image" in label:
+        if code == 5:
             self._prev_image_button = btn
-        elif "Next Image" in label:
+        elif code == 4:
             self._next_image_button = btn
 
     def _build_toolbar(self):

@@ -363,6 +363,7 @@ class InspectionToolsMixin:
             return title, ["This crack no longer exists (deleted, cut or merged). Click another crack."]
         path = crack['path']
         reliability, confidence, uncertain = self._crack_quality(path)
+        uncertain = uncertain or self._is_manual_uncertain(crack)
         multiview = self._crack_multiview(path)
         length_px = self._path_length(path)
         level, sentence = self._crack_report_verdict(reliability, confidence, uncertain)
@@ -372,7 +373,9 @@ class InspectionToolsMixin:
             self._describe_reliability(reliability),
             self._describe_confidence(confidence),
             self._describe_multiview(multiview),
-            self._describe_uncertainty(reliability, confidence, multiview, uncertain),
+            ("Uncertainty: UNCERTAIN [?] (marked by the operator with Uncertain crack)."
+             if self._is_manual_uncertain(crack) else
+             self._describe_uncertainty(reliability, confidence, multiview, uncertain)),
             f"Overall reliability: {level} -- {sentence}",
         ]
         return title, lines
