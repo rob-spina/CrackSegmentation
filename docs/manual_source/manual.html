@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.0.9</div>
+    <div class="meta-line">Version 1.1.0</div>
   </div>
 
   <div class="features">
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.0.9_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.1.0_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.0.9_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.1.0_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -576,6 +576,7 @@ sudo apt-get install -f</div>
 <table class="shortcuts">
 <tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
 <tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Click the start and then the end of a crack: the route is traced along the edge. <span class="key">Shift</span>+click between them adds as many points as needed that the route must pass through (it then follows the thin dark line of the crack and never turns back at a point); <span class="key">U</span> removes the last point. With no trace in progress, a click on a crack&rsquo;s end marker deletes the crack; with the cursor on a crack end, the arrow keys nudge it by 1&nbsp;px.</td></tr>
+<tr><td>Uncertain Crack</td><td>Sidebar</td><td>Press it <b>before</b> tracing: every crack traced while it is on is saved as uncertain (<span class="code">[?]</span>) and drawn in <b style="color:#d00000;">red</b>. JSON (label <span class="code">crack_incerta</span>, flag <span class="code">uncertain_manual</span>) and masks, including <span class="code">-crack_uncertain_mask.png</span>, are saved as soon as each trace is completed. Press it again to go back to normal tracing.</td></tr>
 <tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Click the vertices of a plaster/material detachment: each side follows the outline; <span class="key">Y</span> closes the polygon. A click on a detachment&rsquo;s marker deletes it.</td></tr>
 <tr><td>Ignore Region</td><td><span class="key">I</span> / sidebar</td><td>Marks areas where the wall is only partly visible (nets, mesh fences, scaffolding, cables, sparse vegetation). A dialog chooses the shape (rectangle, square, free polygon) and the photo edges it extends to. Rectangle: two clicks on opposite corners; polygon: vertices, then <span class="key">Y</span>. With the tool on, drag a corner or side to reshape, click inside to delete. Saved as <span class="code">-ignore_mask.png</span> (255 = exclude from training loss and metrics); never imported by <span class="key">W</span>/<span class="key">L</span>.</td></tr>
 <tr><td>Edit Detachment Nodes</td><td><span class="key">E</span></td><td>Drag a detachment&rsquo;s clicked vertices; its outline is recomputed live. Press again to leave.</td></tr>

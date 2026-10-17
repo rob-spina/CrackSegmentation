@@ -32,6 +32,26 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.1.0: Uncertain crack
+
+- **🔴 Uncertain crack** (barra destra, sezione Tools, e menu Tools; codice 7;
+  `uncertain_trace.py`): premuto **prima** di tracciare, ogni crepa tracciata
+  mentre è attivo viene salvata come incerta dall'operatore (`uncertain_manual`),
+  indipendentemente da affidabilità e confidenza, ed è disegnata in **rosso**
+  (anche la traccia in corso è rossa e l'HUD mostra `UNCERTAIN MODE`). Al termine
+  di ogni tracciamento vengono aggiornati subito JSON (label `crack_incerta`,
+  flags `uncertain` e `uncertain_manual`) e maschere binarie, compresa
+  `-crack_uncertain_mask.png`. Premendolo di nuovo si torna alla modalità normale.
+  Il segno resta dopo la riapertura della foto, Cut, Join e Link; **Remove
+  uncertain** elimina anche queste crepe. Il codice 7 è stato scelto perché 32,
+  il successivo dopo 31, è la barra spaziatrice.
+- Barra strumenti con etichette corte (◀ Prev, ▶ Next, ⌖ Go to, 💾 Save,
+  💾 Save+next, 📥 W, 🔗 L, ↶ Undo, ↷ Redo, 🗑 Clear, ℹ Info, ❓ Manual) e pulsanti
+  larghi quanto il testo, così Manual resta nel riquadro; nomi completi e tasti
+  restano nei menu. Previous/Next sono riconosciuti dal codice (5/4), non più
+  dall'etichetta.
+- Ignore region: nuova icona 🚫 nella barra destra e nel menu Tools.
+
 ## Novità 1.0.9: Go to image, Reset pipeline training, Dataset browser
 
 - **⌖ Go to image** (barra strumenti e menu File, codice 29; `go_to_image.py`):

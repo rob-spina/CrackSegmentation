@@ -36,13 +36,14 @@ from auto_split import AutoSplitMixin, AUTO_SPLIT_CODE
 from go_to_image import GoToImageMixin, GO_TO_IMAGE_CODE
 from pipeline_reset import PipelineResetMixin, RESET_PIPELINE_CODE
 from dataset_browser import DatasetBrowserMixin, DATASET_BROWSER_CODE
+from uncertain_trace import UncertainTraceMixin, UNCERTAIN_TRACE_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
                         CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin,
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
-                        DatasetBrowserMixin):
+                        DatasetBrowserMixin, UncertainTraceMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -1190,10 +1191,15 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         for f in self.cfg.saved_cracks:
             if f.get('active', True):
                 reliability, confidence, uncertain = self._crack_quality(f['path'])
+                manual = self._is_manual_uncertain(f)   # v1.1.0: marked by the operator ([Uncertain crack])
+                uncertain = uncertain or manual
+                flags = {"uncertain": bool(uncertain)}
+                if manual:
+                    flags["uncertain_manual"] = True
                 shape_dict = {
                     "label": self.cfg.CRACK_UNCERTAIN_LABEL if uncertain else "crack",
                     "points": [[float(pt[0]), float(pt[1])] for pt in f['path']],
-                    "group_id": None, "shape_type": "linestrip", "flags": {"uncertain": bool(uncertain)},
+                    "group_id": None, "shape_type": "linestrip", "flags": flags,
                     "reliability_pct": None if reliability is None else round(float(reliability), 1),
                     "confidence": None if confidence is None else round(float(confidence), 3),
                     "multiview": self._crack_multiview(f['path']),
@@ -1325,6 +1331,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         mv, mb = cv2.dilate(self.cfg.green_visual_mask, k), cv2.dilate(self.cfg.blue_visual_mask, k)
         segmented_img[mv == 255] = (0, 200, 0)
         segmented_img[mb == 255] = (255, 0, 0)
+        self._paint_red_uncertain_on_export(segmented_img, k)
         cv2.imwrite(self.cfg.EXPORT_IMAGE_PATH, segmented_img)
         print(f"[SUCCESS] Mask overlay map generated at: {self.cfg.EXPORT_IMAGE_PATH}")
 
@@ -1384,7 +1391,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         for use as an ignore region in training; removes a stale one when none is left."""
         if not self.cfg.CRACK_UNCERTAIN_EXPORT_MASK:
             return
-        uncertain = [f for f in self.cfg.saved_cracks if f.get('active', True) and self._crack_quality(f.get('path'))[2]]
+        uncertain = [f for f in self.cfg.saved_cracks if f.get('active', True) and self._crack_entry_uncertain(f)]
         mask = self._build_variable_width_crack_mask(uncertain, self.cfg.H_img, self.cfg.W_img, self.cfg.CRACK_MASK_DILATION_PX)
         path = self._segmented_output_path("-crack_uncertain_mask", ".png")
         self._write_mask_if_nonempty(mask, path, f"Uncertain crack mask ({len(uncertain)} crack(s))")
@@ -1680,6 +1687,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         for f in self.cfg.saved_cracks:
             if f.get('active', True) and f.get('session_id') == 'current' and 'path' in f:
                 cw_entry = {"label": "crack", "points": [[float(pt[0]), float(pt[1])] for pt in f['path']], "group_id": None, "shape_type": "linestrip", "flags": {}}
+                if self._is_manual_uncertain(f):
+                    cw_entry["flags"] = {"uncertain": True, "uncertain_manual": True}
                 if f.get('width_segments'):
                     cw_entry["width_segments"] = f['width_segments']
                 current_workspace_shapes.append(cw_entry)
@@ -1847,6 +1856,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         links = self._load_links(shape)
         if links:
             crack['links'] = links
+        if (shape.get("flags") or {}).get("uncertain_manual"):
+            crack['uncertain_manual'] = True   # v1.1.0: marked uncertain by the operator
         return crack
 
     @staticmethod
@@ -2869,6 +2880,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         links = list(crack_a.get('links') or []) + list(crack_b.get('links') or [])
         links.append({"from": [p[0], p[1]], "to": [q[0], q[1]], "method": method})
         new_crack['links'] = self._links_on_path(links, merged)
+        if self._is_manual_uncertain(crack_a) or self._is_manual_uncertain(crack_b):
+            new_crack['uncertain_manual'] = True   # one uncertain part makes the merged crack uncertain
         spurs = [c for c in (spur_a, spur_b) if c is not None]
         self.cfg.saved_cracks[ia] = new_crack
         del self.cfg.saved_cracks[ib]
@@ -3037,6 +3050,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         links = self._links_on_path(crack_b.get('links'), merged)
         if links:
             self.cfg.saved_cracks[ia]['links'] = self.cfg.saved_cracks[ia].get('links', []) + links
+        if self._is_manual_uncertain(crack_b):
+            self.cfg.saved_cracks[ia]['uncertain_manual'] = True   # one uncertain part makes the joined crack uncertain
         del self.cfg.saved_cracks[ib]
         self._commit_crack_edit(before)
         print(f" [JOIN] Cracks #{ia + 1} and #{ib + 1} joined into one ({len(merged)} points)"
@@ -4184,6 +4199,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 'active': True,
                 'session_id': str(time.time())
             }
+            marked_uncertain = self._mark_new_crack_if_uncertain(new_crack)   # v1.1.0 [Uncertain crack]
             self.cfg.saved_cracks.append(new_crack)
             self.cfg.last_traced_crack = new_crack  # the crack [Alternative route] works on
             self.cfg.action_history.append('crack')
@@ -4191,6 +4207,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self.cfg.temp_path.clear()
             self.cfg.trace_waypoints, self.cfg.trace_partial_path = [], []
         self.recalculate_masks()
+        if computed_path and marked_uncertain:
+            self._save_after_uncertain_trace()
         self.refresh_zoom_viewport()
 
     def _crack_tool_click(self, x, y, flags=0):
@@ -4402,7 +4420,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             for pt in self.cfg.temp_path:
                 pt_x, pt_y = int(pt[0]), int(pt[1])
                 if x0 <= pt_x < x1 and y0 <= pt_y < y1:
-                    scene[pt_y - y0, pt_x - x0] = (0, 165, 255)
+                    scene[pt_y - y0, pt_x - x0] = self._temp_trace_bgr()
 
     def _ensure_visual_mask_shape(self, mask, h_actual, w_active):
         """Creates or resizes a visual mask (blue/green fill) to match
@@ -4435,7 +4453,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                     continue
                 _wseg_mask = self._width_segment_display_mask(_wf_path, _wi0, _wi1, _wseg, h_actual, w_active, region)
                 if np.any(_wseg_mask):
-                    scene[_wseg_mask == 255] = (255, 0, 0)
+                    scene[_wseg_mask == 255] = self._crack_display_bgr(_wf)
 
     def _width_segment_display_mask(self, path, i0, i1, seg, height, width, region):
         """Display-only, cached version of _render_width_segment_mask() cropped to region:
@@ -4479,6 +4497,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             return
         mb = cv2.dilate(self._crop_to_region(self._display_blue_mask(), region), k)
         scene[mb == 255] = (255, 0, 0)
+        self._paint_red_uncertain_overlay(scene, k, h_actual, w_active, region)
         self._paint_width_segment_fills(scene, h_actual, w_active, region)
 
     def _paint_green_detachment_overlay(self, scene, k, region=None):
@@ -5144,6 +5163,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             if not f.get('active', True) or not self._crack_shown(f):
                 continue
             pct, conf, uncertain = self._crack_quality(f.get('path'))
+            uncertain = uncertain or self._is_manual_uncertain(f)
             if pct is None and conf is None:
                 continue
             parts = [f"Crack {i}:"]
@@ -5491,6 +5511,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_inspection_tools(win_out)
         self._draw_alt_route(win_out)
         self._draw_crack_filter_label(win_out)
+        self._draw_uncertain_trace_label(win_out)
         self._draw_building_portion(win_out)
 
         hm = self._compute_hud_font_metrics()
@@ -5774,6 +5795,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == REMOVE_UNCERTAIN_CODE:
             self._remove_uncertain_cracks()
+
+        elif key_clean == UNCERTAIN_TRACE_CODE:   # v1.1.0: next cracks traced as uncertain (red)
+            self._toggle_uncertain_trace_mode()
 
         elif key_clean == CV_FOLDS_CODE:
             self.make_cv_folds()
