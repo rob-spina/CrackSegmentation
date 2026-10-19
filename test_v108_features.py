@@ -387,9 +387,10 @@ class TestSidebar(unittest.TestCase):
         self.app = make_gui_app(self)
 
     def test_title_reads_more_features(self):
-        title = self.app._sidebar.right.frame.children[0]
+        # v1.2.0: the title sits in a header row, next to the button that hides the sidebar.
+        title = self.app._sidebar.right.title_label
         self.assertEqual(title.kw.get("text"), "More Features")
-        self.assertEqual(self.app._sidebar.left.frame.children[0].kw.get("text"), "View & Dataset")
+        self.assertEqual(self.app._sidebar.left.title_label.kw.get("text"), "View & Dataset")
 
     def test_new_buttons_send_their_codes(self):
         for label, code in (("Eraser", cc.ERASER_CODE), ("Remove uncertain", cc.REMOVE_UNCERTAIN_CODE)):

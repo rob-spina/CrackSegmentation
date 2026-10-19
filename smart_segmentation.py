@@ -37,13 +37,14 @@ from go_to_image import GoToImageMixin, GO_TO_IMAGE_CODE
 from pipeline_reset import PipelineResetMixin, RESET_PIPELINE_CODE
 from dataset_browser import DatasetBrowserMixin, DATASET_BROWSER_CODE
 from uncertain_trace import UncertainTraceMixin, UNCERTAIN_TRACE_CODE
+from interrupted_trace import InterruptedTraceMixin
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
                         CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin,
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
-                        DatasetBrowserMixin, UncertainTraceMixin):
+                        DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -4191,25 +4192,37 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         """Second click of a new crack trace: traces via A* (through any Shift+clicked
         intermediate points) and, if successful, saves the new crack."""
         computed_path = self._trace_through_waypoints(end_point)
+        marked_uncertain = False
         if computed_path:
-            new_crack = {
-                'start': self.cfg.temp_start,
-                'end': end_point,
-                'path': computed_path,
-                'active': True,
-                'session_id': str(time.time())
-            }
-            marked_uncertain = self._mark_new_crack_if_uncertain(new_crack)   # v1.1.0 [Uncertain crack]
-            self.cfg.saved_cracks.append(new_crack)
-            self.cfg.last_traced_crack = new_crack  # the crack [Alternative route] works on
-            self.cfg.action_history.append('crack')
+            marked_uncertain = self._store_new_trace(computed_path, end_point)
             self.cfg.temp_start = None
             self.cfg.temp_path.clear()
             self.cfg.trace_waypoints, self.cfg.trace_partial_path = [], []
         self.recalculate_masks()
-        if computed_path and marked_uncertain:
+        if marked_uncertain:
             self._save_after_uncertain_trace()
         self.refresh_zoom_viewport()
+
+    def _store_new_trace(self, computed_path, end_point):
+        """Adds the traced crack -- or, v1.2.0, one crack per continuous piece when the route crosses a gap
+        with no crack (interrupted_trace.py). Returns whether it was marked uncertain (saved right away)."""
+        pieces = self._interrupted_trace_pieces(computed_path)
+        if len(pieces) > 1:
+            new_crack = self._store_interrupted_trace(pieces)[-1]
+            self.cfg.last_traced_crack = new_crack
+            return self._is_manual_uncertain(new_crack)
+        new_crack = {
+            'start': self.cfg.temp_start,
+            'end': end_point,
+            'path': computed_path,
+            'active': True,
+            'session_id': str(time.time())
+        }
+        marked_uncertain = self._mark_new_crack_if_uncertain(new_crack)   # v1.1.0 [Uncertain crack]
+        self.cfg.saved_cracks.append(new_crack)
+        self.cfg.last_traced_crack = new_crack  # the crack [Alternative route] works on
+        self.cfg.action_history.append('crack')
+        return marked_uncertain
 
     def _crack_tool_click(self, x, y, flags=0):
         """Dispatches a crack-tool click: delete-by-proximity (only with no trace in progress),
@@ -5293,10 +5306,12 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         return True
 
     def _dismiss_all_banners(self):
-        """[.]: hides every on-screen status banner at once (TIMEOUT, WARP SYNC, import warning, export complete)."""
+        """[.]: hides every on-screen status banner at once (TIMEOUT, WARP SYNC, import warning, interrupted crack,
+        export complete)."""
         self.cfg.pathfinding_timeout_triggered = False
         self.cfg.warp_jitter_triggered = False
         self.cfg.import_warning_triggered = False
+        self.cfg.interrupted_crack_triggered = False
         self.cfg.save_timestamp = 0.0
         self.cfg.banner_first_seen.clear()
 
@@ -5525,6 +5540,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         time_str = self._draw_session_timer(win_out, hm)
         self._draw_timeout_and_warp_banners(win_out, hm)
         self._draw_import_warning_banner(win_out, hm)
+        self._draw_interrupted_crack_banner(win_out, hm)
         self._draw_save_status_banner(win_out, show_error_banner, error_time, hm)
         self._draw_bottom_hint_bar(win_out, hm)
         self.draw_building_hud_overlay(win_out, self._resolve_building_hud_y(hm_top))

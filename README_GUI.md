@@ -32,6 +32,29 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.2.0: crack interrotte e barre laterali richiudibili
+
+- **Crack interrotta** (strumento Crack; `interrupted_trace.py`): quando si clicca
+  l'ultimo punto, il percorso viene confrontato con la foto (maschera binaria delle
+  crepe e, per le crepe larghe, scurezza rispetto al muro intorno). Se attraversa un
+  tratto senza crepa lungo almeno `CRACK_GAP_MIN_PX` (10 px), compare il messaggio
+  arancione **INTERRUPTED CRACK** e la traccia viene registrata come **crepe
+  separate**, una per ogni tratto continuo, senza il tratto vuoto. **Save** [S] le
+  scrive come shape separate nel JSON, con il vuoto nero nelle maschere PNG (in
+  modalità Uncertain vengono scritte subito, come ogni traccia incerta); un solo [U]
+  annulla l'intera traccia. I tratti senza crepa agli estremi non contano; puntini
+  isolati dentro il vuoto (texture dell'intonaco) non lo spezzano. Disattivabile con
+  `SPLIT_INTERRUPTED_CRACKS = False` in `config.py`.
+- **Barre laterali richiudibili**: in cima a ciascuna barra c'è un'icona piatta
+  "finestra con pannello laterale" (dal lato della foto; grigia, evidenziata al
+  passaggio del mouse, pannello pieno se la barra è aperta, vuoto con una freccia
+  se è chiusa). Cliccando quello di sinistra la barra sinistra
+  scompare e la foto si estende a sinistra; quello di destra, idem a destra; cliccati
+  entrambi, la foto prende tutto lo spazio (ingrandita finché sta in altezza, al
+  massimo 2×). Della barra chiusa resta una striscia sottile con l'icona, per
+  riaprirla. I clic sulla foto restano sul pixel esatto a qualsiasi scala.
+- `test_v120_features.py`: 26 test nuovi.
+
 ## Novità 1.1.0: Uncertain crack
 
 - **🔴 Uncertain crack** (barra destra, sezione Tools, e menu Tools; codice 7;
