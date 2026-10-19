@@ -83,14 +83,20 @@ class EmbeddedCanvas:
         self._bind_canvas_events()
 
     MIN_LAID_OUT_WIDTH = 200   # below this the canvas is not laid out yet: no scaling
+    MAX_DISPLAY_SCALE = 2.0    # v1.2.0: upper bound when the photo grows into the space of hidden sidebars
 
     def _compute_display_scale(self):
         """v1.0.8: < 1 when the canvas is narrower than the 1200 px frame (e.g. between the two sidebars on a
-        laptop screen): the frame is shrunk to the width so no part of the photo is cut off. Height scrolls."""
+        laptop screen): the frame is shrunk to the width so no part of the photo is cut off. Height scrolls.
+        v1.2.0: > 1 when the canvas is wider and taller than the frame (sidebars hidden): it fills the space."""
         viewport_w = self.canvas.winfo_width()
         if viewport_w < self.MIN_LAID_OUT_WIDTH:
             return 1.0
-        return min(1.0, viewport_w / float(CANVAS_W))
+        if viewport_w < CANVAS_W:
+            return viewport_w / float(CANVAS_W)
+        # v1.2.0: with a sidebar hidden the photo grows into the freed space, as long as it still fits the height.
+        viewport_h = self.canvas.winfo_height()
+        return max(1.0, min(viewport_w / float(CANVAS_W), viewport_h / float(CANVAS_H), self.MAX_DISPLAY_SCALE))
 
     def _compute_content_offset(self, scale=1.0):
         """Offset (x, y) to center the (scaled) 1200x900 photo within a larger viewport. Zero in either axis once the viewport isn't bigger."""
@@ -477,6 +483,8 @@ class DatasetBrowserPanel:
 # the commands that aren't already toolbar buttons -- icons match the ones
 # already used for the same commands in _TOOL_COMMANDS/_VIEW_COMMANDS/etc.
 SIDEBAR_WIDTH = 210
+# v1.2.0: flat "sidebar" icon at the top of each sidebar that hides it; the hidden one keeps only a thin strip.
+SIDEBAR_COLLAPSED_WIDTH = 34
 # v1.0.8: two sidebars, each split into sections of similar commands (heading, [(icon, label, key, code)]).
 # Right ("More Features"): tracing, crack editing and crack inspection -- what is used while working on a photo.
 _RIGHT_SIDEBAR_SECTIONS = [
@@ -613,6 +621,92 @@ def split_counts_text(counts, hovered):
     return "\n".join(lines)
 
 
+class SidebarToggle:
+    """v1.2.0 flat icon button that hides/shows a sidebar, drawn on a small Canvas (no 3D relief): a rounded
+    window outline whose side panel, on the sidebar's side, is filled while the sidebar is shown and empty, with
+    a small arrow pointing back in, while it is hidden. Grey at rest; darker on a light pill when hovered."""
+
+    SIZE_W, SIZE_H = 28, 24
+    INK, INK_HOVER, ACCENT = "#6b7280", "#1f2937", "#2563eb"
+    HOVER_BG = "#e5e7eb"
+
+    def __init__(self, master, side, command):
+        self.side, self.command = side, command
+        self.collapsed, self.hovered = False, False
+        self.bg = self._parent_background(master)
+        self.canvas = tk.Canvas(master, width=self.SIZE_W, height=self.SIZE_H, highlightthickness=0, bd=0,
+                                bg=self.bg, cursor="hand2", takefocus=0)
+        self.redraw()
+
+    @staticmethod
+    def _parent_background(master):
+        try:
+            return master.cget("background")
+        except (tk.TclError, AttributeError, TypeError):
+            return "#ececec"
+
+    def bind_events(self):
+        """add='+' keeps the HoverTip bindings made on the same canvas."""
+        self.canvas.bind("<Enter>", self._on_enter, add="+")
+        self.canvas.bind("<Leave>", self._on_leave, add="+")
+        self.canvas.bind("<ButtonRelease-1>", self._on_click, add="+")
+
+    def pack(self, **kw):
+        self.canvas.pack(**kw)
+
+    def _on_enter(self, event=None):
+        self.hovered = True
+        self.redraw()
+
+    def _on_leave(self, event=None):
+        self.hovered = False
+        self.redraw()
+
+    def _on_click(self, event=None):
+        self.command()
+
+    def set_collapsed(self, collapsed):
+        self.collapsed = collapsed
+        self.redraw()
+
+    @staticmethod
+    def _rounded_rect_points(x0, y0, x1, y1, r):
+        """Corner points doubled so a smooth polygon draws a rectangle with rounded corners."""
+        return [x0 + r, y0, x0 + r, y0, x1 - r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y0 + r, x1, y1 - r,
+                x1, y1 - r, x1, y1, x1 - r, y1, x1 - r, y1, x0 + r, y1, x0 + r, y1, x0, y1, x0, y1 - r,
+                x0, y1 - r, x0, y0 + r, x0, y0 + r, x0, y0]
+
+    def redraw(self):
+        c = self.canvas
+        c.delete("all")
+        w, h = self.SIZE_W, self.SIZE_H
+        ink = self.INK_HOVER if self.hovered else self.INK
+        if self.hovered:
+            c.create_polygon(self._rounded_rect_points(1, 1, w - 1, h - 1, 6), smooth=True,
+                             fill=self.HOVER_BG, outline="")
+        x0, y0, x1, y1 = 6, 6, w - 6, h - 6
+        c.create_polygon(self._rounded_rect_points(x0, y0, x1, y1, 3), smooth=True, fill="", outline=ink, width=1.6)
+        divider = x0 + 5 if self.side == "left" else x1 - 5
+        c.create_line(divider, y0, divider, y1, fill=ink, width=1.6)
+        if not self.collapsed:
+            fx0, fx1 = (x0 + 1, divider) if self.side == "left" else (divider, x1 - 1)
+            c.create_rectangle(fx0, y0 + 2, fx1, y1 - 1, fill=(self.ACCENT if self.hovered else ink), outline="")
+        else:
+            self._draw_arrow(c, ink, x0, x1, y0, y1, divider)
+
+    def _draw_arrow(self, c, ink, x0, x1, y0, y1, divider):
+        """Small chevron in the empty window, pointing the way the sidebar opens (> for the left, < for the right)."""
+        cy = (y0 + y1) / 2.0
+        if self.side == "left":
+            cx = (divider + x1) / 2.0
+            pts = (cx - 1.5, cy - 3, cx + 1.5, cy, cx - 1.5, cy + 3)
+        else:
+            cx = (x0 + divider) / 2.0
+            pts = (cx + 1.5, cy - 3, cx - 1.5, cy, cx + 1.5, cy + 3)
+        c.create_line(*pts, fill=(self.ACCENT if self.hovered else ink), width=1.6, capstyle="round",
+                      joinstyle="round")
+
+
 class ShortcutsSidebar:
     """v1.0.8: both sidebars, one on each side of the canvas, seen as one: buttons, buttons_by_code and
     refresh_states() cover the two panels (right panel first). frame / _canvas are the right panel's."""
@@ -631,6 +725,10 @@ class ShortcutsSidebar:
         for panel in self.panels:
             panel.refresh_states(cfg, validation_available)
 
+    def hidden_sides(self):
+        """v1.2.0: the sides whose sidebar is currently hidden ('left', 'right')."""
+        return tuple(panel.side for panel in self.panels if panel.collapsed)
+
 
 class SidebarPanel:
     """Panel of real, clickable shortcut buttons beside the canvas, for the
@@ -640,19 +738,19 @@ class SidebarPanel:
 
     def __init__(self, master, app, title, sections, side="right"):
         self.app, self.side = app, side
+        self.collapsed = False
         self.frame = ttk.Frame(master, width=SIDEBAR_WIDTH)
         self.frame.pack(side=side, fill="y", padx=(4, 2) if side == "right" else (2, 4), pady=2)
         self.frame.pack_propagate(False)  # keeps a fixed width regardless of content
 
-        tk.Label(self.frame, text=title, font=("TkDefaultFont", 10, "bold"),
-                 anchor="w").pack(anchor="w", fill="x", padx=8, pady=(8, 6))
+        self._build_header(title)
 
         canvas = tk.Canvas(self.frame, highlightthickness=0)
         v_scroll = ttk.Scrollbar(self.frame, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=v_scroll.set)
         canvas.pack(side="left", fill="both", expand=True)
         v_scroll.pack(side="right", fill="y")
-        self._canvas = canvas
+        self._canvas, self._v_scroll = canvas, v_scroll
 
         inner = ttk.Frame(canvas)
         canvas.create_window(0, 0, window=inner, anchor="nw")
@@ -673,6 +771,51 @@ class SidebarPanel:
                 self.buttons_by_code[code] = btn
         self.hover_tips = {code: HoverTip(self.buttons_by_code[code], self._split_tip_text(split), side=side)
                            for code, split in _SPLIT_SET_BUTTONS.items() if code in self.buttons_by_code}
+
+    def _build_header(self, title):
+        """Title row with the small sidebar icon that hides/shows the panel (v1.2.0), on the canvas side."""
+        header = tk.Frame(self.frame)
+        header.pack(fill="x", pady=(4, 2))
+        button_side = "left" if self.side == "right" else "right"
+        self.collapse_button = SidebarToggle(header, self.side, self.toggle_collapsed)
+        self.collapse_button.pack(side=button_side, padx=2, pady=2)
+        self.title_label = tk.Label(header, text=title, font=("TkDefaultFont", 10, "bold"), anchor="w")
+        self._pack_title()
+        # The tip opens towards the canvas, like the button itself; made first, the toggle's hover adds to it.
+        self.collapse_tip = HoverTip(self.collapse_button.canvas, self._collapse_tip_text, side=button_side)
+        self.collapse_button.bind_events()
+
+    def _pack_title(self):
+        self.title_label.pack(side="left", fill="x", expand=True, padx=(8, 2), pady=(4, 2))
+
+    def _collapse_tip_text(self):
+        where = "right" if self.side == "right" else "left"
+        if self.collapsed:
+            return f"Show the {where} sidebar"
+        return f"Hide the {where} sidebar: the photo extends to the {where}"
+
+    def toggle_collapsed(self):
+        """v1.2.0 sidebar icon: hides the panel (only a thin strip with the button is left, so it can be
+        shown again) and gives its width to the photo; a second click brings the panel back."""
+        self.set_collapsed(not self.collapsed)
+
+    def set_collapsed(self, collapsed):
+        if collapsed == self.collapsed:
+            return
+        self.collapsed = collapsed
+        if collapsed:
+            self._unbind_wheel()
+            self.title_label.pack_forget()
+            self._canvas.pack_forget()
+            self._v_scroll.pack_forget()
+            self.frame.configure(width=SIDEBAR_COLLAPSED_WIDTH)
+        else:
+            self.frame.configure(width=SIDEBAR_WIDTH)
+            self._pack_title()
+            self._canvas.pack(side="left", fill="both", expand=True)
+            self._v_scroll.pack(side="right", fill="y")
+        self.collapse_button.set_collapsed(collapsed)
+        self.app._on_sidebar_layout_changed()
 
     @staticmethod
     def _add_heading(master, text):
@@ -1200,6 +1343,18 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._status_bar = StatusBar(self._tk_root)
         placeholder = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
         self._canvas.update_frame(placeholder)
+
+    def _on_sidebar_layout_changed(self):
+        """A sidebar was hidden or shown (v1.2.0): lays out the new canvas width now, so the next frame is drawn
+        at the new size (see EmbeddedCanvas._compute_display_scale)."""
+        try:
+            self._tk_root.update_idletasks()
+        except tk.TclError:
+            return
+        hidden = self._sidebar.hidden_sides() if hasattr(self, "_sidebar") else ()
+        names = {(): "both sidebars shown", ("right",): "right sidebar hidden",
+                 ("left",): "left sidebar hidden"}
+        print(f" [VIEW] {names.get(hidden, 'both sidebars hidden: the photo takes the whole width')}.")
 
     def _wire_stdout_stderr_to_status_bar(self):
         """Mirrors every print()'d line into the status bar too, in addition to the real console if one is attached."""

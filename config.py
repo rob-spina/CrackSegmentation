@@ -498,6 +498,24 @@ class Config:
         uncertain by the operator (drawn red, JSON flag uncertain_manual, in the uncertain mask)."""
         self.uncertain_trace_mode = False
 
+    def _init_interrupted_trace_settings(self):
+        """v1.2.0 Interrupted crack: a Crack-tool trace whose route crosses a stretch with no crack (binary mask)
+        is stored as separate cracks, one per continuous piece, and an on-screen message says so."""
+        self.SPLIT_INTERRUPTED_CRACKS = True
+        # Shortest stretch without crack (px along the route) that counts as an interruption.
+        self.CRACK_GAP_MIN_PX = 10
+        # A route point counts as on the crack when a crack pixel lies within this many px of it.
+        self.CRACK_GAP_TOLERANCE_PX = 1
+        # Also on the crack: pixels this many grey levels darker than the mean of the wall window around them
+        # (side in px), since the crack mask is hollow in the middle of wide cracks.
+        self.CRACK_GAP_BG_BLOCK_PX = 51
+        self.CRACK_GAP_DARKNESS = 8
+        # Gap stretches separated by at most this many isolated crack points (texture) form one gap.
+        self.CRACK_GAP_MERGE_POINTS = 2
+        self.INTERRUPTED_CRACK_BANNER_SECONDS = 6.0
+        self.interrupted_crack_triggered = False
+        self.interrupted_crack_message = ""
+
     def _init_dataset_split_settings(self):
         """v1.0.8 [Training / Test / Validation set] (Mode 2, sidebar codes 23-25): folders the photo on screen is
         moved to. Training set also takes the JSON and the binary exports; Test and Validation sets only the photo."""
@@ -564,6 +582,7 @@ class Config:
         self._init_trace_waypoint_state()
         self._init_eraser_state()
         self._init_uncertain_trace_state()
+        self._init_interrupted_trace_settings()
         self._init_dataset_split_settings()
         self._init_validation_settings()
         self._init_queue_and_cache()

@@ -220,6 +220,30 @@ class Canvas(_Widget):
         self._items[item_id] = {"x": x, "y": y, "anchor": anchor, "text": text, **kw}
         return item_id
 
+    def _create_shape(self, kind, coords, kw):
+        item_id = self._next_id
+        self._next_id += 1
+        self._items[item_id] = {"kind": kind, "coords": list(coords), **kw}
+        return item_id
+
+    def create_line(self, *coords, **kw): return self._create_shape("line", coords, kw)
+    def create_rectangle(self, *coords, **kw): return self._create_shape("rectangle", coords, kw)
+    def create_oval(self, *coords, **kw): return self._create_shape("oval", coords, kw)
+
+    def create_polygon(self, *coords, **kw):
+        if len(coords) == 1 and isinstance(coords[0], (list, tuple)):
+            coords = coords[0]
+        return self._create_shape("polygon", coords, kw)
+
+    def delete(self, *item_ids):
+        if "all" in item_ids:
+            self._items.clear()
+        for item_id in item_ids:
+            self._items.pop(item_id, None)
+
+    def cget(self, key):
+        return self.kw.get(key, "#ececec")
+
     def itemconfig(self, item_id, **kw):
         self._items.setdefault(item_id, {}).update(kw)
 
