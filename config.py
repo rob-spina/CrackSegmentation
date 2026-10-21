@@ -318,6 +318,9 @@ class Config:
         confidence (0-1): mean percentile rank of a dark-ridge filter (Sato) response along the line, against the surrounding wall.
         0.5 = no more line-like than the local background, 1.0 = clearly the most line-like structure around. A heuristic, not a calibrated probability.
         """
+        # v1.3.0: the CRACK_UNCERTAIN_* rule below no longer marks cracks by itself (False): a crack is uncertain only
+        # when the operator says so ([Uncertain crack], or Yes in the [Warn uncertain] window). True = old behaviour.
+        self.CRACK_UNCERTAIN_AUTO = False
         # A crack is saved as uncertain when reliability_pct is below this (None disables the reliability rule).
         self.CRACK_UNCERTAIN_RELIABILITY_PCT = 50.0
         # ...or when confidence is below this (None disables the confidence rule; set it after checking your own data).
@@ -327,6 +330,9 @@ class Config:
         # Also write <photo>-crack_uncertain_mask.png with only the uncertain cracks (usable as an ignore region in training).
         # The regular crack mask is unchanged and still contains every crack.
         self.CRACK_UNCERTAIN_EXPORT_MASK = True
+        # v1.3.0 [Warn uncertain]: a new crack below either limit is proposed as uncertain (None disables that limit).
+        self.WARN_UNCERTAIN_RELIABILITY_PCT = 50.0
+        self.WARN_UNCERTAIN_CONFIDENCE = 0.65
         # Sato filter scales (px) for the confidence score; roughly half the expected crack widths.
         self.CRACK_CONFIDENCE_SIGMAS = (1.0, 2.0, 3.0)
         # Background window around each stretch of crack used for the confidence ranking (px).
@@ -480,6 +486,12 @@ class Config:
         self.TRACE_GUIDE_CORRIDOR_FRAC = 0.08
         # Extra cost factor for running back along the previous leg (what made the route turn back at a point).
         self.TRACE_GUIDE_BACKTRACK_FACTOR = 20.0
+        # v1.3.0: a line counts as much as the strongest line within this window (px), so a faint crack next to an
+        # edge or a shadow line is not left for it; responses below LINE_FLOOR x the strongest line in the corridor,
+        # or TEXTURE_FACTOR x its median (plaster texture), stay weak.
+        self.TRACE_GUIDE_LOCAL_PX = 5
+        self.TRACE_GUIDE_LINE_FLOOR = 0.25
+        self.TRACE_GUIDE_TEXTURE_FACTOR = 4.0
 
     def _init_eraser_state(self):
         """v1.0.8 [Eraser]: a square window that follows the mouse; dragging it over a crack erases that part
@@ -497,6 +509,26 @@ class Config:
         """v1.1.0 [Uncertain crack] (sidebar, process_keypress() code 7): while on, every new crack is saved as
         uncertain by the operator (drawn red, JSON flag uncertain_manual, in the uncertain mask)."""
         self.uncertain_trace_mode = False
+
+    def _init_crack_labels_state(self):
+        """v1.3.0 [Crack labels] (sidebar, process_keypress() code 11): while on, resting the cursor on a crack number
+        or line shows a temporary window with the crack's data; it disappears when the cursor moves away."""
+        self.crack_labels_mode = False
+        self.crack_label_hover = None   # {"idx": crack index, "anchor": image point the window is attached to}
+        self.crack_label_cache = {}
+        # How close (window px) the cursor must be to a crack line, and half side of a number marker.
+        self.CRACK_LABEL_HOVER_WIN_PX = 8
+        self.CRACK_LABEL_MARKER_WIN_PX = 22
+
+    def _init_warn_uncertain_state(self):
+        """v1.3.0 [Warn uncertain] (sidebar, process_keypress() code 12): while on, each completed trace below the
+        WARN_UNCERTAIN_* limits opens a window proposing to save it as uncertain."""
+        self.warn_uncertain_mode = False
+
+    def _init_crack_relabel_state(self):
+        """v1.3.0 Make uncertain / Make normal (Ctrl/Cmd+C, Ctrl/Cmd+U; codes 128 / 129): None, or 'uncertain' /
+        'normal' = the next clicked cracks get that class (crack_relabel.py)."""
+        self.crack_relabel_mode = None
 
     def _init_interrupted_trace_settings(self):
         """v1.2.0 Interrupted crack: a Crack-tool trace whose route crosses a stretch with no crack (binary mask)
@@ -582,6 +614,9 @@ class Config:
         self._init_trace_waypoint_state()
         self._init_eraser_state()
         self._init_uncertain_trace_state()
+        self._init_crack_labels_state()
+        self._init_warn_uncertain_state()
+        self._init_crack_relabel_state()
         self._init_interrupted_trace_settings()
         self._init_dataset_split_settings()
         self._init_validation_settings()

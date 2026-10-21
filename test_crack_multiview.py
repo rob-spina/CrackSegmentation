@@ -188,6 +188,7 @@ class TestMultiViewExport(unittest.TestCase):
 
     def test_json_carries_multiview_and_marks_unconfirmed_cracks(self):
         app = self.scene.make_app()
+        app.cfg.CRACK_UNCERTAIN_AUTO = True   # v1.3.0: automatic rule off by default
         app.cfg.CRACK_UNCERTAIN_RELIABILITY_PCT = None
         app.cfg.CRACK_UNCERTAIN_MULTIVIEW_RATIO = 0.5
         crack, shadow = self._export(app)

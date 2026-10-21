@@ -32,6 +32,59 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.3.0: Ctrl+C / Ctrl+U, Crack labels, Warn uncertain, Ctrl+clic
+
+- **💬 Crack labels** (barra destra, sezione Inspect cracks, e menu Tools; codice 11;
+  `crack_labels.py`): premuto una volta, quando il cursore si ferma sul numero di una
+  crepa o lungo la sua linea compare una finestra temporanea accanto alla crepa con
+  lunghezza, larghezza (media e massima della banda esportata nella maschera),
+  affidabilità, confidenza, multi-view, stato (normale / uncertain), eventuale
+  traccia dentro una ignore region (IGNORED o percentuale), valori sotto soglia e
+  giudizio complessivo: gli stessi dati del pannello [J]. Allontanando il cursore la
+  finestra scompare. Premuto di nuovo, le etichette si disattivano.
+- **Niente più crepe incerte automatiche**: la regola `CRACK_UNCERTAIN_*` non marca
+  più da sola le crepe come incerte (`CRACK_UNCERTAIN_AUTO = False` in `config.py`;
+  `True` ripristina il comportamento precedente). Una crepa è incerta solo se lo
+  decide l'operatore (Uncertain crack o Warn uncertain).
+- **Ctrl+clic** (Cmd+clic su macOS) con il Crack tool: inizia una traccia vicino al
+  marker di inizio/fine di una crepa **senza cancellarla** (il clic semplice la
+  cancella ancora).
+- **⚠ Warn uncertain** (barra destra, sezione Tools, e menu Tools; codice 12;
+  `warn_uncertain.py`): premuto prima di tracciare, al termine di ogni traccia
+  controlla affidabilità e confidenza della nuova crepa; se è sotto
+  `WARN_UNCERTAIN_RELIABILITY_PCT` (50%) o `WARN_UNCERTAIN_CONFIDENCE` (0.65) compare
+  una finestra che propone di salvarla come uncertain: Sì = incerta (rossa, JSON e
+  maschere aggiornati subito), No = resta normale. Sopra i limiti non compare nulla.
+- **Scritte delle modalità nella barra di stato**: le indicazioni delle funzioni attive
+  (WARN UNCERTAIN, CRACK LABELS, UNCERTAIN MODE, ERASER, FILTER, HWAV, ZOOM WINDOW,
+  CRACK REPORT, ROUTE, BUILDING PORTION) non sono più scritte sulla foto ma nel
+  riquadro giallo a destra della barra di stato bianca in basso; scompaiono quando la
+  funzione viene disattivata. Nella sola finestra OpenCV (senza GUI) restano sulla foto.
+- **Ctrl+C / Ctrl+U** (Cmd+C / Cmd+U su macOS; `crack_relabel.py`, codici 128 e 129):
+  cambiano la classe di una crepa **già tracciata**. Ctrl+C (oppure Ctrl/Cmd+clic sul
+  pulsante **Crack tool** della barra destra, o menu Tools), poi clic sulla crepa blu
+  (sulla linea o sul numeretto): diventa **uncertain** (rossa). Ctrl+U (oppure
+  Ctrl/Cmd+clic su **Uncertain crack**, o menu Tools), poi clic su una crepa rossa:
+  torna **normale** (blu). Una crepa per volta: dopo il clic sulla crepa tutto torna
+  come prima (per esempio la crepa si cancella di nuovo cliccando il suo marker); un
+  clic lontano dalle crepe lascia la modalità in attesa (riga MAKE UNCERTAIN / MAKE
+  NORMAL nel riquadro giallo della barra di stato), la stessa combinazione la annulla, e
+  così qualsiasi altro comando (Cut, Join, uno strumento...); l'altra passa al cambio
+  opposto. Dopo il cambio JSON e maschere (compresa `-crack_uncertain_mask.png`) vengono
+  aggiornati subito; [U] annulla. I codici 128/129 non corrispondono a nessun tasto
+  (nemmeno lettere accentate). Le altre combinazioni Ctrl+lettera non lanciano più
+  per sbaglio comandi della barra (Ctrl+N dava 14 = HWAV, Ctrl+S 19 = filtro...).
+- **Crepe vicine a uno spigolo** (`guided_trace.py`): con i punti Shift+clic, una crepa
+  debole a pochi pixel da uno spigolo o da una linea d'ombra forte (per esempio sotto
+  un cornicione) ora viene seguita, invece di far saltare il percorso sullo spigolo.
+  Prima la forza di ogni linea era misurata rispetto alla linea più forte del
+  corridoio, quindi accanto allo spigolo la crepa sembrava debole; ora ogni linea
+  conta quanto le vicine (normalizzazione locale, `TRACE_GUIDE_LOCAL_PX`,
+  `TRACE_GUIDE_LINE_FLOOR`, `TRACE_GUIDE_TEXTURE_FACTOR` in `config.py`) e sono i
+  punti cliccati a scegliere la linea. Anche l'aggancio del clic va sulla linea più
+  **vicina**, non più su quella più forte. `test_v130_edge_trace.py`: 4 test nuovi.
+- `test_v130_features.py`: 27 test nuovi; `test_v130_relabel.py`: 22 test nuovi.
+
 ## Novità 1.2.0: crack interrotte e barre laterali richiudibili
 
 - **Crack interrotta** (strumento Crack; `interrupted_trace.py`): quando si clicca

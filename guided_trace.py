@@ -37,6 +37,24 @@ class GuidedTraceMixin:
             np.maximum(out, np.maximum(lam, 0.0) * (sigma * sigma), out=out)
         return out
 
+    def _relative_line_strength(self, ridge, floor):
+        """0..1: each pixel against the strongest line response within TRACE_GUIDE_LOCAL_PX, so the centre of ANY line
+        clearly above the plaster texture scores 1 -- a faint crack as much as the strong edge or shadow line next to
+        it. Below `floor` (texture) the values stay low."""
+        k = max(3, int(self.cfg.TRACE_GUIDE_LOCAL_PX) | 1)
+        local = cv2.dilate(ridge, cv2.getStructuringElement(cv2.MORPH_RECT, (k, k)))
+        return np.clip(ridge / np.maximum(local, max(float(floor), 1e-9)), 0.0, 1.0)
+
+    def _guide_strength(self, ridge, band_mask):
+        """Line strength of a leg (v1.3.0): relative to the nearby lines instead of to the strongest one in the
+        corridor. Before, a strong edge in the corridor made a faint crack look weak and the route jumped onto the edge
+        even through Shift+clicked points; now the operator's points choose WHICH line is followed."""
+        band = ridge[band_mask]
+        scale = float(np.percentile(band, 97)) if band.size else float(ridge.max())
+        texture = float(np.median(band)) if band.size else 0.0
+        floor = max(self.cfg.TRACE_GUIDE_LINE_FLOOR * scale, self.cfg.TRACE_GUIDE_TEXTURE_FACTOR * texture)
+        return self._relative_line_strength(ridge, floor)
+
     @staticmethod
     def _distance_to_segment(shape, p, q, x0, y0):
         """Per-pixel distance (px) to the segment p-q, for a crop of the given shape at (x0, y0); plus its length."""
@@ -60,13 +78,15 @@ class GuidedTraceMixin:
         m = 8
         ctx = (max(0, roi[0] - m), max(0, roi[1] - m), min(w, roi[2] + m), min(h, roi[3] + m))
         ridge = self._thin_dark_line_strength(ctx)
-        ridge = ridge[roi[1] - ctx[1]:roi[3] - ctx[1], roi[0] - ctx[0]:roi[2] - ctx[0]]
-        strength = ridge / max(1e-9, float(ridge.max()))
+        # v1.3.0: every line counts as much as the strongest one (local normalisation), so a faint crack next to a
+        # strong edge or shadow line is not abandoned for it: the NEAREST line to the click wins.
+        ridge = self._relative_line_strength(ridge, floor=self.cfg.TRACE_GUIDE_LINE_FLOOR * float(ridge.max()))
+        strength = ridge[roi[1] - ctx[1]:roi[3] - ctx[1], roi[0] - ctx[0]:roi[2] - ctx[0]]
         cy, cx = y - roi[1], x - roi[0]
         if strength[cy, cx] >= 0.8:
             return x, y  # already on the line: keep the click exactly
         yy, xx = np.mgrid[0:strength.shape[0], 0:strength.shape[1]]
-        score = strength - 0.1 * np.hypot(yy - cy, xx - cx) / max(1, r)  # nearer wins a near tie
+        score = strength - 0.5 * np.hypot(yy - cy, xx - cx) / max(1, r)  # the nearer line wins
         iy, ix = np.unravel_index(int(np.argmax(score)), score.shape)
         return roi[0] + int(ix), roi[1] + int(iy)
 
@@ -77,10 +97,7 @@ class GuidedTraceMixin:
         dist, length = self._distance_to_segment((y1 - y0, x1 - x0), p, q, x0, y0)
         corridor = max(float(cfg.TRACE_GUIDE_CORRIDOR_MIN_PX), cfg.TRACE_GUIDE_CORRIDOR_FRAC * length)
         ridge = self._thin_dark_line_strength(roi)
-        # Scaled on the lines found near the guide only: a strong crack farther away cannot make a faint one look weak.
-        band = ridge[dist < corridor]
-        scale = max(1e-9, float(np.percentile(band, 97))) if band.size else max(1e-9, float(ridge.max()))
-        strength = np.clip(ridge / scale, 0.0, 1.0)
+        strength = self._guide_strength(ridge, dist < corridor)
         cost = (1.0 + cfg.TRACE_GUIDE_RIDGE_WEIGHT * (1.0 - strength) ** 2) * (1.0 + (dist / corridor) ** 4)
         if prev_leg:
             # No running back along the previous leg: only the clicked point itself stays free.

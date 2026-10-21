@@ -341,6 +341,10 @@ class InspectionToolsMixin:
                 f"other photo(s) of the building group.")
 
     def _describe_uncertainty(self, reliability, confidence, multiview, uncertain):
+        if not uncertain and not self.cfg.CRACK_UNCERTAIN_AUTO:
+            below = self._warn_uncertain_reasons(reliability, confidence)
+            return ("Uncertainty: not marked (only the operator marks cracks uncertain)"
+                    + (f"; below the Warn uncertain limit: {', '.join(below)}." if below else "."))
         if not uncertain:
             return "Uncertainty: none -- every enabled threshold is met."
         reasons = []
