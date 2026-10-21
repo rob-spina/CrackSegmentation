@@ -38,13 +38,17 @@ from pipeline_reset import PipelineResetMixin, RESET_PIPELINE_CODE
 from dataset_browser import DatasetBrowserMixin, DATASET_BROWSER_CODE
 from uncertain_trace import UncertainTraceMixin, UNCERTAIN_TRACE_CODE
 from interrupted_trace import InterruptedTraceMixin
+from crack_labels import CrackLabelsMixin, CRACK_LABELS_CODE
+from warn_uncertain import WarnUncertainMixin, WARN_UNCERTAIN_CODE
+from crack_relabel import CrackRelabelMixin, RELABEL_TARGET_BY_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
                         CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin,
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
-                        DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin):
+                        DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
+                        CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -2332,6 +2336,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._reset_zoom_state()
         self._reset_session_editing_state()
         self._reset_inspection_tools_for_new_image()
+        self._reset_crack_labels_for_new_image()
         self._reset_alt_routes_for_new_image()
         self._reset_crack_filter()
         self._reset_building_portion()
@@ -4194,10 +4199,13 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         computed_path = self._trace_through_waypoints(end_point)
         marked_uncertain = False
         if computed_path:
+            n_before = len(self.cfg.saved_cracks)
             marked_uncertain = self._store_new_trace(computed_path, end_point)
             self.cfg.temp_start = None
             self.cfg.temp_path.clear()
             self.cfg.trace_waypoints, self.cfg.trace_partial_path = [], []
+            # v1.3.0 [Warn uncertain]: weak new cracks are proposed as uncertain (operator confirms).
+            marked_uncertain = self._warn_uncertain_new_cracks(self.cfg.saved_cracks[n_before:]) or marked_uncertain
         self.recalculate_masks()
         if marked_uncertain:
             self._save_after_uncertain_trace()
@@ -4225,10 +4233,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         return marked_uncertain
 
     def _crack_tool_click(self, x, y, flags=0):
-        """Dispatches a crack-tool click: delete-by-proximity (only with no trace in progress),
-        else start/complete a trace; Shift+click while tracing adds an intermediate point."""
+        """Dispatches a crack-tool click: delete-by-proximity (only with no trace in progress, and never with
+        Ctrl/Cmd held, v1.3.0), else start/complete a trace; Shift+click while tracing adds an intermediate point."""
         real_x, real_y = self.transform_window_to_real_coords(x, y)
-        if self.cfg.temp_start is None and self._delete_crack_near(real_x, real_y):
+        keep_cracks = bool(flags & cv2.EVENT_FLAG_CTRLKEY)
+        if self.cfg.temp_start is None and not keep_cracks and self._delete_crack_near(real_x, real_y):
             return
         if self.cfg.temp_start is None:
             self._start_new_crack_trace(real_x, real_y)
@@ -4324,6 +4333,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 self._handle_help_scrollbar_mouse(event, x, y)
                 return
 
+            if event == cv2.EVENT_MOUSEMOVE:
+                self._update_crack_label_hover(x, y)   # v1.3.0 [Crack labels]; the move still reaches the tool
+
             if self.cfg.calibration_mode:
                 self._handle_calibration_mouse(event, x, y)
                 return
@@ -4335,6 +4347,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             if self.cfg.eraser_state["active"]:
                 # v1.0.8: ahead of Zoom window, so dragging erases even while that tool is on.
                 self._handle_eraser_mouse(event, x, y)
+                return
+
+            if self.cfg.crack_relabel_mode is not None:
+                # v1.3.0 Make uncertain / Make normal (Ctrl/Cmd+C, Ctrl/Cmd+U): a click picks the crack to change.
+                self._handle_crack_relabel_mouse(event, x, y)
                 return
 
             if self.cfg.zoom_window_state["active"]:
@@ -4971,7 +4988,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         reliability = self._compute_crack_reliability(path)
         confidence = self._compute_crack_confidence(path)
         multiview = self._crack_multiview(path)
-        return reliability, confidence, self._is_crack_uncertain(reliability, confidence, multiview)
+        # v1.3.0: the rule marks cracks only when CRACK_UNCERTAIN_AUTO is on (off by default: [Warn uncertain] proposes).
+        auto = self.cfg.CRACK_UNCERTAIN_AUTO and self._is_crack_uncertain(reliability, confidence, multiview)
+        return reliability, confidence, bool(auto)
 
     # Multi-view confirmation: a real crack stays put on the wall in every photo of the building group,
     # while shadows, reflections and dirt move or vanish with light and viewpoint.
@@ -5392,6 +5411,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             "[Zoom window] (sidebar) : drag a rectangle to zoom onto a crack; press again to reset the zoom",
             "[HWAV] (sidebar) : tint in green the windows already viewed while zoomed; press again to clear",
             "[Crack report] (sidebar) : click a crack to read its reliability report; press again to close it",
+            "[Crack labels] (sidebar) : hover a crack number or line to read its data; press again to switch off",
+            "[Warn uncertain] (sidebar) : after each trace, a weak crack is proposed as uncertain (confirm Yes/No)",
+            "Ctrl/Cmd + click (Crack tool) : start a trace next to a crack marker without deleting that crack",
+            "Ctrl/Cmd + C, then click : make a blue crack uncertain (red) -- line or number; again to stop",
+            "Ctrl/Cmd + U, then click : make a red crack normal (blue) -- line or number; again to stop",
             "[Eraser] (sidebar) : drag the red window over a crack to erase that part ([ / ] window size)",
             "[Remove uncertain] (sidebar) : delete every crack on screen marked [?]",
             "[Training set] (sidebar, Mode 2) : move photo, JSON and masks to 'Training set'",
@@ -5527,6 +5551,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_alt_route(win_out)
         self._draw_crack_filter_label(win_out)
         self._draw_uncertain_trace_label(win_out)
+        self._draw_crack_labels_hud(win_out)
+        self._draw_warn_uncertain_label(win_out)
+        self._draw_crack_relabel_label(win_out)
         self._draw_building_portion(win_out)
 
         hm = self._compute_hud_font_metrics()
@@ -5544,6 +5571,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_save_status_banner(win_out, show_error_banner, error_time, hm)
         self._draw_bottom_hint_bar(win_out, hm)
         self.draw_building_hud_overlay(win_out, self._resolve_building_hud_y(hm_top))
+        self._draw_crack_label(win_out)   # v1.3.0 [Crack labels]: hover window, above the rest of the HUD
         self._draw_help_menu(win_out, status, metrics_str, time_str)
         return status, metrics_str, time_str
 
@@ -5755,6 +5783,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self._handle_manual_group_entry_keypress(key_clean)
             return False
 
+        self._cancel_crack_relabel_for_key(key_clean)   # v1.3.0: Cut, Join, a tool ... cancel a pending Ctrl/Cmd+C/U
+
         if key_raw == 27:
             self._handle_escape_key()
 
@@ -5814,6 +5844,15 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == UNCERTAIN_TRACE_CODE:   # v1.1.0: next cracks traced as uncertain (red)
             self._toggle_uncertain_trace_mode()
+
+        elif key_clean == CRACK_LABELS_CODE:   # v1.3.0: hover a crack to read its data
+            self._toggle_crack_labels()
+
+        elif key_clean == WARN_UNCERTAIN_CODE:   # v1.3.0: weak new cracks proposed as uncertain
+            self._toggle_warn_uncertain()
+
+        elif key_clean in RELABEL_TARGET_BY_CODE:   # v1.3.0: Ctrl/Cmd+C / Ctrl/Cmd+U, then click a crack
+            self._toggle_crack_relabel(RELABEL_TARGET_BY_CODE[key_clean])
 
         elif key_clean == CV_FOLDS_CODE:
             self.make_cv_folds()

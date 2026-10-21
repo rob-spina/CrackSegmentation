@@ -427,7 +427,7 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.2.0</div>
+    <div class="meta-line">Version 1.3.0</div>
   </div>
 
   <div class="features">
@@ -475,7 +475,7 @@
     </div>
     <div class="panel">
       <div class="ptitle">Status Bar</div>
-      <div class="ptext">Located at the bottom, with a scrollbar. Shows real-time console log messages, warnings, and operation status (e.g. successful PNG masks or JSON exports).</div>
+      <div class="ptext">Located at the bottom, with a scrollbar. Shows real-time console log messages, warnings, and operation status (e.g. successful PNG masks or JSON exports). Active modes (Uncertain, Warn uncertain, Make uncertain, Eraser ...) are listed in the yellow box on its right.</div>
     </div>
   </div>
 </div>
@@ -534,9 +534,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.2.0_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_1.3.0_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.2.0_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.3.0_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -578,6 +578,8 @@ sudo apt-get install -f</div>
 <tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Click the start and then the end of a crack: the route is traced along the edge. <span class="key">Shift</span>+click between them adds as many points as needed that the route must pass through (it then follows the thin dark line of the crack and never turns back at a point); <span class="key">U</span> removes the last point. With no trace in progress, a click on a crack&rsquo;s end marker deletes the crack; with the cursor on a crack end, the arrow keys nudge it by 1&nbsp;px.</td></tr>
 <tr><td>Interrupted Crack</td><td>Automatic</td><td>If a traced crack crosses a gap with no crack, an orange <b>INTERRUPTED CRACK</b> message appears and it is stored as <b>separate cracks</b>, without the gap. <span class="key">S</span> saves them as separate JSON shapes and PNG masks; <span class="key">U</span> undoes the whole trace.</td></tr>
 <tr><td>Uncertain Crack</td><td>Sidebar</td><td>Press it <b>before</b> tracing: every crack traced while it is on is saved as uncertain (<span class="code">[?]</span>) and drawn in <b style="color:#d00000;">red</b>. JSON (label <span class="code">crack_incerta</span>, flag <span class="code">uncertain_manual</span>) and masks, including <span class="code">-crack_uncertain_mask.png</span>, are saved as soon as each trace is completed. Press it again to go back to normal tracing.</td></tr>
+<tr><td>Make Uncertain / Make Normal</td><td><span class="key">Ctrl</span>+<span class="key">C</span> / <span class="key">Ctrl</span>+<span class="key">U</span> (<span class="key">Cmd</span> on macOS)</td><td>Then click a crack (its line or its number): <span class="key">C</span> makes a blue crack uncertain (<b style="color:#d00000;">red</b>), <span class="key">U</span> makes a red crack normal (blue) again. Also Ctrl/Cmd+click on the <b>Crack tool</b> / <b>Uncertain crack</b> sidebar buttons. One crack per press (then clicks work as usual again); the same keys again cancel. JSON and masks are saved after the change, <span class="key">U</span> undoes.</td></tr>
+<tr><td>Warn Uncertain</td><td>Sidebar</td><td>Press it before tracing: a new crack below the reliability/confidence limits opens a window proposing to save it as uncertain (Yes/No). Cracks are never marked uncertain automatically.</td></tr>
 <tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Click the vertices of a plaster/material detachment: each side follows the outline; <span class="key">Y</span> closes the polygon. A click on a detachment&rsquo;s marker deletes it.</td></tr>
 <tr><td>Ignore Region</td><td><span class="key">I</span> / sidebar</td><td>Marks areas where the wall is only partly visible (nets, mesh fences, scaffolding, cables, sparse vegetation). A dialog chooses the shape (rectangle, square, free polygon) and the photo edges it extends to. Rectangle: two clicks on opposite corners; polygon: vertices, then <span class="key">Y</span>. With the tool on, drag a corner or side to reshape, click inside to delete. Saved as <span class="code">-ignore_mask.png</span> (255 = exclude from training loss and metrics); never imported by <span class="key">W</span>/<span class="key">L</span>.</td></tr>
 <tr><td>Edit Detachment Nodes</td><td><span class="key">E</span></td><td>Drag a detachment&rsquo;s clicked vertices; its outline is recomputed live. Press again to leave.</td></tr>
@@ -615,6 +617,7 @@ sudo apt-get install -f</div>
 <tr><td>Zoom Window</td><td>Sidebar</td><td>Drag a rectangle to zoom straight onto it (up to 40&times;); a plain click still traces. Press again to reset the zoom.</td></tr>
 <tr><td>Highlight Viewed (HWAV)</td><td>Sidebar</td><td>Tints green the areas already shown while panning a zoomed photo, with the share inspected; pressed again it starts a new pass.</td></tr>
 <tr><td>Crack Report</td><td>Sidebar</td><td>Click a crack to read its reliability report (length, reliability, confidence, multi-view confirmation, verdict) in the <span class="key">J</span> panel.</td></tr>
+<tr><td>Crack Labels</td><td>Sidebar</td><td>While on, resting the cursor on a crack number or line shows a small window with its length, width, reliability, confidence, views and status; it disappears when the cursor moves away.</td></tr>
 <tr><td>Show Cracks by Number</td><td>Sidebar</td><td>Type numbers separated by <span class="code">;</span> (e.g. 3;7;12) to show only those cracks; empty = all. Display only: files keep every crack.</td></tr>
 <tr><td>Fullscreen / HUD Size</td><td><span class="key">F</span> / <span class="key">H</span></td><td>Toggles fullscreen; toggles large on-screen text.</td></tr>
 </table>

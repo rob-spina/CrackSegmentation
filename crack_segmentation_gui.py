@@ -11,6 +11,7 @@ from PIL import Image, ImageTk
 from config import Config
 from smart_segmentation import CrackSegmentation
 from go_to_image import PagedChooser
+from crack_relabel import MARK_UNCERTAIN_CODE, MARK_NORMAL_CODE
 
 
 # Keyboard translation: Tk <KeyPress> event -> the same integer code
@@ -27,11 +28,29 @@ _SPECIAL_KEYSYM_TO_CODE = {
 }
 
 
+# v1.3.0: Ctrl (Cmd on macOS) + key -> command code. C = make a blue crack uncertain, U = make a red crack normal.
+_CTRL_KEYSYM_TO_CODE = {"c": MARK_UNCERTAIN_CODE, "u": MARK_NORMAL_CODE}
+
+
+def ctrl_or_command_held(state):
+    """Ctrl held, or Cmd (Mod1) on macOS, in a Tk event state."""
+    mask = 0x0004 | (0x0008 if sys.platform == "darwin" else 0)
+    return bool((state or 0) & mask)
+
+
 def tk_key_event_to_code(event):
     """Translates one Tk <KeyPress> event into the integer code process_keypress() expects, matching what cv2.waitKey() would return. None if unmapped.
     """
     if event.keysym in _SPECIAL_KEYSYM_TO_CODE:
         return _SPECIAL_KEYSYM_TO_CODE[event.keysym]
+    if ctrl_or_command_held(getattr(event, "state", 0)):
+        code = _CTRL_KEYSYM_TO_CODE.get((event.keysym or "").lower())
+        if code is not None:
+            return code
+        if event.char and ord(event.char[0]) < 32:
+            # Any other Ctrl+letter gives a control character (Ctrl+N = 14 ...) that would fire an unrelated
+            # sidebar command: ignored.
+            return None
     if event.char:
         return ord(event.char[0]) & 0xFF
     return None
@@ -71,6 +90,10 @@ class EmbeddedCanvas:
         # canvas) is more reliable than binding <MouseWheel> directly on the widget.
         self.canvas.bind("<Enter>", self._on_enter)
         self.canvas.bind("<Leave>", self._on_leave)
+        if sys.platform == "darwin":
+            # v1.3.0: some macOS Tk builds turn Ctrl+click into a secondary click; it still means Ctrl+click here.
+            for sequence in ("<Control-Button-2>", "<Control-Button-3>"):
+                self.canvas.bind(sequence, self._on_press)
 
     def __init__(self, master, app):
         self.app = app
@@ -143,8 +166,13 @@ class EmbeddedCanvas:
 
     @staticmethod
     def _mouse_flags(event):
-        """Shift held -> cv2.EVENT_FLAG_SHIFTKEY, as the OpenCV window would report it (Shift+click tracing)."""
-        return cv2.EVENT_FLAG_SHIFTKEY if getattr(event, "state", 0) & 0x0001 else 0
+        """Shift held -> cv2.EVENT_FLAG_SHIFTKEY (Shift+click tracing); Ctrl (or Cmd on macOS) held ->
+        cv2.EVENT_FLAG_CTRLKEY (v1.3.0: click next to a crack marker without deleting that crack)."""
+        state = getattr(event, "state", 0) or 0
+        flags = cv2.EVENT_FLAG_SHIFTKEY if state & 0x0001 else 0
+        if ctrl_or_command_held(state):   # Control, + Command (Mod1) on macOS
+            flags |= cv2.EVENT_FLAG_CTRLKEY
+        return flags
 
     def _on_press(self, event):
         self.canvas.focus_set()
@@ -169,6 +197,10 @@ class EmbeddedCanvas:
             self.canvas.bind_all(sequence, self._on_wheel)
 
     def _on_leave(self, event):
+        # v1.3.0: the cursor left the photo, so the [Crack labels] window disappears.
+        clear_hover = getattr(self.app, "_clear_crack_label_hover", None)
+        if clear_hover is not None:
+            clear_hover()
         # Releases the global bindings once the mouse leaves this canvas.
         for sequence in self._WHEEL_SEQUENCES:
             self.canvas.unbind_all(sequence)
@@ -494,6 +526,8 @@ _RIGHT_SIDEBAR_SECTIONS = [
         ("\U0001F6AB", "Ignore region", "I", ord('i')),
         # v1.1.0: on = the next cracks are traced as uncertain (red); again = normal (code 7, uncertain_trace.py).
         ("\U0001F534", "Uncertain crack", "", 7),
+        # v1.3.0: after each trace, a weak crack is proposed as uncertain (code 12, warn_uncertain.py).
+        ("\u26A0", "Warn uncertain", "", 12),
     ]),
     ("Edit cracks", [
         ("\u2702", "Cut crack part", "1", ord('1')),
@@ -511,6 +545,8 @@ _RIGHT_SIDEBAR_SECTIONS = [
     ("Inspect cracks", [
         ("\U0001F522", "Show cracks by number", "", 19),
         ("\U0001F4CB", "Crack report", "", 16),
+        # v1.3.0: hover a crack number or line to read its data (code 11, crack_labels.py).
+        ("\U0001F4AC", "Crack labels", "", 11),
         ("\U0001F7E9", "Highlight viewed (HWAV)", "", 14),
     ]),
 ]
@@ -559,6 +595,8 @@ _SIDEBAR_TOGGLE_STATES = {
     20: lambda cfg: cfg.portion_state["active"] or cfg.portion_state["rect"] is not None,
     21: lambda cfg: cfg.eraser_state["active"],
     7: lambda cfg: cfg.uncertain_trace_mode,
+    11: lambda cfg: cfg.crack_labels_mode,
+    12: lambda cfg: cfg.warn_uncertain_mode,
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -566,6 +604,9 @@ _SIDEBAR_DYNAMIC_ICONS = {
     18: lambda cfg: "\u25C0" if cfg.alt_route_state["active"] and cfg.alt_route_state["direction"] < 0 else "\u25B6",
 }
 VALIDATION_CODE = 17
+# v1.3.0: Ctrl/Cmd+click on these sidebar buttons sends another code: [Crack tool] -> make a blue crack uncertain,
+# [Uncertain crack] -> make a red crack normal (then click the crack or its number).
+_SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE}
 # Sidebar buttons enabled only when this holds (greyed out otherwise): code -> reads it from cfg.
 _SIDEBAR_ENABLED_STATES = {
     code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
@@ -889,7 +930,20 @@ class SidebarPanel:
             command=lambda c=code: self.app._send(c),
         )
         btn.pack(fill="x", padx=4, pady=2, ipady=3)
+        if code in _SIDEBAR_CTRL_CLICK_CODES:
+            self._bind_ctrl_click(btn, _SIDEBAR_CTRL_CLICK_CODES[code])
         return btn
+
+    def _bind_ctrl_click(self, btn, alt_code):
+        """v1.3.0: Ctrl+click (Cmd+click on macOS) on the button sends alt_code instead of its own command."""
+        def on_ctrl_click(event, c=alt_code):
+            self.app._send(c)
+            return "break"   # the button is not pressed, so its own command does not run
+        sequences = ["<Control-Button-1>"]
+        if sys.platform == "darwin":
+            sequences += ["<Command-Button-1>", "<Control-Button-2>", "<Control-Button-3>"]
+        for sequence in sequences:
+            btn.bind(sequence, on_ctrl_click)
 
 
 class StatusBar:
@@ -903,6 +957,13 @@ class StatusBar:
     def __init__(self, master):
         frame = ttk.Frame(master)
         frame.pack(fill="x", side="bottom")
+
+        # v1.3.0: active tools/modes (Warn uncertain, Crack labels, Eraser ...), shown here instead of on the photo.
+        self.mode_label = tk.Label(frame, text="", justify="left", anchor="w", wraplength=460,
+                                   font=("TkDefaultFont", self.FONT_SIZE, "bold"), padx=6)
+        self.mode_label.pack(side="right", fill="y", padx=(0, 4), pady=4)
+        self._modes = ()
+        self._mode_default_bg = self.mode_label.cget("background")
 
         self.text = tk.Text(frame, height=self.HEIGHT_LINES, wrap="word", state="disabled",
                              font=("TkDefaultFont", self.FONT_SIZE))
@@ -932,6 +993,15 @@ class StatusBar:
 
     def scroll(self, units):
         self.text.yview_scroll(units, "units")
+
+    def set_modes(self, texts):
+        """Shows the active-mode lines (duplicates dropped, order kept); the widget is touched only when they change."""
+        modes = tuple(dict.fromkeys(t for t in texts if t))
+        if modes == self._modes:
+            return
+        self._modes = modes
+        self.mode_label.configure(text="\n".join(modes), background="#fff4c2" if modes else self._mode_default_bg,
+                                  foreground="#5a3a00")
 
 
 class _StatusBarStream:
@@ -1245,6 +1315,9 @@ _TOOL_COMMANDS = [
     ("\u25A6 Tool: Detachment\tD", ord('d')),
     ("\U0001F6AB Tool: Ignore region (occluded area)\tI", ord('i')),
     ("\U0001F534 Uncertain crack: next cracks traced as uncertain (red) / back to normal", 7),
+    ("\u26A0 Warn uncertain: propose weak new cracks as uncertain (confirm) / off", 12),
+    ("\U0001F534 Make a crack uncertain: click a blue crack or its number\tCtrl/Cmd+C", MARK_UNCERTAIN_CODE),
+    ("\U0001F535 Make a crack normal: click a red crack or its number\tCtrl/Cmd+U", MARK_NORMAL_CODE),
     ("\u2705 Close detachment / ignore polygon\tY", ord('y')),
     ("\u270E Toggle edit mode\tE", ord('e')),
     ("\U0001F9F2 Automatic snap / translate\tT", ord('t')),
@@ -1257,6 +1330,7 @@ _TOOL_COMMANDS = [
     ("\U0001F50D Building-group compatibility check\tG", ord('g')),
     ("\U0001F3F7 Manually assign building group\tB", ord('b')),
     ("\U0001F4CB Crack report (click a crack)", 16),
+    ("\U0001F4AC Crack labels: hover a crack to read its data / off", 11),
 ]
 
 _WIDTH_COMMANDS = [
@@ -1661,6 +1735,12 @@ class GuiCrackSegmentation(CrackSegmentation):
                    "Yes = save, then move\nNo = move it as last saved\nCancel = do nothing")
         return messagebox.askyesnocancel("Crack Detector - Unsaved changes", message, parent=self._tk_root)
 
+    def _confirm_warn_uncertain(self, number, reasons):
+        message = (f"Crack {number} is below the limit:\n  " + "\n  ".join(reasons) + "\n\n"
+                   "Save it as uncertain?\n\nYes = uncertain (red, JSON and masks updated now)\n"
+                   "No = keep it as a normal crack")
+        return bool(messagebox.askyesno("Crack Detector - Warn uncertain", message, parent=self._tk_root))
+
     def _confirm_remove_uncertain(self, count):
         message = (f"Remove the {count} uncertain crack(s) [?] shown on screen?\n\n"
                    "The JSON and the binary masks are updated right away; [U] undoes it on screen.")
@@ -1704,6 +1784,16 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _display_frame(self, window_name, frame):
         self._canvas.update_frame(frame)
+        # v1.3.0: the mode lines collected while drawing this frame go to the status bar.
+        modes, self._frame_mode_texts = getattr(self, "_frame_mode_texts", []), []
+        if hasattr(self, "_status_bar"):
+            self._status_bar.set_modes(modes)
+
+    def _put_hud_text(self, win_out, text, org, color, scale=None, thick=None):
+        """GUI: tool/mode indicators (UNCERTAIN MODE, WARN UNCERTAIN, ERASER ...) go to the status bar, not the photo."""
+        if not hasattr(self, "_frame_mode_texts"):
+            self._frame_mode_texts = []
+        self._frame_mode_texts.append(text)
 
     def _visible_canvas_top(self):
         """First frame row visible in the scrollable canvas, so the [J] panel stays on screen."""

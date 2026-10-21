@@ -108,6 +108,7 @@ class TestExport(unittest.TestCase):
             app.cfg.CURRENT_IMAGE_PATH = img_path
             app.cfg.JSON_OUTPUT_PATH = os.path.join(tmpdir, "wall.json")
             app.cfg.modalita_scelta = "2"
+            app.cfg.CRACK_UNCERTAIN_AUTO = True   # v1.3.0: automatic rule off by default
             app.cfg.CRACK_UNCERTAIN_RELIABILITY_PCT = None
             app.cfg.CRACK_UNCERTAIN_CONFIDENCE = 0.8
             app.cfg.saved_cracks = [

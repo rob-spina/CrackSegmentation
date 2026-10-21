@@ -167,7 +167,8 @@ class LabelFrame(_Widget):
 
 
 class Label(_Widget):
-    pass
+    def cget(self, key):
+        return self.kw.get(key, "" if key == "text" else "#ececec")
 
 
 class Button(_Widget):
