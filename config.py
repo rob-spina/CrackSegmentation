@@ -530,6 +530,20 @@ class Config:
         'normal' = the next clicked cracks get that class (crack_relabel.py)."""
         self.crack_relabel_mode = None
 
+    def _init_crack_extremes_state(self):
+        """v1.4.0 [Edit extremes] (sidebar, key [4], process_keypress() code 132): while on, crack ends are large red
+        dots that can be dragged to lengthen / shorten the crack (crack_extremes.py); saved when the mode closes."""
+        self.crack_extremes_state = {"active": False, "grab": None, "cursor": None, "changed": False}
+        # Radius of the red end dots and how close (window px) a click must be to pick one.
+        self.EXTREME_DOT_WIN_PX = 9
+        self.EXTREME_PICK_WIN_PX = 16
+
+    def _init_crack_class_view_state(self):
+        """v1.4.0 [Hide uncertain overlay] / [Hide normal overlay] (codes 130 / 131): on-screen fill of each crack
+        class, independent of [N] (which hides both)."""
+        self.show_uncertain_overlay = True
+        self.show_normal_overlay = True
+
     def _init_interrupted_trace_settings(self):
         """v1.2.0 Interrupted crack: a Crack-tool trace whose route crosses a stretch with no crack (binary mask)
         is stored as separate cracks, one per continuous piece, and an on-screen message says so."""
@@ -617,6 +631,8 @@ class Config:
         self._init_crack_labels_state()
         self._init_warn_uncertain_state()
         self._init_crack_relabel_state()
+        self._init_crack_extremes_state()
+        self._init_crack_class_view_state()
         self._init_interrupted_trace_settings()
         self._init_dataset_split_settings()
         self._init_validation_settings()
