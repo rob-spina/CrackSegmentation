@@ -60,6 +60,22 @@ def _texts(panel):
 
 class TestManualRenderFailure(unittest.TestCase):
 
+    def test_pymupdf_failing_on_import_is_reported(self):
+        panel = gm.PdfManualPanel(fake_tkinter.Tk(), "/fake/manual.pdf")
+        with mock.patch.object(panel, "_import_pymupdf",
+                               side_effect=FileNotFoundError("pymupdf/layout/resources/onnx/layout.yaml")):
+            panel.show()   # must not raise
+        texts = _texts(panel)
+        self.assertTrue(any("PyMuPDF" in t and "layout.yaml" in t for t in texts), texts)
+
+    def test_spec_bundles_the_pymupdf_data_files(self):
+        spec = os.path.join(os.path.dirname(os.path.abspath(__file__)), "packaging", "crack_segmentation_gui.spec")
+        with open(spec, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn('collect_data_files("pymupdf")', text)
+        self.assertIn("+ PYMUPDF_DATAS", text)
+
+
     def _patch(self, module):
         patcher = mock.patch.dict(sys.modules, {"fitz": module, "pymupdf": module})
         patcher.start()

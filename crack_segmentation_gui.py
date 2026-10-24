@@ -336,7 +336,8 @@ class PdfManualPanel:
         self.canvas.configure(scrollregion=(0, 0, 800, 100))
 
     def _import_pymupdf(self):
-        """Prefers the modern `import pymupdf` name over the deprecated `fitz` alias. Returns None if neither is available."""
+        """Prefers the modern `import pymupdf` name over the deprecated `fitz` alias. Returns None if neither is available.
+        Any other import failure (v1.4.2: a PyMuPDF data file missing from the app) is re-raised and shown in the panel."""
         try:
             import pymupdf as fitz
             return fitz
@@ -349,7 +350,11 @@ class PdfManualPanel:
             return None
 
     def _load_and_render(self):
-        fitz = self._import_pymupdf()
+        try:
+            fitz = self._import_pymupdf()
+        except Exception as e:
+            self._show_fallback_message(f"The PDF viewer (PyMuPDF) could not start:\n{type(e).__name__}: {e}")
+            return
         if fitz is None:
             self._show_fallback_message(
                 "The PDF viewer needs the 'pymupdf' package.\n"

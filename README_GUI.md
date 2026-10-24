@@ -32,6 +32,14 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.4.2: manuale PDF nell'app installata
+
+- **Manuale nell'app installata**: le versioni recenti di PyMuPDF, all'import, leggono
+  file di dati propri (`pymupdf/layout/resources/...`) che PyInstaller non copiava
+  nell'app, quindi il manuale falliva con `FileNotFoundError`. Lo spec ora include
+  tutti i file di dati di PyMuPDF (`collect_data_files("pymupdf")`), e un errore
+  all'avvio di PyMuPDF viene mostrato nel pannello. `test_v140_manual.py`: 2 test nuovi.
+
 ## Novità 1.4.1: manuale PDF
 
 - **Manuale ([?] / Manual)**: se il disegno delle pagine falliva dopo l'apertura del PDF,
