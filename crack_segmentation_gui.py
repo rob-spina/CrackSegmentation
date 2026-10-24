@@ -304,7 +304,11 @@ class PdfManualPanel:
         """Renders one PDF page at vertical offset y, horizontally centered within viewport_width. Returns (page_width, page_height)."""
         pix = page.get_pixmap(dpi=dpi)
         mode = "RGBA" if pix.alpha else "RGB"
-        pil_image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+        stride = getattr(pix, "stride", None)   # v1.4.0: rows may be padded in some PyMuPDF builds
+        if stride:
+            pil_image = Image.frombytes(mode, (pix.width, pix.height), bytes(pix.samples), "raw", mode, stride)
+        else:
+            pil_image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
         photo = ImageTk.PhotoImage(pil_image)
         self._photo_refs.append(photo)
         x = max(0, (viewport_width - pix.width) // 2)
@@ -359,6 +363,12 @@ class PdfManualPanel:
             return
         try:
             self._render_all_pages(doc)
+        except Exception as e:
+            # v1.4.0 USER REPORT: a failure here left a blank grey panel and broke the [?] toggle.
+            self.canvas.delete("all")
+            self._photo_refs.clear()
+            self._show_fallback_message(f"Could not display the user manual:\n{self._pdf_path}\n"
+                                        f"{type(e).__name__}: {e}")
         finally:
             doc.close()
 
@@ -366,9 +376,12 @@ class PdfManualPanel:
         """Packs the panel, then renders the PDF on first call only. Packed before rendering so winfo_width() reflects the real on-screen width."""
         self.frame.pack(fill="both", expand=True)
         if not self._rendered:
+            self._rendered = True   # set first: a failed render is not retried on every press
             self.canvas.update_idletasks()
-            self._load_and_render()
-            self._rendered = True
+            try:
+                self._load_and_render()
+            except Exception as e:
+                self._show_fallback_message(f"Could not display the user manual:\n{type(e).__name__}: {e}")
 
     def hide(self):
         self.frame.pack_forget()
@@ -1829,8 +1842,9 @@ class GuiCrackSegmentation(CrackSegmentation):
                 self._dataset_panel.hide()
                 self._dataset_panel_visible = False
             self._middle_row.pack_forget()
-            self._pdf_panel.show()
+            # Set before show(): if the manual fails, the next [?] still brings the photo back (v1.4.0).
             self._pdf_panel_visible = True
+            self._pdf_panel.show()
 
     def _toggle_dataset_browser(self):
         """GUI override (code 31): shows/hides the Dataset browser over the whole image, like the manual."""

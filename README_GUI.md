@@ -32,6 +32,15 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.4.1: manuale PDF
+
+- **Manuale ([?] / Manual)**: se il disegno delle pagine falliva dopo l'apertura del PDF,
+  restava un pannello grigio vuoto e premendo di nuovo Manual la foto non tornava più.
+  Ora nel pannello compare il messaggio d'errore, la seconda pressione riporta sempre
+  alla foto e l'errore non viene ritentato a ogni pressione; le pagine con righe
+  allineate (stride di PyMuPDF) vengono lette correttamente. `test_v140_manual.py`:
+  4 test nuovi.
+
 ## Novità 1.4.0: Edit extremes, marker nascosti con un clic, overlay per classe
 
 - **↦ Edit extremes** (barra destra, sezione Edit cracks, e menu Tools; tasto **4**, codice
