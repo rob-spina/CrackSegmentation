@@ -87,7 +87,7 @@ class UncertainTraceMixin:
 
     def _paint_red_uncertain_overlay(self, scene, k, h_actual, w_active, region=None):
         """Paints the operator-uncertain cracks red over the blue fill (same dilation, so red replaces blue)."""
-        if not self.cfg.show_crack_overlay:
+        if not self.cfg.show_crack_overlay or not self.cfg.show_uncertain_overlay:
             return
         mask = self._manual_uncertain_mask(h_actual, w_active, region)
         if mask is None:

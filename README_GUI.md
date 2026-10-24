@@ -32,6 +32,32 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.4.0: Edit extremes, marker nascosti con un clic, overlay per classe
+
+- **↦ Edit extremes** (barra destra, sezione Edit cracks, e menu Tools; tasto **4**, codice
+  132; `crack_extremes.py`): premuto una volta, i numeri delle crepe scompaiono e ogni
+  estremo diventa un pallino rosso grande. Clic (o pressione e trascinamento) su un
+  pallino: gli altri scompaiono, compare una linea arancione verso il cursore; clic sul
+  punto da raggiungere e la crepa si allunga seguendo il bordo della fessura (A*, come un
+  tracciamento normale), oppure clic sulla crepa stessa per accorciarla. Ricliccando lo
+  stesso pallino lo si rilascia e ricompaiono tutti. I tratti Width-edit restano agganciati
+  ai punti giusti. I clic lontano dai pallini tracciano nuove crepe (senza cancellazione
+  dal marker); Cmd/Ctrl+C e Cmd/Ctrl+U non chiudono la modalità; con Zoom window attivo
+  la pressione su un pallino va a Edit extremes, il trascinamento altrove continua a fare
+  lo zoom. [U] annulla ogni modifica. Premuto di nuovo (pulsante o 4), o scegliendo un
+  altro comando, i numeri ricompaiono e JSON e maschere vengono scritti; la navigazione
+  senza salvataggio chiude la modalità senza scrivere.
+- **Clic sulla linea di una crepa** (Crack tool, nessun tracciamento in corso;
+  `crack_class_view.py`): nasconde l'intero marker della crepa (quadrato giallo con il
+  numero e pallino finale); un secondo clic sulla crepa lo fa ricomparire. Un marker
+  nascosto non può cancellare la crepa. Shift+clic o Cmd/Ctrl+clic sulla linea iniziano
+  invece un tracciamento. Solo a schermo, non salvato nel JSON.
+- **🟥 Hide uncertain overlay / 🟦 Hide normal overlay** (barra sinistra, sezione View, e
+  menu View; codici 130 e 131; `crack_class_view.py`): nascondono solo il riempimento
+  rosso delle crepe uncertain o solo quello blu delle normali; [N] continua a nasconderli
+  entrambi. Marker, numeri e file esportati non cambiano.
+- `test_v140_features.py`: 53 test nuovi.
+
 ## Novità 1.3.0: Ctrl+C / Ctrl+U, Crack labels, Warn uncertain, Ctrl+clic
 
 - **💬 Crack labels** (barra destra, sezione Inspect cracks, e menu Tools; codice 11;

@@ -41,6 +41,8 @@ from interrupted_trace import InterruptedTraceMixin
 from crack_labels import CrackLabelsMixin, CRACK_LABELS_CODE
 from warn_uncertain import WarnUncertainMixin, WARN_UNCERTAIN_CODE
 from crack_relabel import CrackRelabelMixin, RELABEL_TARGET_BY_CODE
+from crack_extremes import CrackExtremesMixin, CRACK_EXTREMES_CODE, CRACK_EXTREMES_KEY
+from crack_class_view import CrackClassViewMixin, HIDE_UNCERTAIN_OVERLAY_CODE, HIDE_NORMAL_OVERLAY_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -48,7 +50,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin,
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
                         DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
-                        CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin):
+                        CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
+                        CrackExtremesMixin, CrackClassViewMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -2337,6 +2340,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._reset_session_editing_state()
         self._reset_inspection_tools_for_new_image()
         self._reset_crack_labels_for_new_image()
+        self._reset_crack_extremes_for_new_image()
         self._reset_alt_routes_for_new_image()
         self._reset_crack_filter()
         self._reset_building_portion()
@@ -4139,10 +4143,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
     def _delete_crack_near(self, real_x, real_y):
         """Deletes the first crack with a start/end marker within click
-        tolerance. Returns True if one was deleted."""
+        tolerance. Returns True if one was deleted. Cracks whose markers are hidden (v1.4.0) are skipped."""
         tolleranza_click = 22
         for idx, f in enumerate(self.cfg.saved_cracks):
-            if not self._crack_shown(f):
+            if not self._crack_shown(f) or self._crack_number_hidden(f):
                 continue
             for k_p in ['start', 'end']:
                 if k_p in f:
@@ -4234,10 +4238,15 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
     def _crack_tool_click(self, x, y, flags=0):
         """Dispatches a crack-tool click: delete-by-proximity (only with no trace in progress, and never with
-        Ctrl/Cmd held, v1.3.0), else start/complete a trace; Shift+click while tracing adds an intermediate point."""
+        Ctrl/Cmd held, v1.3.0), else start/complete a trace; Shift+click while tracing adds an intermediate point.
+        v1.4.0: a plain click ON a crack line (no trace in progress) hides / shows its number; Shift+click or
+        Ctrl/Cmd+click there starts a trace instead. Not in [Edit extremes], where every number is hidden anyway."""
         real_x, real_y = self.transform_window_to_real_coords(x, y)
         keep_cracks = bool(flags & cv2.EVENT_FLAG_CTRLKEY)
         if self.cfg.temp_start is None and not keep_cracks and self._delete_crack_near(real_x, real_y):
+            return
+        if (self.cfg.temp_start is None and not keep_cracks and not flags & cv2.EVENT_FLAG_SHIFTKEY
+                and not self.cfg.crack_extremes_state["active"] and self._toggle_crack_number_at(real_x, real_y)):
             return
         if self.cfg.temp_start is None:
             self._start_new_crack_trace(real_x, real_y)
@@ -4354,11 +4363,21 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 self._handle_crack_relabel_mouse(event, x, y)
                 return
 
+            if self.cfg.crack_extremes_state["active"] and self._extremes_owns_event(event, x, y):
+                # v1.4.0: a red end dot (picked or pressed) wins over Zoom window, so it can be dragged there too.
+                self._handle_crack_extremes_mouse(event, x, y, flags)
+                return
+
             if self.cfg.zoom_window_state["active"]:
                 # Drags zoom; plain clicks and hover moves go on to the tool below (tracing while zoomed).
                 event = self._handle_zoom_window_mouse(event, x, y)
                 if event is None:
                     return
+
+            if self.cfg.crack_extremes_state["active"]:
+                # v1.4.0 [Edit extremes]: clicks pick a red end dot, then the point the crack should reach.
+                self._handle_crack_extremes_mouse(event, x, y, flags)
+                return
 
             if self.cfg.alt_route_state["active"]:
                 self._handle_alt_route_mouse(event, x, y)
@@ -4465,7 +4484,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         """Paints every width-edited tract's real fill shape, for every
         saved crack -- not just the one currently focused."""
         for _wf in self.cfg.saved_cracks:
-            if not _wf.get('active', True) or not self._crack_shown(_wf):
+            if not _wf.get('active', True) or not self._crack_shown(_wf) or not self._crack_class_shown(_wf):
                 continue
             _wf_path = _wf.get('path')
             if not _wf_path:
@@ -4796,9 +4815,12 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 cv2.line(win_out, (wx, wy-marker_dim+5), (wx, wy+marker_dim-5), (0, 255, 255), 2)
 
     def _draw_crack_markers(self, win_out, marker_dim):
-        """Draws every saved crack's start/end markers, numbered from 1 like the Crack Reliability panel."""
+        """Draws every saved crack's start/end markers, numbered from 1 like the Crack Reliability panel.
+        Hidden while [Edit extremes] is on: the red end dots replace them."""
+        if self.cfg.crack_extremes_state["active"]:
+            return
         for number, f in enumerate(self.cfg.saved_cracks, start=1):
-            if self._crack_shown(f):
+            if self._crack_shown(f) and not self._crack_number_hidden(f):   # v1.4.0: hidden by a click on it
                 self._draw_one_crack_marker(win_out, f, marker_dim, number)
 
     def _draw_temp_crack_start_marker(self, win_out, marker_dim):
@@ -5554,6 +5576,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_crack_labels_hud(win_out)
         self._draw_warn_uncertain_label(win_out)
         self._draw_crack_relabel_label(win_out)
+        self._draw_crack_extremes(win_out)
         self._draw_building_portion(win_out)
 
         hm = self._compute_hud_font_metrics()
@@ -5784,6 +5807,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             return False
 
         self._cancel_crack_relabel_for_key(key_clean)   # v1.3.0: Cut, Join, a tool ... cancel a pending Ctrl/Cmd+C/U
+        self._close_crack_extremes_for_key(key_clean)   # v1.4.0: another command closes [Edit extremes] (saved)
 
         if key_raw == 27:
             self._handle_escape_key()
@@ -5850,6 +5874,15 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == WARN_UNCERTAIN_CODE:   # v1.3.0: weak new cracks proposed as uncertain
             self._toggle_warn_uncertain()
+
+        elif key_clean in (CRACK_EXTREMES_CODE, CRACK_EXTREMES_KEY):   # v1.4.0 [4]: drag a crack's end dots
+            self._toggle_crack_extremes()
+
+        elif key_clean == HIDE_UNCERTAIN_OVERLAY_CODE:   # v1.4.0: hide only the red (uncertain) fill
+            self._toggle_uncertain_overlay()
+
+        elif key_clean == HIDE_NORMAL_OVERLAY_CODE:   # v1.4.0: hide only the blue (normal) fill
+            self._toggle_normal_overlay()
 
         elif key_clean in RELABEL_TARGET_BY_CODE:   # v1.3.0: Ctrl/Cmd+C / Ctrl/Cmd+U, then click a crack
             self._toggle_crack_relabel(RELABEL_TARGET_BY_CODE[key_clean])

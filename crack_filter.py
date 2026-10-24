@@ -87,17 +87,22 @@ class CrackFilterMixin:
 
     def _refresh_filtered_crack_mask(self):
         """Display-only blue mask of the cracks the filter shows (None with no filter); rebuilt with the masks."""
-        if self.cfg.crack_filter is None or self.cfg.blue_visual_mask is None:
+        if not self._blue_mask_filtered() or self.cfg.blue_visual_mask is None:
             self.cfg.filtered_blue_mask = None
             return
         mask = np.zeros_like(self.cfg.blue_visual_mask)
-        self._stamp_points_on_mask(mask, [c for c in self.cfg.saved_cracks if self._crack_shown(c)])
+        self._stamp_points_on_mask(mask, [c for c in self.cfg.saved_cracks
+                                          if self._crack_shown(c) and self._crack_class_shown(c)])
         self.cfg.filtered_blue_mask = mask
+
+    def _blue_mask_filtered(self):
+        """True when the on-screen fill leaves some cracks out: number filter, or a hidden class (v1.4.0)."""
+        return self.cfg.crack_filter is not None or not self._both_crack_classes_shown()
 
     def _display_blue_mask(self):
         """The blue mask drawn on screen: filtered when the number filter is on."""
         mask = self.cfg.filtered_blue_mask
-        if self.cfg.crack_filter is not None and mask is not None and mask.shape == self.cfg.blue_visual_mask.shape:
+        if self._blue_mask_filtered() and mask is not None and mask.shape == self.cfg.blue_visual_mask.shape:
             return mask
         return self.cfg.blue_visual_mask
 

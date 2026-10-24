@@ -55,7 +55,8 @@ class CrackLabelsMixin:
         """Index of the crack whose number marker (start square, window space) holds (x, y), else None."""
         half = self.cfg.CRACK_LABEL_MARKER_WIN_PX
         for idx, f in enumerate(self.cfg.saved_cracks):
-            if 'start' not in f or not f.get('active', True) or not f.get('path') or not self._crack_shown(f):
+            if ('start' not in f or not f.get('active', True) or not f.get('path') or not self._crack_shown(f)
+                    or f.get('number_hidden')):   # v1.4.0: marker hidden by a click on the crack
                 continue
             wx, wy = self.transform_real_to_window_coords(int(f['start'][0]), int(f['start'][1]))
             if abs(x - wx) <= half and abs(y - wy) <= half:

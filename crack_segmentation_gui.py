@@ -533,6 +533,8 @@ _RIGHT_SIDEBAR_SECTIONS = [
         ("\u2702", "Cut crack part", "1", ord('1')),
         ("\U0001F517", "Join / re-route", "2", ord('2')),
         ("\u26D3", "Link two cracks", "3", ord('3')),
+        # v1.4.0: red end dots, drag one to lengthen / shorten the crack; again = save (code 132, crack_extremes.py).
+        ("\u21A6", "Edit extremes", "4", 132),
         # v1.0.8 button-only clean-up tools (codes 21-22, see crack_cleanup.py).
         ("\u232B", "Eraser", "", 21),
         ("\U0001F5D1", "Remove uncertain [?]", "", 22),
@@ -554,6 +556,9 @@ _RIGHT_SIDEBAR_SECTIONS = [
 _LEFT_SIDEBAR_SECTIONS = [
     ("View", [
         ("\U0001F535", "Toggle blue overlay", "N", ord('n')),
+        # v1.4.0: hide the fill of one class only (codes 130 / 131, crack_class_view.py); [N] hides both.
+        ("\U0001F7E5", "Hide uncertain overlay", "", 130),
+        ("\U0001F7E6", "Hide normal overlay", "", 131),
         ("\U0001F4CD", "Toggle markers", "Space", ord(' ')),
         ("\u2B1A", "Zoom window", "", 15),
         ("\U0001F50E", "Reset zoom", "0", ord('0')),
@@ -597,6 +602,9 @@ _SIDEBAR_TOGGLE_STATES = {
     7: lambda cfg: cfg.uncertain_trace_mode,
     11: lambda cfg: cfg.crack_labels_mode,
     12: lambda cfg: cfg.warn_uncertain_mode,
+    130: lambda cfg: not cfg.show_uncertain_overlay,
+    131: lambda cfg: not cfg.show_normal_overlay,
+    132: lambda cfg: cfg.crack_extremes_state["active"],
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -1325,6 +1333,7 @@ _TOOL_COMMANDS = [
     ("\u2702 Cut a crack part (2 clicks)\t1", ord('1')),
     ("\U0001F517 Join / re-route cracks (2 clicks)\t2", ord('2')),
     ("\u26D3 Link two cracks end-to-start (2 clicks)\t3", ord('3')),
+    ("\u21A6 Edit extremes: drag a crack's red end dot to lengthen it / save\t4", 132),
     ("\u232B Eraser: drag over a crack to erase that part", 21),
     ("\U0001F5D1 Remove uncertain cracks [?]", 22),
     ("\U0001F50D Building-group compatibility check\tG", ord('g')),
@@ -1351,6 +1360,8 @@ _VIEW_COMMANDS = [
     ("\U0001F520 Toggle HUD size\tH", ord('h')),
     ("\U0001F4CD Toggle markers\tSpace", ord(' ')),
     ("\U0001F535 Toggle blue crack overlay\tN", ord('n')),
+    ("\U0001F7E5 Hide / show uncertain (red) crack overlay", 130),
+    ("\U0001F7E6 Hide / show normal (blue) crack overlay", 131),
     ("\u2139 Toggle Info (file/length/building status)\tJ", ord('j')),
     ("\U0001F515 Hide on-screen messages\t.", ord('.')),
     ("\U0001F5BC Toggle overlay in export\tM", ord('m')),
