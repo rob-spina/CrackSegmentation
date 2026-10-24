@@ -35,7 +35,16 @@ console=False if that turns out to be unrelated.
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
+
+# v1.4.2 USER REPORT: recent PyMuPDF reads data files of its own on import (pymupdf/layout/resources/...);
+# PyInstaller did not copy them, so the manual failed with FileNotFoundError. Every PyMuPDF data file is bundled.
+try:
+    PYMUPDF_DATAS = collect_data_files("pymupdf")
+except Exception:
+    PYMUPDF_DATAS = []   # PyMuPDF not installed: the app shows the manual's fallback message
 
 # This spec lives in <project>/packaging/ -- the actual source files
 # (crack_segmentation_gui.py, smart_segmentation.py, config.py,
@@ -54,7 +63,7 @@ a = Analysis(
     datas=[
         (str(Path(SRC_DIR) / "Crack_Segmentation_User_Manual.pdf"), "."),
         (str(Path(SRC_DIR) / "echo_twin_logo.png"), "."),
-    ],
+    ] + PYMUPDF_DATAS,
     hiddenimports=[
         # scikit-image lazily imports several of its own compiled
         # extensions; PyInstaller's static analysis sometimes misses
@@ -142,7 +151,7 @@ if sys.platform == "darwin":
         bundle_identifier="local.crackseg.gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "1.4.1",
+            "CFBundleShortVersionString": "1.4.2",
             "NSHumanReadableCopyright": "Internal tool",
         },
     )
