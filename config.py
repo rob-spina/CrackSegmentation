@@ -544,6 +544,12 @@ class Config:
         self.show_uncertain_overlay = True
         self.show_normal_overlay = True
 
+    def _init_xml_reference_state(self):
+        """v1.5.0 [XML reference] (code 133, xml_reference.py): damage regions of 'XML files/<photo>.xml' drawn as a
+        tracing guide, on screen only. state caches the parsed regions of the current photo."""
+        self.show_xml_reference = True
+        self.xml_reference_state = {"image": None, "regions": []}
+
     def _init_interrupted_trace_settings(self):
         """v1.2.0 Interrupted crack: a Crack-tool trace whose route crosses a stretch with no crack (binary mask)
         is stored as separate cracks, one per continuous piece, and an on-screen message says so."""
@@ -633,6 +639,7 @@ class Config:
         self._init_crack_relabel_state()
         self._init_crack_extremes_state()
         self._init_crack_class_view_state()
+        self._init_xml_reference_state()
         self._init_interrupted_trace_settings()
         self._init_dataset_split_settings()
         self._init_validation_settings()
