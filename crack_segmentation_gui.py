@@ -12,6 +12,7 @@ from config import Config
 from smart_segmentation import CrackSegmentation
 from go_to_image import PagedChooser
 from crack_relabel import MARK_UNCERTAIN_CODE, MARK_NORMAL_CODE
+from crack_branch_merge import MERGE_BRANCH_CODE, MERGE_BRANCH_EXIT_CODE
 
 
 # Keyboard translation: Tk <KeyPress> event -> the same integer code
@@ -551,6 +552,8 @@ _RIGHT_SIDEBAR_SECTIONS = [
         ("\u2702", "Cut crack part", "1", ord('1')),
         ("\U0001F517", "Join / re-route", "2", ord('2')),
         ("\u26D3", "Link two cracks", "3", ord('3')),
+        # v1.5.0: first click = main crack, next clicks = its branches; Shift+click / Shift+C exit (crack_branch_merge.py).
+        ("\U0001F33F", "Merge crack branches", "", MERGE_BRANCH_CODE),
         # v1.4.0: red end dots, drag one to lengthen / shorten the crack; again = save (code 132, crack_extremes.py).
         ("\u21A6", "Edit extremes", "4", 132),
         # v1.0.8 button-only clean-up tools (codes 21-22, see crack_cleanup.py).
@@ -626,6 +629,7 @@ _SIDEBAR_TOGGLE_STATES = {
     131: lambda cfg: not cfg.show_normal_overlay,
     132: lambda cfg: cfg.crack_extremes_state["active"],
     133: lambda cfg: cfg.show_xml_reference,
+    MERGE_BRANCH_CODE: lambda cfg: cfg.crack_branch_merge_state["active"],
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -636,6 +640,8 @@ VALIDATION_CODE = 17
 # v1.3.0: Ctrl/Cmd+click on these sidebar buttons sends another code: [Crack tool] -> make a blue crack uncertain,
 # [Uncertain crack] -> make a red crack normal (then click the crack or its number).
 _SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE}
+# v1.5.0: Shift+click on these sidebar buttons sends another code: [Merge crack branches] -> exit the mode.
+_SIDEBAR_SHIFT_CLICK_CODES = {MERGE_BRANCH_CODE: MERGE_BRANCH_EXIT_CODE}
 # Sidebar buttons enabled only when this holds (greyed out otherwise): code -> reads it from cfg.
 _SIDEBAR_ENABLED_STATES = {
     code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
@@ -961,7 +967,16 @@ class SidebarPanel:
         btn.pack(fill="x", padx=4, pady=2, ipady=3)
         if code in _SIDEBAR_CTRL_CLICK_CODES:
             self._bind_ctrl_click(btn, _SIDEBAR_CTRL_CLICK_CODES[code])
+        if code in _SIDEBAR_SHIFT_CLICK_CODES:
+            self._bind_shift_click(btn, _SIDEBAR_SHIFT_CLICK_CODES[code])
         return btn
+
+    def _bind_shift_click(self, btn, alt_code):
+        """v1.5.0: Shift+click on the button sends alt_code instead of its own command."""
+        def on_shift_click(event, c=alt_code):
+            self.app._send(c)
+            return "break"   # the button is not pressed, so its own command does not run
+        btn.bind("<Shift-Button-1>", on_shift_click)
 
     def _bind_ctrl_click(self, btn, alt_code):
         """v1.3.0: Ctrl+click (Cmd+click on macOS) on the button sends alt_code instead of its own command."""
@@ -1354,6 +1369,8 @@ _TOOL_COMMANDS = [
     ("\u2702 Cut a crack part (2 clicks)\t1", ord('1')),
     ("\U0001F517 Join / re-route cracks (2 clicks)\t2", ord('2')),
     ("\u26D3 Link two cracks end-to-start (2 clicks)\t3", ord('3')),
+    ("\U0001F33F Merge crack branches: click the main crack, then its branches", MERGE_BRANCH_CODE),
+    ("\U0001F33F Exit merge crack branches\tShift+C", MERGE_BRANCH_EXIT_CODE),
     ("\u21A6 Edit extremes: drag a crack's red end dot to lengthen it / save\t4", 132),
     ("\u232B Eraser: drag over a crack to erase that part", 21),
     ("\U0001F5D1 Remove uncertain cracks [?]", 22),

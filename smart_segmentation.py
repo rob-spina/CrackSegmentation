@@ -44,6 +44,7 @@ from crack_relabel import CrackRelabelMixin, RELABEL_TARGET_BY_CODE
 from crack_extremes import CrackExtremesMixin, CRACK_EXTREMES_CODE, CRACK_EXTREMES_KEY
 from crack_class_view import CrackClassViewMixin, HIDE_UNCERTAIN_OVERLAY_CODE, HIDE_NORMAL_OVERLAY_CODE
 from xml_reference import XmlReferenceMixin, XML_REFERENCE_CODE
+from crack_branch_merge import CrackBranchMergeMixin, MERGE_BRANCH_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -52,7 +53,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
                         DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
                         CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
-                        CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin):
+                        CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin,
+                        CrackBranchMergeMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -1205,10 +1207,12 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 flags = {"uncertain": bool(uncertain)}
                 if manual:
                     flags["uncertain_manual"] = True
+                if f.get('crack_group') is not None:   # v1.5.0 [Merge crack branches]: main crack + branches
+                    flags["branch_main" if f.get('branch_main') else "branch"] = True
                 shape_dict = {
                     "label": self.cfg.CRACK_UNCERTAIN_LABEL if uncertain else "crack",
                     "points": [[float(pt[0]), float(pt[1])] for pt in f['path']],
-                    "group_id": None, "shape_type": "linestrip", "flags": flags,
+                    "group_id": f.get('crack_group'), "shape_type": "linestrip", "flags": flags,
                     "reliability_pct": None if reliability is None else round(float(reliability), 1),
                     "confidence": None if confidence is None else round(float(confidence), 3),
                     "multiview": self._crack_multiview(f['path']),
@@ -1867,7 +1871,21 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             crack['links'] = links
         if (shape.get("flags") or {}).get("uncertain_manual"):
             crack['uncertain_manual'] = True   # v1.1.0: marked uncertain by the operator
+        self._load_branch_group(shape, crack)   # v1.5.0 [Merge crack branches]
         return crack
+
+    @staticmethod
+    def _load_branch_group(shape, crack):
+        """v1.5.0: a crack saved as main crack or branch keeps its group (the shape's group_id)."""
+        flags = shape.get("flags") or {}
+        gid = shape.get("group_id")
+        if gid is None or not (flags.get("branch_main") or flags.get("branch")):
+            return
+        try:
+            crack['crack_group'] = int(gid)
+        except (TypeError, ValueError):
+            return
+        crack['branch_main' if flags.get("branch_main") else 'branch'] = True
 
     @staticmethod
     def _load_links(shape):
@@ -4364,6 +4382,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 self._handle_crack_relabel_mouse(event, x, y)
                 return
 
+            if self.cfg.crack_branch_merge_state["active"]:
+                # v1.5.0 [Merge crack branches]: first click = main crack, next clicks = its branches.
+                self._handle_crack_branch_merge_mouse(event, x, y)
+                return
+
             if self.cfg.crack_extremes_state["active"] and self._extremes_owns_event(event, x, y):
                 # v1.4.0: a red end dot (picked or pressed) wins over Zoom window, so it can be dragged there too.
                 self._handle_crack_extremes_mouse(event, x, y, flags)
@@ -4820,9 +4843,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         Hidden while [Edit extremes] is on: the red end dots replace them."""
         if self.cfg.crack_extremes_state["active"]:
             return
-        for number, f in enumerate(self.cfg.saved_cracks, start=1):
+        for idx, f in enumerate(self.cfg.saved_cracks):
             if self._crack_shown(f) and not self._crack_number_hidden(f):   # v1.4.0: hidden by a click on it
-                self._draw_one_crack_marker(win_out, f, marker_dim, number)
+                # v1.5.0: a branch reads N.k (k-th branch of main crack N)
+                self._draw_one_crack_marker(win_out, f, marker_dim, self._crack_marker_label(idx))
 
     def _draw_temp_crack_start_marker(self, win_out, marker_dim):
         """Draws the marker at an in-progress crack's start point,
@@ -5578,6 +5602,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_crack_labels_hud(win_out)
         self._draw_warn_uncertain_label(win_out)
         self._draw_crack_relabel_label(win_out)
+        self._draw_crack_branch_merge_label(win_out)
         self._draw_crack_extremes(win_out)
         self._draw_building_portion(win_out)
 
@@ -5808,6 +5833,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self._handle_manual_group_entry_keypress(key_clean)
             return False
 
+        if self._handle_crack_branch_merge_key(key_clean):   # v1.5.0: Shift+C / code 135 end [Merge crack branches]
+            return False
         self._cancel_crack_relabel_for_key(key_clean)   # v1.3.0: Cut, Join, a tool ... cancel a pending Ctrl/Cmd+C/U
         self._close_crack_extremes_for_key(key_clean)   # v1.4.0: another command closes [Edit extremes] (saved)
 
@@ -5888,6 +5915,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == XML_REFERENCE_CODE:   # v1.5.0: XML damage regions as a tracing guide
             self._toggle_xml_reference()
+
+        elif key_clean == MERGE_BRANCH_CODE:   # v1.5.0: main crack + branches, Shift+C exits
+            self._start_crack_branch_merge()
 
         elif key_clean in RELABEL_TARGET_BY_CODE:   # v1.3.0: Ctrl/Cmd+C / Ctrl/Cmd+U, then click a crack
             self._toggle_crack_relabel(RELABEL_TARGET_BY_CODE[key_clean])

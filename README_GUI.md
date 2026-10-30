@@ -32,6 +32,29 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 1.5.0: XML reference, Merge crack branches
+
+- **🟨 XML reference** (barra sinistra, sezione View, e menu View; codice 133;
+  `xml_reference.py`): disegna sulla foto le regioni di danno di
+  `XML files/<foto>.xml` (riquadri e poligoni in stile Pascal VOC) come guida al
+  tracciamento: crepe in giallo, altre classi in ciano, con l'etichetta. Solo a schermo:
+  mai nel JSON, nelle maschere o nelle immagini esportate. Accetta anche una cartella
+  `XML files ` con uno spazio finale. `test_v150_xml_reference.py`.
+- **🌿 Merge crack branches** (barra destra, sezione Edit cracks, e menu Tools; codici
+  134/135; `crack_branch_merge.py`): il primo clic su una crepa (linea o numero) sceglie
+  la crepa **principale**, ogni clic successivo aggiunge una crepa come sua
+  **diramazione**. Se la diramazione si ferma prima della principale (o di un'altra sua
+  diramazione) viene collegata, lungo il bordo reale o con un tratto dritto come fa Link,
+  fino a `BRANCH_MERGE_MAX_GAP_PX` (60 px in `config.py`); più lontana viene rifiutata.
+  Una crepa che è già principale di altre diramazioni le porta con sé. Le crepe restano
+  linee separate (Cut, Join, Edit extremes ... funzionano come prima) ma formano un solo
+  oggetto: nel JSON hanno lo stesso `group_id`, con flag `branch_main` sulla principale e
+  `branch` sulle diramazioni, e i marker diventano N, N.1, N.2 ... JSON e maschere sono
+  scritti dopo ogni diramazione; `U` annulla l'ultima senza uscire. Si esce con
+  **Maiusc+clic** sul pulsante o **Maiusc+C** (anche voce del menu Tools); un altro
+  comando chiude la modalità. Un clic semplice sul pulsante a modalità attiva ricorda solo
+  come uscire. `test_v150_merge_branch.py`: 20 test nuovi.
+
 ## Novità 1.4.2: manuale PDF nell'app installata
 
 - **Manuale nell'app installata**: le versioni recenti di PyMuPDF, all'import, leggono
