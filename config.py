@@ -550,6 +550,13 @@ class Config:
         self.show_xml_reference = True
         self.xml_reference_state = {"image": None, "regions": []}
 
+    def _init_crack_branch_merge_state(self):
+        """v1.5.0 [Merge crack branches] (codes 134 / 135, crack_branch_merge.py): the first crack clicked is the main
+        crack, the next ones become its branches (one LabelMe group_id). main_group is the group being built.
+        A branch that stops short of the group is bridged to it up to BRANCH_MERGE_MAX_GAP_PX (image pixels)."""
+        self.crack_branch_merge_state = {"active": False, "main_group": None}
+        self.BRANCH_MERGE_MAX_GAP_PX = 60
+
     def _init_interrupted_trace_settings(self):
         """v1.2.0 Interrupted crack: a Crack-tool trace whose route crosses a stretch with no crack (binary mask)
         is stored as separate cracks, one per continuous piece, and an on-screen message says so."""
@@ -640,6 +647,7 @@ class Config:
         self._init_crack_extremes_state()
         self._init_crack_class_view_state()
         self._init_xml_reference_state()
+        self._init_crack_branch_merge_state()
         self._init_interrupted_trace_settings()
         self._init_dataset_split_settings()
         self._init_validation_settings()
