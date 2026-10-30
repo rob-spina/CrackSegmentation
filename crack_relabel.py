@@ -20,7 +20,7 @@ RELABEL_TARGET_BY_CODE = {MARK_UNCERTAIN_CODE: 'uncertain', MARK_NORMAL_CODE: 'n
 # (Cut, Join, a tool, Save ...) cancels it.
 RELABEL_KEEP_KEYS = frozenset([0, 1, 2, 3, 81, 82, 83, 84, ord('+'), ord('='), ord('-'), ord('o'), ord('O'),
                                ord('0'), ord('z'), ord('Z'), ord('h'), ord('H'), ord('n'), ord('N'), ord('j'),
-                               ord('J'), ord(' '), ord('.'), ord('f'), ord('F'), 14, 15, 11])
+                               ord('J'), ord(' '), ord('.'), ord('f'), ord('F'), 14, 15, 11, 133])
 
 
 class CrackRelabelMixin:

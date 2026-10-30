@@ -43,6 +43,7 @@ from warn_uncertain import WarnUncertainMixin, WARN_UNCERTAIN_CODE
 from crack_relabel import CrackRelabelMixin, RELABEL_TARGET_BY_CODE
 from crack_extremes import CrackExtremesMixin, CRACK_EXTREMES_CODE, CRACK_EXTREMES_KEY
 from crack_class_view import CrackClassViewMixin, HIDE_UNCERTAIN_OVERLAY_CODE, HIDE_NORMAL_OVERLAY_CODE
+from xml_reference import XmlReferenceMixin, XML_REFERENCE_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -51,7 +52,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
                         DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
                         CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
-                        CrackExtremesMixin, CrackClassViewMixin):
+                        CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -5565,6 +5566,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._update_total_cracks_length()
         total_detachments_area_cm2 = sum(self.calcola_area_poligono_cm2(d['path'], self.cfg.PIXEL_TO_CM_SCALE) for d in self.cfg.saved_detachments if d.get('active', True))
 
+        self._draw_xml_reference(win_out)
         self._draw_ignore_regions(win_out, marker_dim)
         self._draw_tool_markers(win_out, marker_dim)
         self._draw_cut_join_indicator(win_out)
@@ -5883,6 +5885,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == HIDE_NORMAL_OVERLAY_CODE:   # v1.4.0: hide only the blue (normal) fill
             self._toggle_normal_overlay()
+
+        elif key_clean == XML_REFERENCE_CODE:   # v1.5.0: XML damage regions as a tracing guide
+            self._toggle_xml_reference()
 
         elif key_clean in RELABEL_TARGET_BY_CODE:   # v1.3.0: Ctrl/Cmd+C / Ctrl/Cmd+U, then click a crack
             self._toggle_crack_relabel(RELABEL_TARGET_BY_CODE[key_clean])

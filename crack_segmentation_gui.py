@@ -577,6 +577,8 @@ _LEFT_SIDEBAR_SECTIONS = [
         # v1.4.0: hide the fill of one class only (codes 130 / 131, crack_class_view.py); [N] hides both.
         ("\U0001F7E5", "Hide uncertain overlay", "", 130),
         ("\U0001F7E6", "Hide normal overlay", "", 131),
+        # v1.5.0: damage regions of 'XML files/<photo>.xml' as a tracing guide (code 133, xml_reference.py).
+        ("\U0001F7E8", "XML reference", "", 133),
         ("\U0001F4CD", "Toggle markers", "Space", ord(' ')),
         ("\u2B1A", "Zoom window", "", 15),
         ("\U0001F50E", "Reset zoom", "0", ord('0')),
@@ -623,6 +625,7 @@ _SIDEBAR_TOGGLE_STATES = {
     130: lambda cfg: not cfg.show_uncertain_overlay,
     131: lambda cfg: not cfg.show_normal_overlay,
     132: lambda cfg: cfg.crack_extremes_state["active"],
+    133: lambda cfg: cfg.show_xml_reference,
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -1380,6 +1383,7 @@ _VIEW_COMMANDS = [
     ("\U0001F535 Toggle blue crack overlay\tN", ord('n')),
     ("\U0001F7E5 Hide / show uncertain (red) crack overlay", 130),
     ("\U0001F7E6 Hide / show normal (blue) crack overlay", 131),
+    ("\U0001F7E8 Show / hide XML reference regions", 133),
     ("\u2139 Toggle Info (file/length/building status)\tJ", ord('j')),
     ("\U0001F515 Hide on-screen messages\t.", ord('.')),
     ("\U0001F5BC Toggle overlay in export\tM", ord('m')),
