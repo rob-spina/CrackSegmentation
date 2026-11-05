@@ -1,9 +1,9 @@
 """sam_autoseg.py
-v2.0.0 [SAM auto-segment] (right sidebar, Tools menu, code 135), mixed into CrackSegmentation (smart_segmentation.py).
+v2.0.0 [SAM auto-segment] (right sidebar, Tools menu, code 136), mixed into CrackSegmentation (smart_segmentation.py).
 Runs the fine-tuned SAM crack model (non-promptable) on the photo on screen and turns its mask into real cracks
 of the app, then writes the JSON ('JSON files') and the binary masks ('Binary files') exactly as [S] does.
 
-  1. sam_infer.py runs in the Python chosen in [SAM model settings] (code 136, or Ctrl/Cmd+click on the button),
+  1. sam_infer.py runs in the Python chosen in [SAM model settings] (code 137, or Ctrl/Cmd+click on the button),
      which has PyTorch: the app itself never imports torch. Progress goes to the status bar; [Esc] cancels.
      The model is the SAM + LoRA of the cracksam_lora project (base SAM weights + best_lora.pth, with that
      project's model.py / tiling.py, bundled in cracksam/, so inference matches its infer.py), or any single
@@ -35,8 +35,8 @@ from skimage.morphology import skeletonize
 
 import sam_weights
 
-SAM_AUTOSEG_CODE = 135
-SAM_SETTINGS_CODE = 136
+SAM_AUTOSEG_CODE = 136   # 133 XML reference, 134/135 Merge crack branches (v1.5.0)
+SAM_SETTINGS_CODE = 137
 SAM_SOURCE = "sam"
 
 _NEIGHBOURS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
@@ -268,7 +268,7 @@ class SamAutoSegMixin:
                 + f", Python {settings['python']}")
 
     def _edit_sam_settings(self):
-        """Code 136 [SAM model settings]: asks for the model files and stores them. Returns the settings or None."""
+        """Code 137 [SAM model settings]: asks for the model files and stores them. Returns the settings or None."""
         current = self._load_sam_settings()
         chosen = self._choose_sam_settings(current)
         if not chosen:
@@ -560,7 +560,7 @@ class SamAutoSegMixin:
         self._save_annotations_now("SAM", "the automatic segmentation")
 
     def _run_sam_autoseg(self):
-        """Code 135 [SAM auto-segment]: segments the photo on screen with SAM, then writes JSON and masks."""
+        """Code 136 [SAM auto-segment]: segments the photo on screen with SAM, then writes JSON and masks."""
         cfg = self.cfg
         if not cfg.CURRENT_IMAGE_PATH or cfg.img_original is None or getattr(cfg, "queue_idle", False):
             print(" [SAM] No photo on screen.")

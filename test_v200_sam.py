@@ -1,6 +1,6 @@
 """test_v200_sam.py
 
-Headless tests for the 2.0.0 [SAM auto-segment] button (sam_autoseg.py, code 135; settings code 136):
+Headless tests for the 2.0.0 [SAM auto-segment] button (sam_autoseg.py, code 136; settings code 137):
   - mask -> cracks: blobs thresholded, skeletonised into ordered 8-connected centre lines (main line, then
     branches), every blob pixel given to the nearest line;
   - the button: runs the model in a separate process (here a stand-in script, so no PyTorch is needed), adds the
@@ -417,6 +417,19 @@ class TestSamGui(_TmpDir):
             self.assertIsNone(app._choose_sam_settings({}))
 
 
+class TestSamInferBackend(unittest.TestCase):
+
+    def test_backend_chosen_from_arguments(self):
+        import sam_infer
+        with mock.patch.object(sam_infer, "run_sam_lora") as lora, \
+                mock.patch.object(sam_infer.cda, "_require_torch", side_effect=SystemExit("module path")):
+            with self.assertRaises(SystemExit):
+                sam_infer.run(sam_infer.parse_args(["--image", "a", "--out", "b", "--checkpoint", "m.pt"]))
+            lora.assert_not_called()
+            sam_infer.run(sam_infer.parse_args(["--image", "a", "--out", "b", "--lora-weights", "l.pth"]))
+            lora.assert_called_once()
+
+
 @unittest.skipUnless(sa.__name__ and __import__("importlib").util.find_spec("torch"), "PyTorch not installed")
 class TestSamInferWithTorch(_TmpDir):
 
@@ -431,7 +444,7 @@ class TestSamInferWithTorch(_TmpDir):
         img = os.path.join(self.tmp, "a.png")
         cv2.imwrite(img, np.zeros((300, 700, 3), np.uint8))
         out = os.path.join(self.tmp, "p.png")
-        sam_infer.run(sam_infer.parse_args(["--image", img, "--out", out, "--checkpoint", ckpt,
+        sam_infer.run(sam_infer.parse_args(["--image", img, "--out", out, "--backend", "module", "--checkpoint", ckpt,
                                             "--tile", "256", "--overlap", "32", "--device", "cpu"]))
         prob = cv2.imread(out, cv2.IMREAD_GRAYSCALE)
         self.assertEqual(prob.shape, (300, 700))
