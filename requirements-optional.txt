@@ -6,3 +6,8 @@
 # separate from requirements.txt so you can decide whether to accept
 # that license before installing it.
 pymupdf>=1.23
+
+# v2.0.0 [SAM auto-segment]: PyTorch is NOT needed by the app itself. The SAM model runs in a separate Python
+# (chosen in SAM model settings: e.g. the venv used for training) that must have:
+#     torch>=2.0 and segment-anything (the cracksam_lora requirements.txt), or whatever your model factory imports
+# The app only needs this Python's path and the model files (best_lora.pth + base SAM weights + code folder).

@@ -5,13 +5,14 @@ import os
 import cv2
 import numpy as np
 import tkinter as tk
-from tkinter import simpledialog, messagebox, ttk
+from tkinter import simpledialog, messagebox, filedialog, ttk
 from PIL import Image, ImageTk
 
 from config import Config
 from smart_segmentation import CrackSegmentation
 from go_to_image import PagedChooser
 from crack_relabel import MARK_UNCERTAIN_CODE, MARK_NORMAL_CODE
+from sam_autoseg import SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
 
 
 # Keyboard translation: Tk <KeyPress> event -> the same integer code
@@ -538,6 +539,10 @@ SIDEBAR_COLLAPSED_WIDTH = 34
 # v1.0.8: two sidebars, each split into sections of similar commands (heading, [(icon, label, key, code)]).
 # Right ("More Features"): tracing, crack editing and crack inspection -- what is used while working on a photo.
 _RIGHT_SIDEBAR_SECTIONS = [
+    # v2.0.0: Ctrl/Cmd+click opens the model settings (code 136).
+    ("AI", [
+        ("\U0001F916", "SAM auto-segment", "", SAM_AUTOSEG_CODE),
+    ]),
     ("Tools", [
         ("\u26A1", "Crack tool", "C", ord('c')),
         ("\u25A6", "Detachment tool", "D", ord('d')),
@@ -634,8 +639,9 @@ _SIDEBAR_DYNAMIC_ICONS = {
 }
 VALIDATION_CODE = 17
 # v1.3.0: Ctrl/Cmd+click on these sidebar buttons sends another code: [Crack tool] -> make a blue crack uncertain,
-# [Uncertain crack] -> make a red crack normal (then click the crack or its number).
-_SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE}
+# [Uncertain crack] -> make a red crack normal (then click the crack or its number); v2.0.0: [SAM auto-segment] ->
+# SAM model settings.
+_SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE, SAM_AUTOSEG_CODE: SAM_SETTINGS_CODE}
 # Sidebar buttons enabled only when this holds (greyed out otherwise): code -> reads it from cfg.
 _SIDEBAR_ENABLED_STATES = {
     code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
@@ -1340,6 +1346,9 @@ _EDIT_COMMANDS = [
 ]
 
 _TOOL_COMMANDS = [
+    # v2.0.0: the fine-tuned SAM model segments the photo; JSON and binary masks are written (sam_autoseg.py).
+    ("\U0001F916 SAM auto-segment: cracks found by the AI model, JSON and masks saved", SAM_AUTOSEG_CODE),
+    ("\u2699 SAM model settings (checkpoint, model factory, Python with PyTorch)", SAM_SETTINGS_CODE),
     ("\u26A1 Tool: Crack\tC", ord('c')),
     ("\u25A6 Tool: Detachment\tD", ord('d')),
     ("\U0001F6AB Tool: Ignore region (occluded area)\tI", ord('i')),
@@ -1773,6 +1782,107 @@ class GuiCrackSegmentation(CrackSegmentation):
                    "Save it as uncertain?\n\nYes = uncertain (red, JSON and masks updated now)\n"
                    "No = keep it as a normal crack")
         return bool(messagebox.askyesno("Crack Detector - Warn uncertain", message, parent=self._tk_root))
+
+    def _confirm_sam_replace(self, count):
+        message = (f"This photo already has {count} crack(s) found by an earlier SAM run.\n\n"
+                   "Replace them with a new run? Your own cracks stay.\n[U] undoes the whole run.")
+        return bool(messagebox.askyesno("Crack Detector - SAM auto-segment", message, parent=self._tk_root))
+
+    _SAM_TITLE = "Crack Detector - SAM model settings"
+
+    def _confirm_sam_download(self, text):
+        return messagebox.askyesnocancel(
+            "Crack Detector - SAM auto-segment",
+            f"{text}\n\nYes = download it now ([Esc] stops it; it resumes next time)\n"
+            "No = choose model files of your own\nCancel = do nothing", parent=self._tk_root)
+
+    def _ask_sam_python(self, current):
+        return simpledialog.askstring(
+            self._SAM_TITLE, "Python interpreter with PyTorch and segment-anything (full path), e.g.\n"
+                             "~/echo-twin/.venv-sam/bin/python", initialvalue=current, parent=self._tk_root)
+
+    def _choose_sam_settings(self, current):
+        """GUI: the SAM model files are picked with file dialogs. None = cancelled."""
+        lora = messagebox.askyesnocancel(
+            self._SAM_TITLE, "Is the model your SAM + LoRA (cracksam_lora project: best_lora.pth on top of the "
+                             "base SAM weights)?\n\nYes = SAM + LoRA\n"
+                             "No = one checkpoint with the cv_domain_adapt.py interface", parent=self._tk_root)
+        if lora is None:
+            return None
+        chosen = self._choose_sam_lora_settings(current) if lora else self._choose_sam_module_settings(current)
+        if not chosen:
+            return None
+        python = simpledialog.askstring(
+            self._SAM_TITLE, "Python interpreter with PyTorch (and segment-anything for SAM + LoRA), full path, "
+                             "e.g. the venv used for training:",
+            initialvalue=current.get("python") or self._default_sam_python(), parent=self._tk_root)
+        if not python:
+            return None
+        chosen["python"] = python.strip()
+        return chosen
+
+    def _choose_sam_lora_settings(self, current):
+        """best_lora.pth, base SAM weights, model type, LoRA rank, code folder."""
+        home = os.path.expanduser("~")
+        lora_weights = filedialog.askopenfilename(
+            title="SAM + LoRA: trained weights (best_lora.pth)", parent=self._tk_root,
+            initialdir=os.path.dirname(os.path.expanduser(current.get("lora_weights") or "")) or home,
+            filetypes=[("PyTorch weights", "*.pth *.pt"), ("All files", "*")])
+        if not lora_weights:
+            return None
+        sam_checkpoint = filedialog.askopenfilename(
+            title="SAM + LoRA: base SAM weights (sam_vit_h_4b8939.pth ...)", parent=self._tk_root,
+            initialdir=os.path.dirname(os.path.expanduser(current.get("sam_checkpoint") or "")) or home,
+            filetypes=[("PyTorch weights", "*.pth *.pt"), ("All files", "*")])
+        if not sam_checkpoint:
+            return None
+        model_type = simpledialog.askstring(
+            self._SAM_TITLE, "SAM model type of those base weights (vit_b, vit_l or vit_h):",
+            initialvalue=self._guess_sam_model_type(sam_checkpoint, current.get("model_type") or "vit_h"),
+            parent=self._tk_root)
+        if not model_type:
+            return None
+        lora_r = simpledialog.askinteger(self._SAM_TITLE, "LoRA rank used in training (--lora-r):",
+                                         initialvalue=int(current.get("lora_r", 4)), minvalue=1, maxvalue=256,
+                                         parent=self._tk_root)
+        if not lora_r:
+            return None
+        code_dir = filedialog.askdirectory(
+            title="SAM + LoRA: code folder (model.py, sam_lora.py, tiling.py)", parent=self._tk_root,
+            initialdir=os.path.expanduser(current.get("code_dir") or self._bundled_cracksam_dir()))
+        if not code_dir:
+            return None
+        return {"backend": "sam_lora", "lora_weights": lora_weights, "sam_checkpoint": sam_checkpoint,
+                "model_type": model_type.strip().lower(), "lora_r": int(lora_r), "code_dir": code_dir}
+
+    def _choose_sam_module_settings(self, current):
+        """One checkpoint, plus the model factory file when it is a state_dict."""
+        start = os.path.dirname(os.path.expanduser(current.get("checkpoint") or "")) or os.path.expanduser("~")
+        checkpoint = filedialog.askopenfilename(
+            title="Model checkpoint (.pt / .pth)", initialdir=start, parent=self._tk_root,
+            filetypes=[("PyTorch model", "*.pt *.pth *.ckpt *.bin"), ("All files", "*")])
+        if not checkpoint:
+            return None
+        needs_factory = messagebox.askyesnocancel(
+            self._SAM_TITLE, "Does this checkpoint hold only the weights (a state_dict)?\n\n"
+                             "Yes = choose the Python file that builds the model (--model-factory)\n"
+                             "No = it is a whole saved model (torch.save(model) or TorchScript)", parent=self._tk_root)
+        if needs_factory is None:
+            return None
+        factory = ""
+        if needs_factory:
+            factory_file = filedialog.askopenfilename(
+                title="Python file that builds the model", initialdir=start, parent=self._tk_root,
+                filetypes=[("Python", "*.py"), ("All files", "*")])
+            if not factory_file:
+                return None
+            old_func = (current.get("model_factory") or "").partition(":")[2] or "build_model"
+            func = simpledialog.askstring(self._SAM_TITLE, "Function in that file that returns the model:",
+                                          initialvalue=old_func, parent=self._tk_root)
+            if func is None:
+                return None
+            factory = f"{factory_file}:{func.strip() or 'build_model'}"
+        return {"backend": "module", "checkpoint": checkpoint, "model_factory": factory}
 
     def _confirm_remove_uncertain(self, count):
         message = (f"Remove the {count} uncertain crack(s) [?] shown on screen?\n\n"

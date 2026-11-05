@@ -483,6 +483,28 @@ class _messagebox:
 
 messagebox = _messagebox
 
+
+class _filedialog:
+    """v2.0.0 (SAM model settings): next_paths are returned one per call, then ""."""
+    last_call = None
+    next_paths = []
+
+    @staticmethod
+    def askopenfilename(title="", parent=None, **kw):
+        _filedialog.last_call = title
+        return _filedialog.next_paths.pop(0) if _filedialog.next_paths else ""
+
+
+    next_dirs = []
+
+    @staticmethod
+    def askdirectory(title="", parent=None, **kw):
+        _filedialog.last_call = title
+        return _filedialog.next_dirs.pop(0) if _filedialog.next_dirs else ""
+
+
+filedialog = _filedialog
+
 # register as the 'tkinter' package (with submodules) BEFORE the real
 # import happens
 mod = types.ModuleType("tkinter")
@@ -503,10 +525,12 @@ mod.TclError = TclError
 mod.ttk = ttk
 mod.simpledialog = simpledialog
 mod.messagebox = messagebox
+mod.filedialog = filedialog
 sys.modules["tkinter"] = mod
 sys.modules["tkinter.ttk"] = ttk
 sys.modules["tkinter.simpledialog"] = simpledialog
 sys.modules["tkinter.messagebox"] = messagebox
+sys.modules["tkinter.filedialog"] = filedialog
 
 
 # ---------------------------------------------------------------------------

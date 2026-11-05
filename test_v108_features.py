@@ -527,7 +527,7 @@ class TestTwoSidebars(unittest.TestCase):
 
     def test_section_headings(self):
         heads = [h.kw["text"] for h in self.sb.right.headings + self.sb.left.headings]
-        self.assertEqual(heads, ["TOOLS", "EDIT CRACKS", "INSPECT CRACKS", "VIEW", "BUILDING & SCALE", "DATASET"])
+        self.assertEqual(heads, ["AI", "TOOLS", "EDIT CRACKS", "INSPECT CRACKS", "VIEW", "BUILDING & SCALE", "DATASET"])
 
     def test_states_refreshed_on_both_panels(self):
         cfg = self.app.cfg

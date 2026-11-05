@@ -52,6 +52,10 @@ Images/
 *.csv
 # Automatic backups made by compare_and_filter_cracks.py
 *.bak
+# Model weights (SAM auto-segment, cv_domain_adapt.py runs): large, keep them out of git
+*.pt
+*.pth
+*.ckpt
 
 # ...but keep documentation and example assets
 !docs/
