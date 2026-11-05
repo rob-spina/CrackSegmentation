@@ -575,7 +575,7 @@ class Config:
         self.SAM_SETTINGS_FILE = "sam_model.json"
         # Automatic download (sam_weights.py) the first time the button is pressed, into '<data folder>/SAM model'.
         # Base weights: Meta's SAM ViT-H (Apache 2.0), checked by size. Crack weights: LoRA + mask decoder trained on
-        # Facade390 + CrackSeg9K (sam_weights/MODEL_CARD.md), a GitHub Release asset; set its SHA-256 once published.
+        # Facade390 + CrackSeg9K (docs/sam_model/MODEL_CARD.md), an asset of the v2.0.0 GitHub Release.
         self.SAM_AUTO_DOWNLOAD = True
         self.SAM_MODEL_DIR = "SAM model"
         self.SAM_DEFAULT_MODEL_TYPE = "vit_h"
@@ -587,8 +587,8 @@ class Config:
         }
         self.SAM_CRACK_WEIGHTS = {
             "file": "cracksam_vit_h_lora_r4.pth",
-            "url": "https://github.com/rob-spina/CrackSegmentation/releases/download/sam-weights-v1/cracksam_vit_h_lora_r4.pth",
-            # SHA-256 of runs/facade390_vit_h_fixed/best_lora.pth (val IoU 0.7196 on Facade390), release sam-weights-v1.
+            "url": "https://github.com/rob-spina/CrackSegmentation/releases/download/v2.0.0/cracksam_vit_h_lora_r4.pth",
+            # SHA-256 of runs/facade390_vit_h_fixed/best_lora.pth (val IoU 0.7196 on Facade390), asset of release v2.0.0.
             "sha256": "d3a8d5a27cc9e80018d04cf7c56a63285d5ea7919bd007e20c72ef9eccf92de9",
         }
         # Native-resolution tiles as in the cracksam_lora infer.py: the tile side MUST match train.py --tile-size
