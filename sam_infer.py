@@ -163,7 +163,8 @@ def run_sam_lora(args):
 # --------------------------------------------------------------------------------------
 
 def run(args):
-    if args.backend == "sam_lora":
+    backend = args.backend or ("module" if args.checkpoint and not args.lora_weights else "sam_lora")
+    if backend == "sam_lora":
         return run_sam_lora(args)
     if not args.checkpoint:
         sys.exit("[SAM] --checkpoint is required with --backend module")
@@ -186,7 +187,8 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--image", required=True)
     p.add_argument("--out", required=True, help="8-bit PNG, probability x 255")
-    p.add_argument("--backend", choices=["sam_lora", "module"], default="sam_lora")
+    p.add_argument("--backend", choices=["sam_lora", "module"], default=None,
+                   help="default: module when only --checkpoint is given, otherwise sam_lora")
     # sam_lora: the cracksam_lora project (base SAM + best_lora.pth)
     p.add_argument("--code-dir", default="", help="folder with model.py / sam_lora.py / tiling.py")
     p.add_argument("--sam-checkpoint", default="", help="base SAM weights, e.g. sam_vit_h_4b8939.pth")

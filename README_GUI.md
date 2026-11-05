@@ -34,7 +34,7 @@ packaging/
 
 ## Novità 2.0.0: SAM auto-segment
 
-- **SAM auto-segment** (barra destra, nuova sezione **AI**; anche nel menu Tools, codice 133):
+- **SAM auto-segment** (barra destra, nuova sezione **AI**; anche nel menu Tools, codice 136):
   il modello SAM fine-tunato (non-promptable) segmenta la foto a schermo, a tile sovrapposti come
   in `cv_domain_adapt.py`, e la sua maschera diventa **cricche vere dell'app**: ogni blob viene
   ridotto alla linea centrale (prima la linea principale, poi i rami) e la forma esatta di SAM
@@ -57,7 +57,7 @@ packaging/
   Python proprio (app installata) l'app chiede una sola volta il Python con PyTorch.
   `sam_weights.py`, nessuna libreria esterna (solo `certifi` per i certificati nell'app macOS).
   Scheda del modello: `docs/sam_model/MODEL_CARD.md`.
-- **SAM model settings** (Ctrl/Cmd+clic sul pulsante, o menu Tools, codice 134): per il modello
+- **SAM model settings** (Ctrl/Cmd+clic sul pulsante, o menu Tools, codice 137): per il modello
   SAM + LoRA del progetto cracksam_lora (`~/echo-twin`): `best_lora.pth`, i pesi SAM di base
   (`sam_vit_h_4b8939.pth` ...), tipo di modello (vit_b/l/h, dedotto dal nome del file), rango
   LoRA del training, la cartella con `model.py` / `sam_lora.py` / `tiling.py` e il Python con
@@ -71,6 +71,29 @@ packaging/
   (stessa lezione del crash macOS cv2/Tk). Lo spec PyInstaller include `sam_infer.py` e
   `cv_domain_adapt.py` come file dati.
 - `test_v200_sam.py` e `test_v200_sam_download.py`: 57 test nuovi (due richiedono torch e vengono saltati senza).
+
+## Novità 1.5.0: XML reference, Merge crack branches
+
+- **🟨 XML reference** (barra sinistra, sezione View, e menu View; codice 133;
+  `xml_reference.py`): disegna sulla foto le regioni di danno di
+  `XML files/<foto>.xml` (riquadri e poligoni in stile Pascal VOC) come guida al
+  tracciamento: crepe in giallo, altre classi in ciano, con l'etichetta. Solo a schermo:
+  mai nel JSON, nelle maschere o nelle immagini esportate. Accetta anche una cartella
+  `XML files ` con uno spazio finale. `test_v150_xml_reference.py`.
+- **🌿 Merge crack branches** (barra destra, sezione Edit cracks, e menu Tools; codici
+  134/135; `crack_branch_merge.py`): il primo clic su una crepa (linea o numero) sceglie
+  la crepa **principale**, ogni clic successivo aggiunge una crepa come sua
+  **diramazione**. Se la diramazione si ferma prima della principale (o di un'altra sua
+  diramazione) viene collegata, lungo il bordo reale o con un tratto dritto come fa Link,
+  fino a `BRANCH_MERGE_MAX_GAP_PX` (60 px in `config.py`); più lontana viene rifiutata.
+  Una crepa che è già principale di altre diramazioni le porta con sé. Le crepe restano
+  linee separate (Cut, Join, Edit extremes ... funzionano come prima) ma formano un solo
+  oggetto: nel JSON hanno lo stesso `group_id`, con flag `branch_main` sulla principale e
+  `branch` sulle diramazioni, e i marker diventano N, N.1, N.2 ... JSON e maschere sono
+  scritti dopo ogni diramazione; `U` annulla l'ultima senza uscire. Si esce con
+  **Maiusc+clic** sul pulsante o **Maiusc+C** (anche voce del menu Tools); un altro
+  comando chiude la modalità. Un clic semplice sul pulsante a modalità attiva ricorda solo
+  come uscire. `test_v150_merge_branch.py`: 20 test nuovi.
 
 ## Novità 1.4.2: manuale PDF nell'app installata
 
