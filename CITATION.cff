@@ -9,7 +9,7 @@ abstract: >-
 type: software
 version: 2.0.0
 date-released: "2026-11-05"
-doi: 10.5281/zenodo.22948009
+doi: 10.5281/zenodo.22948008
 repository-code: "https://github.com/rob-spina/CrackSegmentation"
 url: "https://github.com/rob-spina/CrackSegmentation"
 license: MIT
