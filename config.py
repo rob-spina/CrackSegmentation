@@ -568,6 +568,48 @@ class Config:
         self.interrupted_crack_triggered = False
         self.interrupted_crack_message = ""
 
+    def _init_sam_autoseg_settings(self):
+        """v2.0.0 [SAM auto-segment] (sidebar, process_keypress() code 135; settings code 136, sam_autoseg.py):
+        the fine-tuned SAM model segments the photo on screen and its mask becomes editable cracks."""
+        # Model files chosen by the operator (SAM + LoRA weights, code folder, Python with PyTorch), in the data folder.
+        self.SAM_SETTINGS_FILE = "sam_model.json"
+        # Automatic download (sam_weights.py) the first time the button is pressed, into '<data folder>/SAM model'.
+        # Base weights: Meta's SAM ViT-H (Apache 2.0), checked by size. Crack weights: LoRA + mask decoder trained on
+        # Facade390 + CrackSeg9K (sam_weights/MODEL_CARD.md), a GitHub Release asset; set its SHA-256 once published.
+        self.SAM_AUTO_DOWNLOAD = True
+        self.SAM_MODEL_DIR = "SAM model"
+        self.SAM_DEFAULT_MODEL_TYPE = "vit_h"
+        self.SAM_DEFAULT_LORA_R = 4
+        self.SAM_BASE_WEIGHTS = {
+            "file": "sam_vit_h_4b8939.pth",
+            "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+            "size": 2564550879,
+        }
+        self.SAM_CRACK_WEIGHTS = {
+            "file": "cracksam_vit_h_lora_r4.pth",
+            "url": "https://github.com/rob-spina/CrackSegmentation/releases/download/sam-weights-v1/cracksam_vit_h_lora_r4.pth",
+            # SHA-256 of runs/facade390_vit_h_fixed/best_lora.pth (val IoU 0.7196 on Facade390), release sam-weights-v1.
+            "sha256": "d3a8d5a27cc9e80018d04cf7c56a63285d5ea7919bd007e20c72ef9eccf92de9",
+        }
+        # Native-resolution tiles as in the cracksam_lora infer.py: the tile side MUST match train.py --tile-size
+        # (512 by default); overlap between tiles (px); tiles per batch.
+        self.SAM_TILE_PX = 512
+        self.SAM_OVERLAP_PX = 128
+        # Rescale before tiling: only for a single-checkpoint model (cv_domain_adapt.py); SAM + LoRA stays native.
+        self.SAM_SCALE = 1.0
+        self.SAM_BATCH_SIZE = 4
+        self.SAM_DEVICE = "auto"   # auto, cuda, mps or cpu
+        # A pixel is crack when its probability reaches this; blobs smaller than SAM_MIN_AREA_PX are dropped.
+        self.SAM_THRESHOLD = 0.5
+        self.SAM_MIN_AREA_PX = 30
+        # Centre lines shorter than this (px) are not kept as cracks; at most SAM_MAX_CRACKS cracks per photo.
+        self.SAM_MIN_CRACK_LENGTH_PX = 15
+        self.SAM_MAX_CRACKS = 300
+        # Cracks whose mean probability is below this are saved as uncertain (red); None = never.
+        self.SAM_UNCERTAIN_MEAN_PROB = 0.6
+        # SAM pixels within this distance (px) of the operator's cracks are left to those cracks.
+        self.SAM_EXISTING_MARGIN_PX = 3
+
     def _init_dataset_split_settings(self):
         """v1.0.8 [Training / Test / Validation set] (Mode 2, sidebar codes 23-25): folders the photo on screen is
         moved to. Training set also takes the JSON and the binary exports; Test and Validation sets only the photo."""
@@ -641,6 +683,7 @@ class Config:
         self._init_crack_class_view_state()
         self._init_xml_reference_state()
         self._init_interrupted_trace_settings()
+        self._init_sam_autoseg_settings()
         self._init_dataset_split_settings()
         self._init_validation_settings()
         self._init_queue_and_cache()
