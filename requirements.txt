@@ -15,3 +15,4 @@ opencv-python>=4.8
 numpy>=1.24
 scikit-image>=0.21
 Pillow>=10.0  # only used by crack_segmentation_gui.py, to blit frames into the embedded Tk canvas
+certifi  # v2.0.0: CA certificates for the automatic SAM weights download (the macOS app may have none)

@@ -44,6 +44,7 @@ from crack_relabel import CrackRelabelMixin, RELABEL_TARGET_BY_CODE
 from crack_extremes import CrackExtremesMixin, CRACK_EXTREMES_CODE, CRACK_EXTREMES_KEY
 from crack_class_view import CrackClassViewMixin, HIDE_UNCERTAIN_OVERLAY_CODE, HIDE_NORMAL_OVERLAY_CODE
 from xml_reference import XmlReferenceMixin, XML_REFERENCE_CODE
+from sam_autoseg import SamAutoSegMixin, SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -52,7 +53,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
                         DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
                         CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
-                        CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin):
+                        CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin, SamAutoSegMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -921,6 +922,23 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             out = cv2.bitwise_or(out, self._render_width_segment_mask(path, seg_i0, seg_i1, seg, height, width))
         return out
 
+    def _paint_sam_fill_segments(self, out, special_segments, path, height, width):
+        """v2.0.0: SAM fills untouched by [A] are painted straight from their row-runs (no full-image closing per
+        crack, which took seconds on a 4K photo with hundreds of cracks); refined tracts use the usual renderer."""
+        for seg_i0, seg_i1, seg in special_segments:
+            plain = seg.get('fill') and not (seg.get('width_px') or seg.get('margin_left_px') or seg.get('margin_right_px'))
+            if not plain:
+                out = cv2.bitwise_or(out, self._render_width_segment_mask(path, seg_i0, seg_i1, seg, height, width))
+                continue
+            for row in seg['fill']:
+                try:
+                    y, x0, x1 = int(row[0]), max(0, int(row[1])), min(width - 1, int(row[2]))
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if 0 <= y < height and x0 <= x1:
+                    out[y, x0:x1 + 1] = 255
+        return out
+
     def _build_one_crack_mask_contribution(self, out, f, height, width, default_dilation_px):
         """Adds one crack's contribution (base dilation + special
         segments) to the running export mask."""
@@ -930,6 +948,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         n = len(path)
         widths, special_segments = self._compute_widths_and_special_segments(f, n, default_dilation_px)
 
+        # v2.0.0: a SAM crack still covered by its own fill exports SAM's exact shape, without the edge ribbon.
+        if f.get('source') == 'sam' and widths and all(w is None for w in widths):
+            return self._paint_sam_fill_segments(out, special_segments, path, height, width)
         # Covers the whole path with the automatic two-edge outline when enabled.
         auto_ribbon = self._compute_auto_edge_ribbon(path, height, width, default_dilation_px)
         if auto_ribbon is not None:
@@ -1217,6 +1238,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                     shape_dict["width_segments"] = f['width_segments']
                 if f.get('links'):
                     shape_dict["links"] = f['links']
+                if f.get('source'):   # v2.0.0: "sam" = found by [SAM auto-segment]
+                    shape_dict["source"] = f['source']
+                    if f.get('sam_mean_prob') is not None:
+                        shape_dict["sam_mean_prob"] = f['sam_mean_prob']
                 shapes.append(shape_dict)
         return shapes
 
@@ -1257,7 +1282,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             "shape_type": shape.get('shape_type', 'linestring'),
             "flags": shape.get('flags', {})
         }
-        for extra_key in ("reliability_pct", "confidence", "multiview"):
+        for extra_key in ("reliability_pct", "confidence", "multiview", "source", "sam_mean_prob"):
             if extra_key in shape:
                 shape_aggiornata[extra_key] = shape[extra_key]
         if shape.get("width_segments"):
@@ -1867,6 +1892,10 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             crack['links'] = links
         if (shape.get("flags") or {}).get("uncertain_manual"):
             crack['uncertain_manual'] = True   # v1.1.0: marked uncertain by the operator
+        if shape.get("source"):   # v2.0.0: "sam" = found by [SAM auto-segment]
+            crack['source'] = str(shape["source"])
+            if shape.get("sam_mean_prob") is not None:
+                crack['sam_mean_prob'] = shape["sam_mean_prob"]
         return crack
 
     @staticmethod
@@ -5888,6 +5917,12 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == XML_REFERENCE_CODE:   # v1.5.0: XML damage regions as a tracing guide
             self._toggle_xml_reference()
+
+        elif key_clean == SAM_AUTOSEG_CODE:   # v2.0.0: SAM segments the photo, JSON and masks written
+            self._run_sam_autoseg()
+
+        elif key_clean == SAM_SETTINGS_CODE:   # v2.0.0: SAM checkpoint / model factory / Python
+            self._edit_sam_settings()
 
         elif key_clean in RELABEL_TARGET_BY_CODE:   # v1.3.0: Ctrl/Cmd+C / Ctrl/Cmd+U, then click a crack
             self._toggle_crack_relabel(RELABEL_TARGET_BY_CODE[key_clean])

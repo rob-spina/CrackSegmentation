@@ -32,6 +32,46 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 2.0.0: SAM auto-segment
+
+- **SAM auto-segment** (barra destra, nuova sezione **AI**; anche nel menu Tools, codice 133):
+  il modello SAM fine-tunato (non-promptable) segmenta la foto a schermo, a tile sovrapposti come
+  in `cv_domain_adapt.py`, e la sua maschera diventa **cricche vere dell'app**: ogni blob viene
+  ridotto alla linea centrale (prima la linea principale, poi i rami) e la forma esatta di SAM
+  resta come larghezza della cricca (tratto `width_segments` con `fill`), quindi la maschera
+  binaria esportata è quella del modello, non una linea dilatata. Subito dopo vengono scritti il
+  **JSON** (`JSON files`) e le **maschere binarie** (`Binary files`), come con [S].
+  - Nel JSON le cricche hanno `"source": "sam"` e `sam_mean_prob`; restano modificabili (Cut,
+    Join, Link, Eraser, Edit extremes, Cmd+C / Cmd+U ...).
+  - Probabilità media sotto `SAM_UNCERTAIN_MEAN_PROB` (0.6) = cricca **incerta** (rossa).
+  - Le cricche dell'operatore e le ignore region non vengono toccate: SAM non aggiunge cricche
+    dove ce n'è già una (margine `SAM_EXISTING_MARGIN_PX`).
+  - Premuto di nuovo sostituisce le cricche SAM precedenti (con conferma); un solo [U] annulla
+    l'intera esecuzione; [Esc] durante l'esecuzione la annulla (un secondo [Esc] chiude l'app).
+- **Download automatico del modello**: al primo clic, dopo una conferma, l'app scarica in
+  `SAM model` (cartella dati) i pesi SAM ViT-H di Meta (circa 2,4 GB) e i pesi delle crepe
+  `cracksam_vit_h_lora_r4.pth` (circa 19 MB, dalle Release del repository GitHub), con
+  avanzamento nella barra di stato; [Esc] interrompe e il clic successivo riprende da dove si era
+  fermato (HTTP Range). Dimensione e SHA-256 vengono verificati; un file corrotto viene rimosso.
+  Il codice del modello (`model.py`, `sam_lora.py`, `tiling.py`) è incluso in `cracksam/`. Senza
+  Python proprio (app installata) l'app chiede una sola volta il Python con PyTorch.
+  `sam_weights.py`, nessuna libreria esterna (solo `certifi` per i certificati nell'app macOS).
+  Scheda del modello: `docs/sam_model/MODEL_CARD.md`.
+- **SAM model settings** (Ctrl/Cmd+clic sul pulsante, o menu Tools, codice 134): per il modello
+  SAM + LoRA del progetto cracksam_lora (`~/echo-twin`): `best_lora.pth`, i pesi SAM di base
+  (`sam_vit_h_4b8939.pth` ...), tipo di modello (vit_b/l/h, dedotto dal nome del file), rango
+  LoRA del training, la cartella con `model.py` / `sam_lora.py` / `tiling.py` e il Python con
+  PyTorch e segment-anything. L'inferenza è la stessa di `infer.py` (tile nativi di `tiling.py`,
+  `forward_batch()` di `model.py`, stesso blending). In alternativa un checkpoint unico con
+  l'interfaccia di `cv_domain_adapt.py`. Chiesti la prima volta e salvati in `sam_model.json`
+  nella cartella dati. `SAM_TILE_PX` (512) deve coincidere con `--tile-size` del training.
+- **PyTorch non entra nell'app**: `sam_infer.py` gira in un processo separato con il Python
+  scelto (es. il venv del training), che stampa l'avanzamento nella barra di stato. Così l'app
+  installata non deve includere torch e il modello non condivide il processo con la finestra Tk
+  (stessa lezione del crash macOS cv2/Tk). Lo spec PyInstaller include `sam_infer.py` e
+  `cv_domain_adapt.py` come file dati.
+- `test_v200_sam.py` e `test_v200_sam_download.py`: 57 test nuovi (due richiedono torch e vengono saltati senza).
+
 ## Novità 1.4.2: manuale PDF nell'app installata
 
 - **Manuale nell'app installata**: le versioni recenti di PyMuPDF, all'import, leggono

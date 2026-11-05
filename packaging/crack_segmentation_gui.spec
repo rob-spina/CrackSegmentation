@@ -63,6 +63,14 @@ a = Analysis(
     datas=[
         (str(Path(SRC_DIR) / "Crack_Segmentation_User_Manual.pdf"), "."),
         (str(Path(SRC_DIR) / "echo_twin_logo.png"), "."),
+        # v2.0.0 [SAM auto-segment]: plain scripts run by the operator's own Python with PyTorch (never imported
+        # by the app, which does not bundle torch); sam_autoseg._sam_script_path() finds them in this folder.
+        (str(Path(SRC_DIR) / "sam_infer.py"), "."),
+        (str(Path(SRC_DIR) / "cv_domain_adapt.py"), "."),
+        # The SAM + LoRA model code (model.py, sam_lora.py, tiling.py), also run by that Python.
+        (str(Path(SRC_DIR) / "cracksam" / "model.py"), "cracksam"),
+        (str(Path(SRC_DIR) / "cracksam" / "sam_lora.py"), "cracksam"),
+        (str(Path(SRC_DIR) / "cracksam" / "tiling.py"), "cracksam"),
     ] + PYMUPDF_DATAS,
     hiddenimports=[
         # scikit-image lazily imports several of its own compiled
@@ -91,6 +99,8 @@ a = Analysis(
         # crack_segmentation_gui.py but not always auto-detected.
         "tkinter.simpledialog",
         "tkinter.messagebox",
+        "tkinter.filedialog",     # v2.0.0 SAM model settings
+        "certifi",                # v2.0.0 CA bundle for the SAM weights download (sam_weights.py)
         "tkinter.ttk",
         # Pillow's Tk-image bridge, used to blit each finished frame into
         # the embedded canvas -- has its own PyInstaller quirks on some
@@ -151,7 +161,7 @@ if sys.platform == "darwin":
         bundle_identifier="local.crackseg.gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "1.4.2",
+            "CFBundleShortVersionString": "2.0.0",
             "NSHumanReadableCopyright": "Internal tool",
         },
     )

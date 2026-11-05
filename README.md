@@ -19,6 +19,7 @@ It produces [LabelMe](https://github.com/wkentaro/labelme)-compatible annotation
 - **Training-mask generation**: the exported crack mask follows the two real edges of each crack, with a configurable band width. Per-stretch manual widening is available, and the band can be derived automatically from the image GSD.
 - **Measurements**: crack length and detachment area once the image scale is calibrated.
 - **Embedded PDF user manual** inside the main window (optional, requires PyMuPDF).
+- **AI auto-segmentation** (since 2.0.0): one button runs a fine-tuned SAM crack model on the photo and turns its mask into editable cracks, with JSON and binary masks written right away (PyTorch in a separate Python, see below).
 
 ## Downloads
 
@@ -121,6 +122,7 @@ The complete list of shortcuts is available in the in-app help menu. The most us
 | Edit extremes (right sidebar, `4`) | (since 1.4.0) The crack numbers disappear and every crack end becomes a large red dot. Click (or press and drag) a dot: the other dots disappear; then click the point the crack should reach and it is lengthened along the crack edge, or click on the crack itself to shorten it. Clicking the same dot again releases it and all the dots come back. Clicks away from the dots trace new cracks as usual, and the dots also work with Zoom window on. `U` undoes each change; pressing the button or `4` again (or choosing another command) brings the numbers back and writes the JSON and binary masks |
 | Click on a crack line (Crack tool) | (since 1.4.0) Hides that crack's markers (numbered start square and end dot); a second click on the crack shows them again. Hidden markers cannot delete the crack. Shift+click or Ctrl/Cmd+click on the line starts a trace there instead. On screen only, not saved |
 | Hide uncertain overlay / Hide normal overlay (left sidebar) | (since 1.4.0) Hide only the red fill of the uncertain cracks, or only the blue fill of the normal ones; `N` still hides both. Markers, numbers and exported files are unchanged |
+| SAM auto-segment (right sidebar, AI) | (since 2.0.0) Runs the fine-tuned SAM crack model (non-promptable) on the photo on screen, by overlapping tiles as in `cv_domain_adapt.py`. Its mask is turned into cracks: each blob is reduced to its centre line (main line, then branches), and SAM's own shape is kept as the crack width, so the exported crack mask is the model's mask. The JSON and binary masks are written right away, as with `S`; the cracks carry `"source": "sam"` and `sam_mean_prob` and stay editable (Cut, Join, Eraser ...). Cracks with mean probability below `SAM_UNCERTAIN_MEAN_PROB` are saved as uncertain (red). Your own cracks and ignore regions are left alone. Pressing it again replaces the previous SAM cracks (after a confirmation); one `U` undoes the run; `Esc` while it runs cancels it. The first time, after a confirmation, the model is **downloaded automatically** into `SAM model` in the data folder: Meta's SAM ViT-H weights (about 2.4 GB) and the crack weights from this repository's Releases (see the [model card](docs/sam_model/MODEL_CARD.md)). `Esc` stops the download and the next press resumes it. **Ctrl/Cmd+click** (or the Tools menu) opens **SAM model settings**, to use files of your own instead: for the SAM + LoRA model of the cracksam_lora project, `best_lora.pth`, the base SAM weights (`sam_vit_h_4b8939.pth` ...), model type, LoRA rank and the folder with its `model.py` / `sam_lora.py` / `tiling.py`, bundled in `cracksam/` (inference is the same as its `infer.py`); or a single checkpoint with the `cv_domain_adapt.py` interface. Plus the Python with PyTorch and segment-anything that runs `sam_infer.py`. Stored in `sam_model.json`; `SAM_TILE_PX` must match the training `--tile-size` |
 | Eraser (right sidebar) | (since 1.0.8) A red window follows the mouse: press and drag it over a crack to erase the part it touches; a crack crossed in the middle is split in two. `[` / `]` make the window smaller / larger. The JSON and binary masks are updated on release; `U` undoes |
 | Remove uncertain [?] (sidebar) | (since 1.0.8) After a confirmation, deletes every crack on screen marked `[?]` (uncertain; cracks hidden by **Show cracks by number** are kept), and updates the JSON and binary masks right away; `U` undoes |
 | `3` | Link: click one crack and then another, at an end or anywhere on the blue line, to merge them into one; clicked inside a crack, its shorter leftover stays a separate crack. The JSON and binary masks are updated right away |
@@ -238,6 +240,17 @@ python compare_and_filter_cracks.py --help
 python crack_segmentation_evaluator.py --help
 ```
 
+**`sam_infer.py`** (since 2.0.0) is what the SAM auto-segment button runs, in the Python chosen in SAM model settings (it needs PyTorch, which the app itself does not bundle). It can also be run by hand on one photo and writes the crack probability map as an 8-bit PNG:
+
+```bash
+python3 sam_infer.py --image photo.jpg --out photo_prob.png --code-dir ~/echo-twin \
+    --sam-checkpoint sam_vit_h_4b8939.pth --model-type vit_h --lora-r 4 --lora-weights best_lora.pth \
+    [--tile 512 --overlap 128 --batch-size 4 --device auto]
+# or a single checkpoint: --backend module --checkpoint model.pt [--model-factory my_model.py:build_model]
+```
+
+**`cv_domain_adapt.py`** adapts the crack model to the 4K drone photos by tiling, with cross-validation by building (the folds written by the CV folds button).
+
 ## Project layout
 
 ```
@@ -249,6 +262,11 @@ CrackSegmentation/
 ├── config.py                          # tunable constants and shared state
 ├── crack_segmentation_gui.py          # GUI layer (Tkinter window, PDF manual panel)
 ├── compare_and_filter_cracks.py       # cross-photo crack consistency filter
+├── sam_autoseg.py                     # SAM auto-segment button: mask -> editable cracks, JSON and masks
+├── sam_infer.py                       # SAM inference on one photo (run in a Python with PyTorch)
+├── sam_weights.py                     # automatic download of the SAM model weights
+├── cracksam/                          # SAM + LoRA model code (model.py, sam_lora.py, tiling.py)
+├── cv_domain_adapt.py                 # domain adaptation of the crack model to 4K drone photos
 ├── crack_segmentation_evaluator.py    # segmentation quality evaluator
 ├── tests_support/                     # test doubles (fake_tkinter.py, fake_fitz.py, ...)
 ├── docs/
