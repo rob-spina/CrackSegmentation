@@ -1,6 +1,6 @@
 # CrackSegmentation
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22948009.svg)](https://doi.org/10.5281/zenodo.22948009)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22948008.svg)](https://doi.org/10.5281/zenodo.22948008)
 
 Interactive Python / OpenCV tool for **manually segmenting and annotating structural cracks and detachments** on photos of building facades (e.g. drone survey imagery).
 

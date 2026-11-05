@@ -40,7 +40,7 @@ A Python with `torch`, `torchvision` and `segment-anything`, chosen in **SAM mod
 
 If you use these weights, please cite CrackSegmentation and the works it builds on:
 
-- R. Spina, F. Vitello, E. Sciacca, L. Pelonero, S. Scavo (INAF), *CrackSegmentation*, software. [doi:10.5281/zenodo.22948009](https://doi.org/10.5281/zenodo.22948009)
+- R. Spina, F. Vitello, E. Sciacca, L. Pelonero, S. Scavo (INAF), *CrackSegmentation*, software. [doi:10.5281/zenodo.22948008](https://doi.org/10.5281/zenodo.22948008)
 - A. Kirillov et al., *Segment Anything*, ICCV 2023. [arXiv:2304.02643](https://arxiv.org/abs/2304.02643)
 - K. Ge et al., *Fine-tuning vision foundation model for crack segmentation in civil infrastructures* (CrackSAM, Facade390), 2024. [arXiv:2312.04233](https://arxiv.org/abs/2312.04233)
 - S. Kulkarni et al., *CrackSeg9k: A Collection and Benchmark for Crack Segmentation Datasets and Frameworks*, ECCV Workshops 2022. [arXiv:2208.13054](https://arxiv.org/abs/2208.13054); data [doi:10.7910/DVN/EGIEBY](https://doi.org/10.7910/DVN/EGIEBY)
