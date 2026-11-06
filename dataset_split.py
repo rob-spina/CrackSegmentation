@@ -143,6 +143,10 @@ class DatasetSplitMixin:
         if SPLIT_MOVES_ANNOTATIONS[split] and not os.path.exists(self.cfg.JSON_OUTPUT_PATH or ""):
             print(f" [DATASET SPLIT] This photo has no saved JSON: save it before moving it to '{set_name}'.")
             return False
+        if self.is_photo_to_be_reviewed() \
+                and not self._confirm_move_photo_to_be_reviewed(self._review_move_message(set_name)):
+            print(" [DATASET SPLIT] Cancelled: the photo is marked TO BE REVIEWED.")
+            return False
         message = self._same_group_message(split, self.cfg.CURRENT_IMAGE_PATH)
         if (message is not None and not self._confirm_same_group_split(message)) \
                 or not self._settle_unsaved_changes(set_name):

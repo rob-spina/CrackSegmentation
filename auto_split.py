@@ -158,6 +158,10 @@ class AutoSplitMixin:
     def plan_auto_split(self, fractions):
         """{'assign': {photo: split}, 'skipped': [photos without JSON], 'already': {split: n}, 'fractions': ...}."""
         photos, skipped = self._segmented_photos_in_images()
+        self._import_review_flags_from_jsons()
+        images = os.path.join(str(self.cfg.SCRIPT_DIR), IMAGES_DIR_NAME)
+        to_review = [p for p in photos if self.is_photo_to_be_reviewed(os.path.join(images, p))]
+        photos = [p for p in photos if p not in set(to_review)]   # v2.0.1: doubtful photos stay in 'Images'
         by_group = {}
         for photo in photos:
             by_group.setdefault(photo_group(photo), []).append(photo)
@@ -167,7 +171,8 @@ class AutoSplitMixin:
         groups = assign_groups(sizes, dict(zip(SPLIT_ORDER, fractions)), fixed, already)
         assign = {photo: groups[g] for g, ps in by_group.items() for photo in ps}
         kept = sorted(g for g in by_group if g in fixed)
-        return {"assign": assign, "skipped": skipped, "already": already, "fractions": fractions, "kept": kept}
+        return {"assign": assign, "skipped": skipped, "already": already, "fractions": fractions, "kept": kept,
+                "to_review": to_review}
 
     def _is_negative_in_images(self, photo):
         json_path = self._photo_json_in_working_folder(photo)
@@ -190,6 +195,9 @@ class AutoSplitMixin:
             lines.append(f"\n{len(plan['kept'])} building(s) already in a set stay in that set.")
         if plan["skipped"]:
             lines.append(f"{len(plan['skipped'])} photo(s) without a JSON are not moved (segment them first).")
+        if plan.get("to_review"):
+            lines.append(f"{len(plan['to_review'])} photo(s) marked TO BE REVIEWED are not moved "
+                         f"(remove the mark, then run Auto split again).")
         lines += ["", "Training set takes photo, JSON and masks; Validation and Test set the photo only.",
                   "Move the photos now?"]
         return "\n".join(lines)
@@ -246,7 +254,9 @@ class AutoSplitMixin:
             return False
         plan = self.plan_auto_split(fractions)
         if not plan["assign"]:
-            self._notify_auto_split("No segmented photo (photo with its JSON) left in 'Images' to split.")
+            extra = (f"\n{len(plan['to_review'])} photo(s) are marked TO BE REVIEWED: remove the mark to split them."
+                     if plan.get("to_review") else "")
+            self._notify_auto_split("No segmented photo (photo with its JSON) left in 'Images' to split." + extra)
             return False
         if not self._confirm_auto_split(self._auto_split_message(plan)):
             print(" [AUTO SPLIT] Cancelled: nothing moved.")

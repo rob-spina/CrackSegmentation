@@ -225,6 +225,106 @@ class Mode2FilterTest(_Base):
         prompt.assert_called_once_with(2, 2)
 
 
+def _mark(app, photo_path, note=""):
+    """Marks a photo by writing the index directly (as the button does)."""
+    index = app._load_review_index()
+    index[review_key(photo_path)] = {"note": note, "since": "2026-11-06"}
+    app._save_review_index(index)
+    app._forget_review_cache()
+
+
+class ValidationSkipsMarkedTest(unittest.TestCase):
+    """[Validation] never moves a photo marked to be reviewed (setUp of test_v106_features.TestValidationRun)."""
+
+    def setUp(self):
+        import test_v106_features as t106
+        t106.TestValidationRun.setUp(self)
+
+    def test_marked_good_photo_is_not_selected(self):
+        _mark(self.app, os.path.join(self.images, "other.png"), "check width")
+        plan = self.app.plan_training_validation()
+        self.assertEqual([c["photo"] for c in plan["selected"]], ["good.png"])
+        self.assertIn(("other.png", rf.REVIEW_REJECT_REASON), [(c["photo"], r) for c, r in plan["rejected"]])
+        message = self.app._validation_summary_message(plan)
+        self.assertIn("Below the quality thresholds: 1", message)
+        self.assertIn("Marked TO BE REVIEWED (not moved until the mark is removed): 1", message)
+
+    def test_mark_only_in_json_flags_is_honoured(self):
+        path = os.path.join(self.jsons, "other.json")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        data = {"version": data.get("version"), "flags": {"to_be_reviewed": True},
+                **{k: v for k, v in data.items() if k not in ("version", "flags")}}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        plan = self.app.plan_training_validation()
+        self.assertNotIn("other.png", [c["photo"] for c in plan["selected"]])
+
+
+class AutoSplitSkipsMarkedTest(unittest.TestCase):
+    """[Auto split] leaves marked photos in 'Images' (setUp of test_v108_auto_split)."""
+
+    def setUp(self):
+        import test_v108_auto_split as t108
+        cls = next(c for c in vars(t108).values()
+                   if isinstance(c, type) and issubclass(c, unittest.TestCase) and hasattr(c, "_group_sets"))
+        cls.setUp(self)
+        self._press = lambda *a, **k: cls._press(self, *a, **k)
+        self._ls = lambda *parts: cls._ls(self, *parts)
+        self.marked = next(p for p in sorted(os.listdir(os.path.join(self.tmpdir, "Images")))
+                           if "BLDG001" in p)
+
+    def test_marked_photo_stays_in_images(self):
+        _mark(self.app, os.path.join(self.tmpdir, "Images", self.marked))
+        moved, asked, _ = self._press()
+        self.assertTrue(moved)
+        self.assertEqual(self._ls("Images"), sorted(["IMG_BLDG006_01__BLDG006.JPG", self.marked]))
+        self.assertIn("1 photo(s) marked TO BE REVIEWED are not moved", asked.call_args[0][0])
+
+    def test_after_unmarking_it_joins_its_building_set(self):
+        _mark(self.app, os.path.join(self.tmpdir, "Images", self.marked))
+        self._press()
+        self.app._save_review_index({})
+        self.app._forget_review_cache()
+        self._press()
+        where = {name for name in ("Training set", "Validation set", "Test set")
+                 for p in self._ls(name, "Images") if "BLDG001" in p}
+        self.assertEqual(len(where), 1, "the building group is split across sets")
+        self.assertIn(self.marked, [p for name in where for p in self._ls(name, "Images")])
+
+
+class ManualSplitAsksTest(_Base):
+
+    def setUp(self):
+        super().setUp()
+        self.photo = self._photo("wall.jpg")
+        self._show(self.photo)
+        self.app.cfg.modalita_scelta = "2"
+        self.app.cfg.queue_idle = False
+        self.app.cfg.image_queue = [self.photo]
+        _mark(self.app, self.photo, "crack 2")
+
+    def test_cancel_keeps_the_photo(self):
+        with mock.patch.object(self.app, "_confirm_move_photo_to_be_reviewed", return_value=False) as ask:
+            self.assertFalse(self.app._handle_dataset_split_key(23))
+        self.assertIn("crack 2", ask.call_args[0][0])
+        self.assertTrue(os.path.exists(self.photo))
+
+    def test_confirm_moves_it(self):
+        with mock.patch.object(self.app, "_confirm_move_photo_to_be_reviewed", return_value=True), \
+                mock.patch.object(self.app, "_same_group_message", return_value=None):
+            self.assertTrue(self.app._handle_dataset_split_key(24))
+        self.assertFalse(os.path.exists(self.photo))
+
+    def test_unmarked_photo_is_not_asked(self):
+        self.app._save_review_index({})
+        self.app._forget_review_cache()
+        with mock.patch.object(self.app, "_confirm_move_photo_to_be_reviewed") as ask, \
+                mock.patch.object(self.app, "_same_group_message", return_value=None):
+            self.app._handle_dataset_split_key(24)
+        ask.assert_not_called()
+
+
 class GuiWiringTest(unittest.TestCase):
 
     def test_sidebar_and_menu(self):
