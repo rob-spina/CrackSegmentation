@@ -43,6 +43,8 @@ class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.app = _sam_app(self.tmp)
+        self.app.cfg.SAM_ACCEPT_AUTO = False          # the click tests start from an empty photo
+        self.app.cfg.SAM_ACCEPT_SHOW_CANDIDATES = True
         self._pump = mock.patch.object(self.app, "_pump_extra_events")
         self._pump.start()
 
@@ -218,6 +220,119 @@ class TestCandidates(_Base):
 
     def test_shift_click_on_button(self):
         self.assertEqual(gm._SIDEBAR_SHIFT_CLICK_CODES[SAM_ACCEPT_CODE], sam_accept.SAM_CANDIDATES_CODE)
+
+
+class TestHoverAndStayOn(_Base):
+
+    def test_hover_picks_the_crack_under_the_mouse(self):
+        self._on()
+        self.assertTrue(self.app._update_sam_hover(60, 103))
+        hover = self.app.cfg.sam_accept_state["hover"]
+        self.assertGreater(hover, 0)
+        self.assertFalse(self.app._update_sam_hover(70, 102))   # same crack: no redraw
+        self.assertTrue(self.app._update_sam_hover(80, 160))    # wall: nothing under the mouse
+        self.assertEqual(self.app.cfg.sam_accept_state["hover"], 0)
+
+    def test_hover_painted_yellow_even_with_tint_hidden(self):
+        self._on()
+        self.app.cfg.SAM_ACCEPT_SHOW_CANDIDATES = False
+        self.app._update_sam_hover(60, 103)
+        scene = np.full((H, W, 3), 190, np.uint8)
+        self.app._paint_sam_candidates(scene, (0, H, 0, W))
+        self.assertGreater(int(scene[100, 60, 2]), 200)              # yellow (BGR 0,255,255) on the crack
+        np.testing.assert_array_equal(scene[40, 100], [190, 190, 190])   # the other crack: not hovered, tint off
+
+    def test_mouse_move_updates_hover(self):
+        self._on()
+        with mock.patch.object(self.app, "transform_window_to_real_coords", return_value=(60, 101)), \
+                mock.patch.object(self.app, "refresh_zoom_viewport") as redraw:
+            self.app._handle_sam_accept_mouse(cv2.EVENT_MOUSEMOVE, 3, 3)
+        redraw.assert_called_once()
+        self.assertEqual(self.app.cfg.saved_cracks, [])   # moving never accepts
+
+    def test_stays_on_for_the_next_photo(self):
+        self._on()
+        self.app._handle_sam_accept_key(13)   # Enter: next photo
+        state = self.app.cfg.sam_accept_state
+        self.assertFalse(state["active"])
+        self.assertTrue(state["sticky"])
+        self.app._resume_sam_accept_for_new_photo()
+        self.assertTrue(state["active"])
+
+    def test_other_tool_pauses_it_until_the_next_photo(self):
+        self._on()
+        self.app._handle_sam_accept_key(ord('c'))   # Crack tool, to trace one by hand
+        self.assertFalse(self.app.cfg.sam_accept_state["active"])
+        self.app._resume_sam_accept_for_new_photo()
+        self.assertTrue(self.app.cfg.sam_accept_state["active"])
+
+    def test_button_stops_it(self):
+        self._on()
+        _press(self.app, SAM_ACCEPT_CODE)   # off by the button
+        self.app._resume_sam_accept_for_new_photo()
+        self.assertFalse(self.app.cfg.sam_accept_state["active"])
+
+    def test_stay_on_can_be_switched_off(self):
+        self.app.cfg.SAM_ACCEPT_STAY_ON = False
+        self._on()
+        self.app._handle_sam_accept_key(13)
+        self.app._resume_sam_accept_for_new_photo()
+        self.assertFalse(self.app.cfg.sam_accept_state["active"])
+
+
+class TestAutoAccept(_Base):
+
+    def setUp(self):
+        super().setUp()
+        self.app.cfg.SAM_ACCEPT_AUTO = True
+        self.app.cfg.SAM_ACCEPT_SHOW_CANDIDATES = False
+
+    def test_sure_cracks_added_at_once_the_others_left(self):
+        self._on()
+        cracks = self.app.cfg.saved_cracks
+        self.assertEqual(len(cracks), 2)   # the strong crack (0.9) and its branch; the weak one (0.55) is left
+        self.assertTrue(all(c["source"] == "sam" and not c.get("uncertain_manual") for c in cracks))
+        self.assertTrue(all(abs(p[1] - 40) > 3 for c in cracks for p in c["path"]))
+        self.assertEqual(len(_json_cracks(self.app)), 2)
+
+    def test_left_crack_hovered_and_clicked(self):
+        self._on()
+        self.assertFalse(self.app._update_sam_hover(60, 101) and self.app.cfg.sam_accept_state["hover"])
+        self.assertTrue(self.app._update_sam_hover(100, 41))   # the weak crack, left to the operator
+        with mock.patch.object(self.app, "transform_window_to_real_coords", return_value=(100, 41)), \
+                mock.patch.object(self.app, "refresh_zoom_viewport"):
+            self.app._handle_sam_accept_mouse(cv2.EVENT_LBUTTONDOWN, 1, 1)
+        self.assertEqual(sorted(c["source"] for c in self.app.cfg.saved_cracks), ["sam", "sam", "sam_click"])
+        self.assertFalse(self.app._update_sam_hover(100, 41) and self.app.cfg.sam_accept_state["hover"])
+
+    def test_hover_shades_by_probability(self):
+        self._on()
+        self.app.cfg.sam_accept_state["done_labels"].clear()
+        scene = np.full((H, W, 3), 190, np.uint8)
+        self.app._update_sam_hover(60, 101)
+        self.app._paint_sam_candidates(scene, (0, H, 0, W))
+        strong = scene[100, 60].astype(int)
+        scene2 = np.full((H, W, 3), 190, np.uint8)
+        self.app._update_sam_hover(100, 41)
+        self.app._paint_sam_candidates(scene2, (0, H, 0, W))
+        weak = scene2[40, 100].astype(int)
+        self.assertLess(strong[0], weak[0])   # darker yellow (less blue) where the model is surer
+
+    def test_one_undo_removes_the_automatic_part(self):
+        self._on()
+        _press(self.app, ord('u'))
+        self.assertEqual(self.app.cfg.saved_cracks, [])
+
+    def test_not_repeated_on_a_photo_already_done(self):
+        self._on()
+        _press(self.app, SAM_ACCEPT_CODE)
+        self._on()
+        self.assertEqual(len(self.app.cfg.saved_cracks), 2)
+
+    def test_threshold(self):
+        self.app.cfg.SAM_ACCEPT_AUTO_MIN_MEAN = 0.95
+        self._on()
+        self.assertEqual(self.app.cfg.saved_cracks, [])
 
 
 class TestCache(_Base):

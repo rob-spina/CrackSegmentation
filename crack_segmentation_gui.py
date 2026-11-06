@@ -14,6 +14,7 @@ from go_to_image import PagedChooser
 from crack_relabel import MARK_UNCERTAIN_CODE, MARK_NORMAL_CODE
 from sam_autoseg import SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
 from sam_accept import SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE
+from review_flags import review_key, REVIEW_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
 from crack_branch_merge import MERGE_BRANCH_CODE, MERGE_BRANCH_EXIT_CODE
 
 
@@ -603,6 +604,8 @@ _LEFT_SIDEBAR_SECTIONS = [
     ]),
     ("Dataset", [
         ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
+        # v2.0.1: mark the photo as doubtful; Mode 2 / Switch Mode can then load only these (code 140, review_flags.py).
+        ("\U0001F6A9", "To be reviewed", "", REVIEW_CODE),
         ("\u2705", "Validation", "", 17),
         # v1.0.8 dataset split, Mode 2 only (codes 23-25, see dataset_split.py).
         ("\U0001F4DA", "Training set", "", 23),
@@ -639,6 +642,9 @@ _SIDEBAR_TOGGLE_STATES = {
     133: lambda cfg: cfg.show_xml_reference,
     MERGE_BRANCH_CODE: lambda cfg: cfg.crack_branch_merge_state["active"],
     SAM_ACCEPT_CODE: lambda cfg: cfg.sam_accept_state["active"],
+    # v2.0.1: the photo on screen is marked (index cache refreshed by the HUD every frame).
+    REVIEW_CODE: lambda cfg: (not cfg.queue_idle and bool(cfg.CURRENT_IMAGE_PATH)
+                              and review_key(cfg.CURRENT_IMAGE_PATH) in cfg.review_state["index"]),
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -1210,6 +1216,33 @@ class _ModeChoiceDialog:
         self.top.destroy()
 
 
+class _ReviewFilterDialog:
+    """v2.0.1 Mode 2 / Switch Mode: which segmented photos to load when some are marked [To be reviewed]."""
+
+    def __init__(self, master, n_review, n_others):
+        self.result = REVIEW_FILTER_ALL
+        self.top = tk.Toplevel(master)
+        self.top.title("Photos to be reviewed")
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self.top.destroy)
+        body = tk.Frame(self.top, padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text=f"{n_review} labelled photo(s) are marked TO BE REVIEWED, {n_others} are not.",
+                 font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(0, 10))
+        tk.Label(body, text="Which photos do you want to load?").pack(anchor="w", pady=(0, 6))
+        for text, value in ((f"\U0001F6A9  Only the photos to be reviewed ({n_review})", REVIEW_FILTER_ONLY),
+                            (f"\u2705  Only the other labelled photos ({n_others})", REVIEW_FILTER_OTHERS),
+                            (f"\U0001F4DA  All of them ({n_review + n_others})", REVIEW_FILTER_ALL)):
+            tk.Button(body, text=text, anchor="w", command=lambda v=value: self._choose(v)).pack(fill="x", pady=3)
+        self.top.bind("<Escape>", lambda e: self.top.destroy())
+        self.top.grab_set()
+        self.top.focus_force()
+
+    def _choose(self, value):
+        self.result = value
+        self.top.destroy()
+
+
 class _IgnoreOptionsDialog:
     """[I] options: shape (rectangle / square / free polygon) and which photo edges a rectangle is extended to.
     No edge ticked = the region can sit anywhere in the photo. OK/Enter applies, Cancel/Esc/close keeps the tool unchanged."""
@@ -1394,6 +1427,7 @@ _TOOL_COMMANDS = [
     ("\U0001F3F7 Manually assign building group\tB", ord('b')),
     ("\U0001F4CB Crack report (click a crack)", 16),
     ("\U0001F4AC Crack labels: hover a crack to read its data / off", 11),
+    ("\U0001F6A9 To be reviewed: mark / unmark this photo (Mode 2 can load only these)", REVIEW_CODE),
 ]
 
 _WIDTH_COMMANDS = [
@@ -1708,6 +1742,19 @@ class GuiCrackSegmentation(CrackSegmentation):
             "Crack numbers separated by ';' (e.g. 3;7;12).\nLeave empty to show every crack:",
             initialvalue=current_text, parent=self._tk_root,
         )
+
+    def _prompt_review_note(self, current_note):
+        # v2.0.1 [To be reviewed]: optional note; Cancel = do not mark.
+        return simpledialog.askstring(
+            "To be reviewed",
+            "Mark this photo as TO BE REVIEWED.\nNote on the doubt (optional):",
+            initialvalue=current_note or "", parent=self._tk_root,
+        )
+
+    def _prompt_review_filter(self, n_review, n_others):
+        dialog = _ReviewFilterDialog(self._tk_root, n_review, n_others)
+        self._tk_root.wait_window(dialog.top)
+        return dialog.result
 
     def _prompt_ignore_options(self, current):
         # [I] / sidebar button: modal Tk dialog for shape and edges; None = cancelled.

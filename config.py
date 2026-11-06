@@ -575,6 +575,11 @@ class Config:
         self.interrupted_crack_triggered = False
         self.interrupted_crack_message = ""
 
+    def _init_review_state(self):
+        """v2.0.1 [To be reviewed] (code 140, review_flags.py): cache of '<data>/to_be_reviewed.json' and the Mode-2
+        filter chosen at start-up / Switch Mode ("review", "reviewed" or "all")."""
+        self.review_state = {"index": {}, "stamp": "unset", "path": None, "filter": "all"}
+
     def _init_sam_accept_settings(self):
         """v2.0.0 [SAM click to accept] (code 138, sam_accept.py): a click near a crack accepts the connected part of
         the SAM crack map around it. Low threshold of that region (faint stretches come too), search radius of the
@@ -583,9 +588,17 @@ class Config:
         self.SAM_ACCEPT_CLICK_RADIUS_PX = 12
         self.SAM_ACCEPT_MIN_LENGTH_PX = 5
         self.SAM_ACCEPT_MAX_AREA_FRACTION = 0.05
-        # The cracks the model sees are tinted orange while the mode is on (Shift+click on the button = hide/show).
-        self.SAM_ACCEPT_SHOW_CANDIDATES = True
-        self.sam_accept_state = {"active": False, "photo": None, "prob": None, "clicks": 0}
+        # Every remaining crack tinted orange (Shift+click on the button = show/hide); otherwise only the one under
+        # the mouse is shown, light to dark yellow by probability.
+        self.SAM_ACCEPT_SHOW_CANDIDATES = False
+        # On every photo the mode opens on, the regions whose mean probability reaches SAM_ACCEPT_AUTO_MIN_MEAN are
+        # added at once ("source": "sam"); the others are left to the operator.
+        self.SAM_ACCEPT_AUTO = True
+        self.SAM_ACCEPT_AUTO_MIN_MEAN = 0.65
+        # The mode reopens by itself on the next photo (Enter / Q / Go to image) when it was on.
+        self.SAM_ACCEPT_STAY_ON = True
+        self.sam_accept_state = {"active": False, "photo": None, "prob": None, "labels": None, "hover": 0,
+                                 "clicks": 0, "sticky": False, "done_labels": set()}
 
     def _init_sam_autoseg_settings(self):
         """v2.0.0 [SAM auto-segment] (sidebar, process_keypress() code 136; settings code 137, sam_autoseg.py):
@@ -705,6 +718,7 @@ class Config:
         self._init_interrupted_trace_settings()
         self._init_sam_autoseg_settings()
         self._init_sam_accept_settings()
+        self._init_review_state()
         self._init_dataset_split_settings()
         self._init_validation_settings()
         self._init_queue_and_cache()
