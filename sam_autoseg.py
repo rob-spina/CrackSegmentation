@@ -149,6 +149,62 @@ def mask_to_crack_shapes(mask, min_length_px, max_cracks):
 
 
 # ======================================================================================
+# Probability-map cache: '<data folder>/SAM model/probability maps/<model>/<photo>.png'
+# ======================================================================================
+
+PROBABILITY_DIR = "probability maps"
+
+
+_TAG_CACHE = {}
+
+
+def model_tag(lora_weights="", checkpoint=""):
+    """Folder name of one model's maps. For LoRA weights, their SHA-256 (the same weights give the same folder on the
+    Mac and on Leonardo, whatever the file is called); for a single checkpoint, its file name."""
+    path = os.path.expanduser(lora_weights or "")
+    if path and os.path.isfile(path):
+        key = (os.path.abspath(path), os.path.getmtime(path), os.path.getsize(path))
+        if key not in _TAG_CACHE:
+            _TAG_CACHE[key] = "lora-" + sam_weights.file_digest(path, "sha256")[:12]
+        return _TAG_CACHE[key]
+    name = os.path.splitext(os.path.basename(lora_weights or checkpoint or "model"))[0]
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in name) or "model"
+
+
+def probability_cache_path(model_dir, tag, photo_path):
+    return os.path.join(model_dir, PROBABILITY_DIR, tag, os.path.splitext(os.path.basename(photo_path))[0] + ".png")
+
+
+def read_cached_probability(cache_path, photo_path, shape):
+    """The cached map (uint8), or None when missing, older than the photo or of another size."""
+    try:
+        if os.path.getmtime(cache_path) < os.path.getmtime(photo_path):
+            return None
+    except OSError:
+        return None
+    prob = cv2.imread(cache_path, cv2.IMREAD_GRAYSCALE)
+    return prob if prob is not None and prob.shape == tuple(shape) else None
+
+
+def write_cached_probability(cache_path, prob_u8):
+    try:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        cv2.imwrite(cache_path, prob_u8)
+    except (OSError, cv2.error):
+        pass   # a cache only: never blocks the segmentation
+
+
+def probability_uncertainty(prob_u8, low=0.3, high=0.7):
+    """Share of the crack-like pixels (p >= low) whose probability is in [low, high]: high = the model hesitates.
+    Used to pick the photos worth annotating first (active learning)."""
+    candidate = prob_u8 >= low * 255
+    n = int(candidate.sum())
+    if not n:
+        return 0.0
+    return round(float((candidate & (prob_u8 <= high * 255)).sum()) / n, 3)
+
+
+# ======================================================================================
 # The button
 # ======================================================================================
 
@@ -476,8 +532,25 @@ class SamAutoSegMixin:
                 time.sleep(0.05)
             return proc.returncode
 
+    def _sam_probability_cache_path(self, settings):
+        tag = model_tag(settings.get("lora_weights") if self._sam_backend(settings) == "sam_lora" else "",
+                        settings.get("checkpoint", ""))
+        return probability_cache_path(self._sam_model_dir(), tag, self.cfg.CURRENT_IMAGE_PATH)
+
     def _sam_probability_map(self, settings):
-        """uint8 probability map (x 255) of the photo on screen, or None (failure / cancelled)."""
+        """uint8 probability map (x 255) of the photo on screen, or None (failure / cancelled). Reused from the cache
+        when this model already processed this photo (here, by [SAM click to accept] or by sam_batch.py)."""
+        cache = self._sam_probability_cache_path(settings)
+        prob = read_cached_probability(cache, self.cfg.CURRENT_IMAGE_PATH, (self.cfg.H_img, self.cfg.W_img))
+        if prob is not None:
+            print(" [SAM] Using the crack map already computed for this photo.")
+            return prob
+        prob = self._sam_run_model_on_photo(settings)
+        if prob is not None:
+            write_cached_probability(cache, prob)
+        return prob
+
+    def _sam_run_model_on_photo(self, settings):
         with tempfile.TemporaryDirectory(prefix="crackseg_sam_") as tmp:
             out_path = os.path.join(tmp, "probability.png")
             try:

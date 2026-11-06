@@ -148,53 +148,65 @@ def _write_probability(prob, out_path):
     _log(f"probability map written: {out_path}")
 
 
-def run_sam_lora(args):
-    cda._require_torch()
-    device = cda.pick_device(args.device)
-    _log(f"loading SAM {args.model_type} + LoRA r={args.lora_r} on {device} ...")
-    sam, model_mod, tiling_mod = load_sam_lora(args, device)
-    prob = predict_sam_lora(sam, model_mod, tiling_mod, args.image, args.tile, args.overlap, device,
-                            args.batch_size)
-    _write_probability(prob, args.out)
+def _backend(args):
+    return args.backend or ("module" if args.checkpoint and not args.lora_weights else "sam_lora")
 
 
-# --------------------------------------------------------------------------------------
-# Generic module (cv_domain_adapt.py interface)
-# --------------------------------------------------------------------------------------
-
-def run(args):
-    backend = args.backend or ("module" if args.checkpoint and not args.lora_weights else "sam_lora")
-    if backend == "sam_lora":
-        return run_sam_lora(args)
-    if not args.checkpoint:
+def make_predictor(args):
+    """Loads the model ONCE and returns predict(image_path) -> float32 crack-probability map (photo size).
+    Used for one photo here and for a whole folder by sam_batch.py."""
+    backend = _backend(args)
+    if backend == "module" and not args.checkpoint:
         sys.exit("[SAM] --checkpoint is required with --backend module")
     cda._require_torch()
     device = cda.pick_device(args.device)
+    if backend == "sam_lora":
+        _log(f"loading SAM {args.model_type} + LoRA r={args.lora_r} on {device} ...")
+        sam, model_mod, tiling_mod = load_sam_lora(args, device)
+        return lambda image_path: predict_sam_lora(sam, model_mod, tiling_mod, image_path, args.tile,
+                                                   args.overlap, device, args.batch_size)
     _log(f"loading the model on {device} ...")
     model = load_model(args.model_factory, args.checkpoint).to(device).eval()
-    img = cda.read_image_rgb(os.path.expanduser(args.image))
-    full_h, full_w = img.shape[:2]
-    if args.scale != 1.0:
-        img = cv2.resize(img, None, fx=args.scale, fy=args.scale, interpolation=cv2.INTER_AREA)
-    _log(f"photo {full_w}x{full_h}, inference at {img.shape[1]}x{img.shape[0]}, tile {args.tile}, overlap {args.overlap}")
-    prob = predict_with_progress(model, img, args.tile, args.overlap, device, args.batch_size)
-    if prob.shape != (full_h, full_w):
-        prob = cv2.resize(prob, (full_w, full_h), interpolation=cv2.INTER_LINEAR)
-    _write_probability(prob, args.out)
+
+    def predict(image_path):
+        img = cda.read_image_rgb(os.path.expanduser(image_path))
+        full_h, full_w = img.shape[:2]
+        if args.scale != 1.0:
+            img = cv2.resize(img, None, fx=args.scale, fy=args.scale, interpolation=cv2.INTER_AREA)
+        _log(f"photo {full_w}x{full_h}, inference at {img.shape[1]}x{img.shape[0]}, "
+             f"tile {args.tile}, overlap {args.overlap}")
+        prob = predict_with_progress(model, img, args.tile, args.overlap, device, args.batch_size)
+        if prob.shape != (full_h, full_w):
+            prob = cv2.resize(prob, (full_w, full_h), interpolation=cv2.INTER_LINEAR)
+        return prob
+    return predict
 
 
-def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--image", required=True)
-    p.add_argument("--out", required=True, help="8-bit PNG, probability x 255")
+def run_sam_lora(args):
+    _write_probability(make_predictor(args)(args.image), args.out)
+
+
+# --------------------------------------------------------------------------------------
+# Command line
+# --------------------------------------------------------------------------------------
+
+def run(args):
+    if _backend(args) == "sam_lora":
+        return run_sam_lora(args)
+    _write_probability(make_predictor(args)(args.image), args.out)
+
+
+def add_model_args(p):
+    """The model options, shared with sam_batch.py."""
     p.add_argument("--backend", choices=["sam_lora", "module"], default=None,
                    help="default: module when only --checkpoint is given, otherwise sam_lora")
     # sam_lora: the cracksam_lora project (base SAM + best_lora.pth)
-    p.add_argument("--code-dir", default="", help="folder with model.py / sam_lora.py / tiling.py")
+    p.add_argument("--code-dir", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cracksam"),
+                   help="folder with model.py / sam_lora.py / tiling.py (default: the bundled cracksam/)")
     p.add_argument("--sam-checkpoint", default="", help="base SAM weights, e.g. sam_vit_h_4b8939.pth")
     p.add_argument("--model-type", default="vit_h", choices=["vit_b", "vit_l", "vit_h"])
     p.add_argument("--lora-r", type=int, default=4)
-    p.add_argument("--lora-weights", default="", help="best_lora.pth written by train.py")
+    p.add_argument("--lora-weights", default="", help="crack weights, e.g. cracksam_vit_h_lora_r4.pth")
     # module: cv_domain_adapt.py interface
     p.add_argument("--checkpoint", default="")
     p.add_argument("--model-factory", default="", help="FILE.py:FUNCTION, needed when the checkpoint is a state_dict")
@@ -203,6 +215,13 @@ def parse_args(argv=None):
     p.add_argument("--scale", type=float, default=1.0)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--device", default="auto", help="auto, cuda, mps or cpu")
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--image", required=True)
+    p.add_argument("--out", required=True, help="8-bit PNG, probability x 255")
+    add_model_args(p)
     return p.parse_args(argv)
 
 
