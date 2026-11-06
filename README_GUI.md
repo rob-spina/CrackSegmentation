@@ -48,6 +48,23 @@ packaging/
     dove ce n'è già una (margine `SAM_EXISTING_MARGIN_PX`).
   - Premuto di nuovo sostituisce le cricche SAM precedenti (con conferma); un solo [U] annulla
     l'intera esecuzione; [Esc] durante l'esecuzione la annulla (un secondo [Esc] chiude l'app).
+- **👆 SAM click to accept** (barra destra, sezione AI, e menu Tools; codice 138;
+  `sam_accept.py`): SAM interattivo senza falsi positivi da cancellare. Il pulsante calcola
+  una volta la mappa delle crepe della foto (o riusa quella già calcolata da SAM
+  auto-segment o da `sam_batch.py`) e non aggiunge nulla, ma colora in arancione le crepe che il
+  modello vede (più intenso dove è più sicuro; Maiusc+clic sul pulsante, codice 139, le nasconde o
+  le mostra); ogni clic vicino a una crepa vera
+  (entro `SAM_ACCEPT_CLICK_RADIUS_PX`, 12 px) accetta la parte connessa della mappa intorno al
+  clic, anche i tratti deboli fino a `SAM_ACCEPT_LOW_THRESHOLD` (0,25). Diventano cricche con
+  la forma esatta di SAM come larghezza, `"source": "sam_click"`, mai incerte (le ha confermate
+  l'operatore). JSON e maschere dopo ogni clic; [U] annulla l'ultimo clic; le cricche
+  dell'operatore e le ignore region non vengono toccate; una regione oltre il 5% della foto
+  viene rifiutata. Si esce premendo di nuovo il pulsante o con un altro comando.
+- **Cache delle mappe**: le mappe di probabilità sono salvate in
+  `SAM model/probability maps/<modello>/<foto>.png` (cartella per hash dei pesi LoRA, quindi
+  le stesse sul Mac e sul Leonardo) e riusate da entrambi i pulsanti. `sam_batch.py
+  --prob-only` calcola solo le mappe per una cartella e ordina le foto per incertezza del
+  modello (active learning: annotare prima le più incerte).
 - **Download automatico del modello**: al primo clic, dopo una conferma, l'app scarica in
   `SAM model` (cartella dati) i pesi SAM ViT-H di Meta (circa 2,4 GB) e i pesi delle crepe
   `cracksam_vit_h_lora_r4.pth` (circa 19 MB, dalle Release del repository GitHub), con

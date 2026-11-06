@@ -367,7 +367,7 @@ class TestSamGui(_TmpDir):
 
     def test_sidebar_menu_and_ctrl_click(self):
         entries = dict(gm._RIGHT_SIDEBAR_SECTIONS)["AI"]
-        self.assertEqual([code for *_, code in entries], [SAM_AUTOSEG_CODE])
+        self.assertEqual([code for *_, code in entries], [SAM_AUTOSEG_CODE, 138])   # 138 = SAM click to accept
         self.assertEqual(gm._SIDEBAR_CTRL_CLICK_CODES[SAM_AUTOSEG_CODE], SAM_SETTINGS_CODE)
         codes = [code for _, code in gm._TOOL_COMMANDS]
         self.assertIn(SAM_AUTOSEG_CODE, codes)

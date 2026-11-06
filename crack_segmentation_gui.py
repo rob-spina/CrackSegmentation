@@ -13,6 +13,7 @@ from smart_segmentation import CrackSegmentation
 from go_to_image import PagedChooser
 from crack_relabel import MARK_UNCERTAIN_CODE, MARK_NORMAL_CODE
 from sam_autoseg import SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
+from sam_accept import SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE
 from crack_branch_merge import MERGE_BRANCH_CODE, MERGE_BRANCH_EXIT_CODE
 
 
@@ -543,6 +544,8 @@ _RIGHT_SIDEBAR_SECTIONS = [
     # v2.0.0: Ctrl/Cmd+click opens the model settings (code 137).
     ("AI", [
         ("\U0001F916", "SAM auto-segment", "", SAM_AUTOSEG_CODE),
+        # v2.0.0: click the real cracks, the model segments them; press again to finish (sam_accept.py).
+        ("\U0001F446", "SAM click to accept", "", SAM_ACCEPT_CODE),
     ]),
     ("Tools", [
         ("\u26A1", "Crack tool", "C", ord('c')),
@@ -635,6 +638,7 @@ _SIDEBAR_TOGGLE_STATES = {
     132: lambda cfg: cfg.crack_extremes_state["active"],
     133: lambda cfg: cfg.show_xml_reference,
     MERGE_BRANCH_CODE: lambda cfg: cfg.crack_branch_merge_state["active"],
+    SAM_ACCEPT_CODE: lambda cfg: cfg.sam_accept_state["active"],
 }
 
 # Sidebar buttons whose icon follows the state: code -> reads the icon from cfg.
@@ -646,8 +650,9 @@ VALIDATION_CODE = 17
 # [Uncertain crack] -> make a red crack normal (then click the crack or its number); v2.0.0: [SAM auto-segment] ->
 # SAM model settings.
 _SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE, SAM_AUTOSEG_CODE: SAM_SETTINGS_CODE}
-# v1.5.0: Shift+click on these sidebar buttons sends another code: [Merge crack branches] -> exit the mode.
-_SIDEBAR_SHIFT_CLICK_CODES = {MERGE_BRANCH_CODE: MERGE_BRANCH_EXIT_CODE}
+# v1.5.0: Shift+click on these sidebar buttons sends another code: [Merge crack branches] -> exit the mode;
+# v2.0.0: [SAM click to accept] -> hide / show the cracks the model sees.
+_SIDEBAR_SHIFT_CLICK_CODES = {MERGE_BRANCH_CODE: MERGE_BRANCH_EXIT_CODE, SAM_ACCEPT_CODE: SAM_CANDIDATES_CODE}
 # Sidebar buttons enabled only when this holds (greyed out otherwise): code -> reads it from cfg.
 _SIDEBAR_ENABLED_STATES = {
     code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
@@ -1363,6 +1368,8 @@ _EDIT_COMMANDS = [
 _TOOL_COMMANDS = [
     # v2.0.0: the fine-tuned SAM model segments the photo; JSON and binary masks are written (sam_autoseg.py).
     ("\U0001F916 SAM auto-segment: cracks found by the AI model, JSON and masks saved", SAM_AUTOSEG_CODE),
+    ("\U0001F446 SAM click to accept: click the real cracks, the model segments them", SAM_ACCEPT_CODE),
+    ("\U0001F446 Show / hide the cracks the model sees (SAM click to accept)", SAM_CANDIDATES_CODE),
     ("\u2699 SAM model settings (checkpoint, model factory, Python with PyTorch)", SAM_SETTINGS_CODE),
     ("\u26A1 Tool: Crack\tC", ord('c')),
     ("\u25A6 Tool: Detachment\tD", ord('d')),

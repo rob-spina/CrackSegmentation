@@ -46,6 +46,7 @@ from crack_class_view import CrackClassViewMixin, HIDE_UNCERTAIN_OVERLAY_CODE, H
 from xml_reference import XmlReferenceMixin, XML_REFERENCE_CODE
 from crack_branch_merge import CrackBranchMergeMixin, MERGE_BRANCH_CODE
 from sam_autoseg import SamAutoSegMixin, SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
+from sam_accept import SamAcceptMixin, SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -55,7 +56,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
                         CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
                         CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin,
-                        CrackBranchMergeMixin, SamAutoSegMixin):
+                        CrackBranchMergeMixin, SamAutoSegMixin, SamAcceptMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -951,7 +952,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         widths, special_segments = self._compute_widths_and_special_segments(f, n, default_dilation_px)
 
         # v2.0.0: a SAM crack still covered by its own fill exports SAM's exact shape, without the edge ribbon.
-        if f.get('source') == 'sam' and widths and all(w is None for w in widths):
+        if str(f.get('source', '')).startswith('sam') and widths and all(w is None for w in widths):
             return self._paint_sam_fill_segments(out, special_segments, path, height, width)
         # Covers the whole path with the automatic two-edge outline when enabled.
         auto_ribbon = self._compute_auto_edge_ribbon(path, height, width, default_dilation_px)
@@ -4411,6 +4412,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 self._handle_crack_relabel_mouse(event, x, y)
                 return
 
+            if self.cfg.sam_accept_state["active"]:
+                # v2.0.0 [SAM click to accept]: a click near a crack accepts the model's crack there.
+                self._handle_sam_accept_mouse(event, x, y)
+                return
+
             if self.cfg.crack_branch_merge_state["active"]:
                 # v1.5.0 [Merge crack branches]: first click = main crack, next clicks = its branches.
                 self._handle_crack_branch_merge_mouse(event, x, y)
@@ -5606,6 +5612,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         y0, y1, x0, x1 = region
         scene = self.cfg.img_background[y0:y1, x0:x1].copy()
         self._paint_temp_crack_preview(scene, region)
+        self._paint_sam_candidates(scene, region)   # v2.0.0 [SAM click to accept]: under the cracks
         self._compute_scene_overlays(scene, h_actual, w_active, region)
         roi = self._compute_zoom_roi(scene, h_actual, w_active, origin=(x0, y0))
         win_out = self._resize_roi_to_window(roi)
@@ -5632,6 +5639,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_warn_uncertain_label(win_out)
         self._draw_crack_relabel_label(win_out)
         self._draw_crack_branch_merge_label(win_out)
+        self._draw_sam_accept_label(win_out)
         self._draw_crack_extremes(win_out)
         self._draw_building_portion(win_out)
 
@@ -5864,6 +5872,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         if self._handle_crack_branch_merge_key(key_clean):   # v1.5.0: Shift+C / code 135 end [Merge crack branches]
             return False
+        self._handle_sam_accept_key(key_clean)   # v2.0.0: another command ends [SAM click to accept]
         self._cancel_crack_relabel_for_key(key_clean)   # v1.3.0: Cut, Join, a tool ... cancel a pending Ctrl/Cmd+C/U
         self._close_crack_extremes_for_key(key_clean)   # v1.4.0: another command closes [Edit extremes] (saved)
 
@@ -5950,6 +5959,12 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == SAM_AUTOSEG_CODE:   # v2.0.0: SAM segments the photo, JSON and masks written
             self._run_sam_autoseg()
+
+        elif key_clean == SAM_ACCEPT_CODE:   # v2.0.0: click the real cracks, SAM segments them
+            self._toggle_sam_accept()
+
+        elif key_clean == SAM_CANDIDATES_CODE:   # v2.0.0: show / hide the cracks the model sees
+            self._toggle_sam_candidates()
 
         elif key_clean == SAM_SETTINGS_CODE:   # v2.0.0: SAM checkpoint / model factory / Python
             self._edit_sam_settings()
