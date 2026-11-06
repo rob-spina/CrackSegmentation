@@ -1807,6 +1807,9 @@ class GuiCrackSegmentation(CrackSegmentation):
             parent=self._tk_root,
         )
 
+    def _confirm_move_photo_to_be_reviewed(self, message):
+        return bool(messagebox.askyesno("Crack Detector - To be reviewed", message, parent=self._tk_root))
+
     def _confirm_same_group_split(self, message):
         return bool(messagebox.askyesno("Crack Detector - Same building group", message, parent=self._tk_root))
 

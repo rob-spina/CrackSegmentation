@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from config import IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME
+from review_flags import REVIEW_REJECT_REASON
 
 
 VALID_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
@@ -263,9 +264,15 @@ class TrainingValidationMixin:
 
     def plan_training_validation(self):
         """{'selected', 'rejected': [(cand, reason)], 'duplicates': [(cand, kept photo)]} -- nothing is moved yet."""
-        plan = {"selected": [], "rejected": [], "duplicates": []}
+        plan = {"selected": [], "rejected": [], "duplicates": [], "to_review": 0}
         suitable = []
+        self._import_review_flags_from_jsons()
         for cand in self._collect_validation_candidates():
+            if self.is_photo_to_be_reviewed(cand["image_path"]):   # v2.0.1: doubtful, never moved automatically
+                cand["reason"] = REVIEW_REJECT_REASON
+                plan["rejected"].append((cand, REVIEW_REJECT_REASON))
+                plan["to_review"] += 1
+                continue
             ok, reason = evaluate_photo_quality(cand["quality"], self.cfg)
             cand["reason"] = reason
             if ok:
@@ -277,12 +284,17 @@ class TrainingValidationMixin:
         return plan
 
     def _validation_summary_message(self, plan):
-        n_sel, n_rej, n_dup = len(plan["selected"]), len(plan["rejected"]), len(plan["duplicates"])
+        n_review = plan.get("to_review", 0)
+        n_sel, n_rej, n_dup = len(plan["selected"]), len(plan["rejected"]) - n_review, len(plan["duplicates"])
         cfg = self.cfg
         lines = [
             f"Suitable for training: {n_sel} photo(s)",
             f"Below the quality thresholds: {n_rej}",
             f"Discarded as too similar to another photo: {n_dup}",
+        ]
+        if n_review:
+            lines.append(f"Marked TO BE REVIEWED (not moved until the mark is removed): {n_review}")
+        lines += [
             "",
             f"Thresholds: mean reliability >= {cfg.VALIDATION_MIN_MEAN_RELIABILITY_PCT}%, "
             f"mean confidence >= {cfg.VALIDATION_MIN_MEAN_CONFIDENCE}, "

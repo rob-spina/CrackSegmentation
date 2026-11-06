@@ -10,16 +10,21 @@ can be found again later:
   - while the photo on screen is marked the status bar shows "TO BE REVIEWED" and the button stays pressed;
   - Mode 2 (at start-up and with [Switch Mode]): when some of the segmented photos are marked and some are not,
     a dialog asks which ones to load: only those to be reviewed, only the others, or all of them. The choice is
-    kept for the reloads of the same pass (e.g. after [Validation]).
+    kept for the reloads of the same pass (e.g. after [Validation]);
+  - [Validation] and [Auto split] never move a marked photo (it stays in 'Images' until the mark is removed;
+    Auto split then puts it in the set of its building group); [Training / Test / Validation set] ask first.
 """
 import datetime
 import json
 import os
 import re
 
+from config import JSON_DIR_NAME
+
 REVIEW_CODE = 140
 REVIEW_INDEX_NAME = "to_be_reviewed.json"
 REVIEW_FLAG = "to_be_reviewed"
+REVIEW_REJECT_REASON = "marked TO BE REVIEWED"   # Validation / Auto split leave these photos in 'Images'
 REVIEW_NOTE_FLAG = "review_note"
 # Mode-2 queue filters.
 REVIEW_FILTER_ONLY = "review"       # only the photos to be reviewed
@@ -168,8 +173,8 @@ class ReviewFlagsMixin:
     def _import_review_flags_from_jsons(self):
         """Photos marked in their JSON flags but missing from the index (e.g. a JSON copied from another computer)
         are added to the index. Only the start of each JSON is read: LabelMe writes "flags" before "imageData"."""
-        folder = self.cfg.OUTPUT_FOLDER
-        if not folder or not os.path.isdir(folder):
+        folder = os.path.join(str(self.cfg.SCRIPT_DIR), JSON_DIR_NAME)
+        if not os.path.isdir(folder):
             return
         index = self._load_review_index()
         added = 0
@@ -195,6 +200,19 @@ class ReviewFlagsMixin:
         if added and self._save_review_index(index):
             self._forget_review_cache()
             print(f"[TO BE REVIEWED] {added} photo(s) marked in their JSON added to {REVIEW_INDEX_NAME}")
+
+    def _confirm_move_photo_to_be_reviewed(self, message):
+        """[Training / Test / Validation set] on a marked photo. Default: terminal input(); the GUI asks."""
+        print("\n" + message)
+        try:
+            return input("Type y to move it anyway, or ENTER to cancel: ").strip().lower() in ("y", "s")
+        except Exception:
+            return False
+
+    def _review_move_message(self, set_name):
+        note = self.review_note()
+        return (f"This photo is marked TO BE REVIEWED" + (f" ({note})" if note else "") + ".\n"
+                f"Move it to '{set_name}' anyway? It stays marked; press [To be reviewed] first to remove the mark.")
 
     # --- Mode 2 queue ---------------------------------------------------------------------------
 

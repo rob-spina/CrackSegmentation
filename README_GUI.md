@@ -45,6 +45,10 @@ packaging/
 - **Modo 2** (all'avvio e con **Switch Mode**): se alcune foto segmentate sono segnate e altre no, una
   finestra chiede se caricare solo quelle da revisionare, solo le altre, o tutte. La scelta vale anche per
   i ricaricamenti della stessa sessione (per esempio dopo Validation).
+- **Validation** e **Auto split** non spostano mai una foto segnata: resta in `Images` finché il segno
+  non viene tolto (Auto split la mette poi nel set del suo gruppo di edificio, senza dividere il gruppo);
+  i riepiloghi dicono quante foto segnate sono rimaste. **Training / Test / Validation set** chiedono
+  conferma prima di spostare una foto segnata (che resta segnata).
 
 ## Novità 2.0.0: SAM auto-segment
 
