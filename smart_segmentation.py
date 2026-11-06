@@ -47,6 +47,7 @@ from xml_reference import XmlReferenceMixin, XML_REFERENCE_CODE
 from crack_branch_merge import CrackBranchMergeMixin, MERGE_BRANCH_CODE
 from sam_autoseg import SamAutoSegMixin, SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
 from sam_accept import SamAcceptMixin, SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE
+from review_flags import ReviewFlagsMixin, REVIEW_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -56,7 +57,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         DatasetBrowserMixin, UncertainTraceMixin, InterruptedTraceMixin,
                         CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
                         CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin,
-                        CrackBranchMergeMixin, SamAutoSegMixin, SamAcceptMixin):
+                        CrackBranchMergeMixin, SamAutoSegMixin, SamAcceptMixin,
+                        ReviewFlagsMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -297,7 +299,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             sys.exit(1)
         print(f"[INFO] Configuration complete. Found {len(self.cfg.image_queue)} file(s) ready for analysis.")
 
-    def _rebuild_queue_for_mode(self, new_mode):
+    def _rebuild_queue_for_mode(self, new_mode, ask_review_filter=False):
         """Rebuilds image_queue for the given mode ("1"/"2") without
         re-prompting -- used by the runtime Switch Mode action (code 6).
         Unlike the startup _finalize_queue_or_exit, an empty result
@@ -316,6 +318,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         if self.cfg.modalita_scelta != "2":
             self._load_mode1_queue(valid_extensions)
         self.cfg.image_queue.sort()
+        self._apply_review_filter(ask=ask_review_filter)   # v2.0.1: only / not / all the photos to be reviewed
 
         if not self.cfg.image_queue:
             print(f"[SWITCH MODE] No valid file found for mode {new_mode} -- staying in mode {previous_mode}.")
@@ -347,6 +350,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         # MODE 1: Load the photos in 'Images' that have no JSON yet
         if self.cfg.modalita_scelta != "2":
             self._load_mode1_queue(VALID_EXTENSIONS)
+
+        self._apply_review_filter(ask=True)   # v2.0.1: Mode 2 -- only / not / all the photos to be reviewed
 
         # Chronological/alphabetical file sort plus a safety exit check
         self._finalize_queue_or_exit()
@@ -1209,7 +1214,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         separately."""
         return {
             "version": "5.0.1",
-            "flags": {},
+            "flags": self.review_flags_for_json(),   # v2.0.1: {"to_be_reviewed": true, ...} when marked
             "shapes": [],
             "imagePath": os.path.basename(self.cfg.CURRENT_IMAGE_PATH),
             "imageData": img_b64,
@@ -2396,6 +2401,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._compute_binary_and_skeleton_masks()
         self._build_display_background()
         self._load_or_initialize_shapes_for_mode()
+        self._resume_sam_accept_for_new_photo()   # v2.0.0: [SAM click to accept] stays on from photo to photo
         # NO AUTOMATIC LOADING HERE.
         # The operator decides when (and whether) to press W.
 
@@ -5640,6 +5646,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         self._draw_crack_relabel_label(win_out)
         self._draw_crack_branch_merge_label(win_out)
         self._draw_sam_accept_label(win_out)
+        self._draw_review_label(win_out)   # v2.0.1: TO BE REVIEWED
         self._draw_crack_extremes(win_out)
         self._draw_building_portion(win_out)
 
@@ -5966,6 +5973,9 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         elif key_clean == SAM_CANDIDATES_CODE:   # v2.0.0: show / hide the cracks the model sees
             self._toggle_sam_candidates()
 
+        elif key_clean == REVIEW_CODE:   # v2.0.1: mark / unmark the photo as to be reviewed
+            self._toggle_review_flag()
+
         elif key_clean == SAM_SETTINGS_CODE:   # v2.0.0: SAM checkpoint / model factory / Python
             self._edit_sam_settings()
 
@@ -6107,7 +6117,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self.cfg.switch_mode_requested = False
             self.cfg.queue_item_consumed = False
             target_mode = "2" if self.cfg.modalita_scelta == "1" else "1"
-            if self._rebuild_queue_for_mode(target_mode):
+            if self._rebuild_queue_for_mode(target_mode, ask_review_filter=True):
                 queue_pos = self._mode_start_position()
             return queue_pos, len(self.cfg.image_queue)
         return self._advance_queue_position(queue_pos), total_files
@@ -6210,7 +6220,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         skipped_count = len(self.cfg.image_queue) if finished_mode == "1" else 0
         if not self._prompt_queue_exhausted(finished_mode, target_mode, skipped_count):
             return False
-        if self._rebuild_queue_for_mode(target_mode) and self.cfg.modalita_scelta == target_mode:
+        if self._rebuild_queue_for_mode(target_mode, ask_review_filter=True) and self.cfg.modalita_scelta == target_mode:
             return True
         self._notify_mode_switch_unavailable(target_mode)
         return False
@@ -6259,7 +6269,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self._handle_escape_key()
         elif code == 6:
             target_mode = "2" if self.cfg.modalita_scelta == "1" else "1"
-            if self._rebuild_queue_for_mode(target_mode):
+            if self._rebuild_queue_for_mode(target_mode, ask_review_filter=True):
                 return True
             self._notify_mode_switch_unavailable(target_mode)
         elif code == 17:

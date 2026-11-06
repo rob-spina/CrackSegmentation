@@ -8,9 +8,14 @@ Interactive use of the fine-tuned SAM crack model, with no false positives to de
     width ("source": "sam_click"). The operator confirmed them, so they are never saved as uncertain;
   - JSON and binary masks are written after every click; [U] undoes the last click; the operator's cracks and the
     ignore regions are left alone;
-  - while the mode is on, the cracks the model sees are tinted orange on the photo (stronger where it is surer), so
-    the operator sees where to click; Shift+click on the button (code 139) hides / shows them;
-  - pressing the button again, or another command, ends the mode.
+  - automatic part: on every photo the mode opens on, the cracks the model is sure of (mean probability of the
+    region >= SAM_ACCEPT_AUTO_MIN_MEAN) are added at once ("source": "sam", one Undo step); the others are left to
+    the operator. Skipped on a photo that already has SAM cracks (it was done before);
+  - moving the mouse over a remaining crack shows its probability map: dark yellow where the model is surer,
+    light yellow where it is less sure -- exactly what a click would accept. Click to accept it, or trace / edit it
+    with the usual tools (the mode pauses and comes back on the next photo). Shift+click on the button (code 139)
+    shows / hides the map of every remaining crack at once;
+  - the mode stays on from photo to photo (Enter / Q / Go to image) until the button is pressed again.
 """
 import os
 import time
@@ -19,16 +24,21 @@ import cv2
 import numpy as np
 
 from crack_relabel import RELABEL_KEEP_KEYS, RELABEL_TARGET_BY_CODE
+from review_flags import REVIEW_CODE
 from sam_autoseg import mask_to_crack_shapes
 
 SAM_ACCEPT_CODE = 138
 SAM_CANDIDATES_CODE = 139   # show / hide the cracks the model sees (Shift+click on the button, Tools menu)
-CANDIDATE_COLOR = (0, 165, 255)   # BGR orange, stronger where the model is surer
+CANDIDATE_COLOR = (0, 165, 255)   # BGR orange, stronger where the model is surer (Shift+click: every crack)
+HOVER_LIGHT = (170, 255, 255)     # BGR light yellow: the model is not very sure
+HOVER_DARK = (0, 175, 235)        # BGR dark yellow: the model is sure
+# Keys that move to another photo: they close the mode for this photo but it reopens on the next one.
+NAVIGATION_KEYS = frozenset([13, 10, ord('q'), ord('Q'), 29, 31])
 SAM_ACCEPT_SOURCE = "sam_click"
 # Keys that leave the mode on: view keys, Undo/Redo, Save, the overlay toggles and the button itself.
 SAM_ACCEPT_KEEP_KEYS = (RELABEL_KEEP_KEYS | frozenset(RELABEL_TARGET_BY_CODE)
                         | frozenset([ord('u'), ord('U'), ord('r'), ord('R'), ord('s'), ord('S'),
-                                     130, 131, 133, SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE]))
+                                     130, 131, 133, SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE, REVIEW_CODE]))
 
 
 def accept_region(prob_u8, x, y, low_threshold, radius, blocked=None):
@@ -69,8 +79,13 @@ class SamAcceptMixin:
         """Code 138: turns the mode on (computing the crack map if needed) or off."""
         state = self.cfg.sam_accept_state
         if state["active"]:
+            state["sticky"] = False
             self._exit_sam_accept()
             return False
+        return self._start_sam_accept()   # also resumes it on this photo after a pause
+
+    def _start_sam_accept(self):
+        state = self.cfg.sam_accept_state
         cfg = self.cfg
         if not cfg.CURRENT_IMAGE_PATH or cfg.img_original is None or getattr(cfg, "queue_idle", False):
             print(" [SAM CLICK] No photo on screen.")
@@ -81,11 +96,17 @@ class SamAcceptMixin:
         print(f" [SAM CLICK] Crack map of {os.path.basename(cfg.CURRENT_IMAGE_PATH)} ... ([Esc] cancels)")
         prob = self._sam_probability_map(settings)
         if prob is None:
+            state["sticky"] = False
             return False
-        state.update(active=True, photo=cfg.CURRENT_IMAGE_PATH, prob=prob, clicks=0)
-        print(" [SAM CLICK] On: the cracks the model sees are tinted orange; click on every REAL one to accept it "
-              "(thin ones too), nothing else is added. Shift+click on the button hides the tint; [U] undoes the last "
-              "click; press the button again to finish.")
+        low = (prob >= int(round(cfg.SAM_ACCEPT_LOW_THRESHOLD * 255))).astype(np.uint8)
+        _, labels = cv2.connectedComponents(low, connectivity=8)   # for the hover preview
+        state.update(active=True, photo=cfg.CURRENT_IMAGE_PATH, prob=prob, labels=labels, hover=0, clicks=0,
+                     sticky=bool(cfg.SAM_ACCEPT_STAY_ON), done_labels=set())
+        if cfg.SAM_ACCEPT_AUTO and not any(str(c.get('source', '')).startswith('sam') for c in cfg.saved_cracks):
+            self._auto_accept_confident_cracks()
+        print(" [SAM CLICK] On: move the mouse over a crack to see its map (dark yellow = the model is sure), click "
+              "the REAL ones to accept them, or trace them with the usual tools. Shift+click on the button shows every "
+              "remaining crack; [U] undoes; the mode stays on for the next photo; press the button to finish.")
         self.refresh_zoom_viewport()
         return True
 
@@ -94,7 +115,7 @@ class SamAcceptMixin:
         if not state["active"]:
             return
         clicks = state["clicks"]
-        state.update(active=False, photo=None, prob=None, clicks=0)
+        state.update(active=False, photo=None, prob=None, labels=None, hover=0, clicks=0, done_labels=set())
         print(f" [SAM CLICK] Off{': ' + reason if reason else ''} ({clicks} crack(s) accepted).")
         self.refresh_zoom_viewport()
 
@@ -113,24 +134,53 @@ class SamAcceptMixin:
         """Orange tint over the cracks the model sees (p >= SAM_ACCEPT_LOW_THRESHOLD), in scene (the crop of the
         photo given by region = (y0, y1, x0, x1)), under the cracks drawn afterwards."""
         state, cfg = self.cfg.sam_accept_state, self.cfg
-        if not (state["active"] and cfg.SAM_ACCEPT_SHOW_CANDIDATES) or state["prob"] is None:
+        if not state["active"] or state["prob"] is None:
             return
         y0, y1, x0, x1 = region
         prob = state["prob"][y0:y1, x0:x1]
         if prob.shape != scene.shape[:2]:
             return
-        mask = prob >= int(round(cfg.SAM_ACCEPT_LOW_THRESHOLD * 255))
-        if not mask.any():
-            return
-        alpha = (0.25 + 0.5 * prob[mask].astype(np.float32) / 255.0)[:, None]
-        color = np.array(CANDIDATE_COLOR, np.float32)
-        scene[mask] = (scene[mask].astype(np.float32) * (1 - alpha) + color * alpha).astype(np.uint8)
+        labels = state.get("labels")
+        done = state.get("done_labels") or set()
+        if cfg.SAM_ACCEPT_SHOW_CANDIDATES:
+            mask = prob >= int(round(cfg.SAM_ACCEPT_LOW_THRESHOLD * 255))
+            if done and labels is not None:
+                mask &= ~np.isin(labels[y0:y1, x0:x1], list(done))
+            if mask.any():
+                alpha = (0.25 + 0.5 * prob[mask].astype(np.float32) / 255.0)[:, None]
+                color = np.array(CANDIDATE_COLOR, np.float32)
+                scene[mask] = (scene[mask].astype(np.float32) * (1 - alpha) + color * alpha).astype(np.uint8)
+        hover = state.get("hover", 0)
+        if hover and labels is not None:
+            mask = labels[y0:y1, x0:x1] == hover
+            if mask.any():
+                low = cfg.SAM_ACCEPT_LOW_THRESHOLD * 255
+                t = np.clip((prob[mask].astype(np.float32) - low) / max(255 - low, 1), 0, 1)[:, None]
+                color = (np.array(HOVER_LIGHT, np.float32) * (1 - t) + np.array(HOVER_DARK, np.float32) * t)
+                scene[mask] = (scene[mask].astype(np.float32) * 0.2 + color * 0.8).astype(np.uint8)
 
     def _handle_sam_accept_key(self, key_clean):
-        """Another command ends the mode (the button itself toggles it). Never consumes the key."""
-        if self.cfg.sam_accept_state["active"] and key_clean not in SAM_ACCEPT_KEEP_KEYS:
+        """Another command ends the mode (the button itself toggles it); moving to another photo only closes it
+        for this one. Never consumes the key."""
+        state = self.cfg.sam_accept_state
+        if not state["active"] or key_clean in SAM_ACCEPT_KEEP_KEYS:
+            return False
+        sticky = state["sticky"]
+        if key_clean in NAVIGATION_KEYS:
+            self._exit_sam_accept("next photo -- it reopens there" if sticky else None)
+        elif sticky:
+            self._exit_sam_accept("paused for the tool just chosen -- press the button to come back to it here; "
+                                  "the next photo reopens it")
+        else:
             self._exit_sam_accept("another command was chosen")
+        state["sticky"] = sticky
         return False
+
+    def _resume_sam_accept_for_new_photo(self):
+        """Called when a photo is opened: reopens the mode if it was on for the previous photo."""
+        state = self.cfg.sam_accept_state
+        if state.get("sticky") and not state["active"]:
+            self._start_sam_accept()
 
     def _draw_sam_accept_label(self, win_out):
         state = self.cfg.sam_accept_state
@@ -141,18 +191,92 @@ class SamAcceptMixin:
         self._put_hud_text(win_out, f"SAM CLICK TO ACCEPT: click the real cracks ({state['clicks']} accepted)",
                            (15, y), (255, 160, 0))
 
+    # --- Automatic part ---------------------------------------------------------------------
+
+    def _auto_accept_confident_cracks(self):
+        """Adds, as one Undo step, every map region whose mean probability reaches SAM_ACCEPT_AUTO_MIN_MEAN."""
+        cfg, state = self.cfg, self.cfg.sam_accept_state
+        prob, labels = state["prob"], state["labels"]
+        n = int(labels.max()) + 1
+        if n <= 1:
+            return 0
+        flat = labels.ravel()
+        counts = np.bincount(flat, minlength=n)
+        sums = np.bincount(flat, weights=prob.ravel().astype(np.float64), minlength=n)
+        means = sums / np.maximum(counts, 1) / 255.0
+        ok = (means >= cfg.SAM_ACCEPT_AUTO_MIN_MEAN) & (counts >= cfg.SAM_MIN_AREA_PX) \
+            & (counts <= cfg.SAM_ACCEPT_MAX_AREA_FRACTION * prob.size)
+        ok[0] = False
+        chosen = np.nonzero(ok)[0]
+        if not len(chosen):
+            print(" [SAM CLICK] No crack the model is sure of: they are all left to you.")
+            return 0
+        region = np.isin(labels, chosen)
+        region &= self._sam_existing_coverage([f for f in cfg.saved_cracks if f.get('active', True)]) == 0
+        shapes = mask_to_crack_shapes(region.astype(np.uint8) * 255, cfg.SAM_MIN_CRACK_LENGTH_PX, cfg.SAM_MAX_CRACKS)
+        new_cracks = [self._sam_crack_from_shape(line, reg, x0, y0, prob) for line, reg, x0, y0 in shapes]
+        for crack in new_cracks:
+            crack.pop('uncertain_manual', None)   # sure by construction
+        if not new_cracks:
+            return 0
+        before = self._snapshot_crack_edit_state()
+        cfg.saved_cracks.extend(new_cracks)
+        self._commit_crack_edit(before)
+        state["done_labels"].update(int(k) for k in chosen)
+        left = int((counts[1:] >= cfg.SAM_MIN_AREA_PX).sum()) - len(chosen)
+        print(f" [SAM CLICK] {len(new_cracks)} crack line(s) the model is sure of added ([U] removes them); "
+              f"{max(left, 0)} less sure region(s) left to you: move the mouse over them.")
+        self.recalculate_masks()
+        self._save_annotations_now("SAM CLICK", "the cracks the model is sure of")
+        return len(new_cracks)
+
     # --- Click ------------------------------------------------------------------------------
 
     def _handle_sam_accept_mouse(self, event, x, y):
+        state = self.cfg.sam_accept_state
+        if event == cv2.EVENT_MOUSEMOVE:
+            if state["photo"] == self.cfg.CURRENT_IMAGE_PATH:
+                real_x, real_y = self.transform_window_to_real_coords(x, y)
+                if self._update_sam_hover(int(real_x), int(real_y)):
+                    self.refresh_zoom_viewport()
+            return
         if event != cv2.EVENT_LBUTTONDOWN:
             return
-        state = self.cfg.sam_accept_state
         if state["photo"] != self.cfg.CURRENT_IMAGE_PATH:
             self._exit_sam_accept("the photo changed")
             return
         real_x, real_y = self.transform_window_to_real_coords(x, y)
-        self._accept_sam_crack_at(int(real_x), int(real_y))
+        if self._accept_sam_crack_at(int(real_x), int(real_y)) and state.get("hover"):
+            state["done_labels"].add(state["hover"])
+        state["hover"] = 0
         self.refresh_zoom_viewport()
+
+    def _update_sam_hover(self, x, y):
+        """Picks the map region a click at (x, y) would take, for the yellow preview. True when it changed."""
+        state, cfg = self.cfg.sam_accept_state, self.cfg
+        prob, labels = state["prob"], state.get("labels")
+        if prob is None or labels is None:
+            return False
+        h, w = prob.shape
+        r = cfg.SAM_ACCEPT_CLICK_RADIUS_PX
+        x0, x1, y0, y1 = max(0, x - r), min(w, x + r + 1), max(0, y - r), min(h, y + r + 1)
+        label = 0
+        if x0 < x1 and y0 < y1:
+            window = labels[y0:y1, x0:x1]
+            if window.any():
+                yy, xx = np.ogrid[y0:y1, x0:x1]
+                done = state.get("done_labels") or set()
+                near = ((yy - y) ** 2 + (xx - x) ** 2 <= r * r) & (window > 0)
+                if done:
+                    near &= ~np.isin(window, list(done))
+                if near.any():
+                    weights = np.where(near, prob[y0:y1, x0:x1].astype(np.int32) + 1, 0)
+                    sy, sx = np.unravel_index(int(np.argmax(weights)), weights.shape)
+                    label = int(window[sy, sx])
+        if label == state.get("hover", 0):
+            return False
+        state["hover"] = label
+        return True
 
     def _accept_sam_crack_at(self, x, y):
         """Adds the cracks of the map region under (x, y). True when something was added."""

@@ -32,6 +32,20 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 2.0.1: To be reviewed
+
+- **🚩 To be reviewed** (barra sinistra, sezione Dataset, e menu Tools; codice 140): segna la foto
+  sullo schermo come dubbia (una crepa tracciata in modo incerto, un dubbio sull'intera foto), con una
+  nota facoltativa; premuto di nuovo toglie il segno. Finché la foto è segnata la barra di stato mostra
+  `TO BE REVIEWED` e il pulsante resta premuto.
+- La foto **non viene rinominata** (JSON, maschere binarie, tag `__BLDGxxx` e cache delle mappe SAM la
+  trovano per nome): i segni stanno in `to_be_reviewed.json` nella cartella dei dati e nei `"flags"` del
+  JSON LabelMe della foto (`"to_be_reviewed": true`, `"review_note"`), così viaggiano con il dataset.
+  Una foto segnata solo nel JSON (copiata da un altro computer) viene aggiunta all'indice.
+- **Modo 2** (all'avvio e con **Switch Mode**): se alcune foto segmentate sono segnate e altre no, una
+  finestra chiede se caricare solo quelle da revisionare, solo le altre, o tutte. La scelta vale anche per
+  i ricaricamenti della stessa sessione (per esempio dopo Validation).
+
 ## Novità 2.0.0: SAM auto-segment
 
 - **SAM auto-segment** (barra destra, nuova sezione **AI**; anche nel menu Tools, codice 136):
@@ -49,17 +63,19 @@ packaging/
   - Premuto di nuovo sostituisce le cricche SAM precedenti (con conferma); un solo [U] annulla
     l'intera esecuzione; [Esc] durante l'esecuzione la annulla (un secondo [Esc] chiude l'app).
 - **👆 SAM click to accept** (barra destra, sezione AI, e menu Tools; codice 138;
-  `sam_accept.py`): SAM interattivo senza falsi positivi da cancellare. Il pulsante calcola
-  una volta la mappa delle crepe della foto (o riusa quella già calcolata da SAM
-  auto-segment o da `sam_batch.py`) e non aggiunge nulla, ma colora in arancione le crepe che il
-  modello vede (più intenso dove è più sicuro; Maiusc+clic sul pulsante, codice 139, le nasconde o
-  le mostra); ogni clic vicino a una crepa vera
-  (entro `SAM_ACCEPT_CLICK_RADIUS_PX`, 12 px) accetta la parte connessa della mappa intorno al
-  clic, anche i tratti deboli fino a `SAM_ACCEPT_LOW_THRESHOLD` (0,25). Diventano cricche con
-  la forma esatta di SAM come larghezza, `"source": "sam_click"`, mai incerte (le ha confermate
-  l'operatore). JSON e maschere dopo ogni clic; [U] annulla l'ultimo clic; le cricche
-  dell'operatore e le ignore region non vengono toccate; una regione oltre il 5% della foto
-  viene rifiutata. Si esce premendo di nuovo il pulsante o con un altro comando.
+  `sam_accept.py`): SAM semi-automatico, foto dopo foto. Su ogni foto in cui la modalità si
+  apre, le crepe di cui il modello è sicuro (probabilità media della regione >=
+  `SAM_ACCEPT_AUTO_MIN_MEAN`, 0,65) vengono aggiunte subito (`"source": "sam"`, un solo [U] le
+  toglie); le altre restano all'operatore. Passando il mouse su una di queste compare la sua
+  mappa di probabilità, giallo scuro dove il modello è più sicuro e giallo chiaro dove lo è meno:
+  esattamente ciò che il clic accetterebbe. Un clic la accetta (`"source": "sam_click"`, mai
+  incerta); oppure la si traccia / modifica con gli strumenti di sempre (la modalità si mette in
+  pausa e si riapre sulla foto successiva). Maiusc+clic sul pulsante (codice 139) colora in
+  arancione tutte le crepe rimaste. JSON e maschere dopo ogni modifica; le cricche dell'operatore
+  e le ignore region non vengono toccate; una regione oltre il 5% della foto viene rifiutata. La
+  modalità resta attiva da una foto all'altra (Invio / Q / Go to image; `SAM_ACCEPT_STAY_ON`)
+  finché non si ripreme il pulsante. Sulle foto che hanno già cricche SAM la parte automatica non
+  viene ripetuta.
 - **Cache delle mappe**: le mappe di probabilità sono salvate in
   `SAM model/probability maps/<modello>/<foto>.png` (cartella per hash dei pesi LoRA, quindi
   le stesse sul Mac e sul Leonardo) e riusate da entrambi i pulsanti. `sam_batch.py
