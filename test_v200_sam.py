@@ -419,6 +419,22 @@ class TestSamGui(_TmpDir):
 
 class TestSamInferBackend(unittest.TestCase):
 
+    def test_photo_turned_like_the_app(self):
+        """Portrait photos stored landscape with an EXIF Orientation tag: the map must have the app's size."""
+        from PIL import Image
+        import sam_infer
+        tmp = tempfile.mkdtemp()
+        try:
+            img = Image.fromarray(np.zeros((100, 200, 3), np.uint8))
+            exif = img.getexif()
+            exif[0x0112] = 6   # rotate 90 degrees when shown
+            path = os.path.join(tmp, "portrait.jpg")
+            img.save(path, exif=exif)
+            h, w = cv2.imread(path).shape[:2]
+            self.assertEqual(sam_infer.read_photo_upright(path).size, (w, h))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_backend_chosen_from_arguments(self):
         import sam_infer
         with mock.patch.object(sam_infer, "run_sam_lora") as lora, \
