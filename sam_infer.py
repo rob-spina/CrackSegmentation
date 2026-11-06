@@ -106,11 +106,18 @@ def load_sam_lora(args, device):
     return sam.eval(), model_mod, tiling_mod
 
 
+def read_photo_upright(image_path):
+    """The photo as a PIL RGB image turned by its EXIF orientation, like cv2.imread (and so the app) shows it:
+    portrait photos from phones and drones are stored landscape with an 'Orientation' tag."""
+    from PIL import Image, ImageOps
+    with Image.open(os.path.expanduser(image_path)) as img:
+        return ImageOps.exif_transpose(img).convert("RGB")
+
+
 def predict_sam_lora(sam, model_mod, tiling_mod, image_path, tile, overlap, device, batch_size):
     """infer.py's tiling loop: probability map (float, original size) of the photo."""
     torch = cda.torch
-    from PIL import Image
-    orig = Image.open(os.path.expanduser(image_path)).convert("RGB")
+    orig = read_photo_upright(image_path)
     orig_w, orig_h = orig.size
     image = tiling_mod.pad_to_tile_rgb(orig, tile)
     width, height = image.size
