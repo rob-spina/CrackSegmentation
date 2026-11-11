@@ -32,7 +32,15 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
-## Novità 2.0.1: To be reviewed
+## Novità 2.1.0: Delete image
+
+- **🗑 Delete image** (barra sinistra, sezione Dataset, e menu File; codice 149): toglie dal dataset una
+  foto non adatta (sfocata, senza edificio, doppia...). Dopo la conferma la foto, il suo JSON e le sue
+  maschere/overlay vengono **spostati** in `Deleted images` (stesse sottocartelle), mai cancellati: per
+  recuperarla basta rimetterli al loro posto. Il segno To be reviewed viene tolto e si apre la foto
+  successiva.
+
+## Novità 2.1.0: To be reviewed
 
 - **🚩 To be reviewed** (barra sinistra, sezione Dataset, e menu Tools; codice 140): segna la foto
   sullo schermo come dubbia (una crepa tracciata in modo incerto, un dubbio sull'intera foto), con una
@@ -44,7 +52,9 @@ packaging/
   Una foto segnata solo nel JSON (copiata da un altro computer) viene aggiunta all'indice.
 - **Modo 2** (all'avvio e con **Switch Mode**): se alcune foto segmentate sono segnate e altre no, una
   finestra chiede se caricare solo quelle da revisionare, solo le altre, o tutte. La scelta vale anche per
-  i ricaricamenti della stessa sessione (per esempio dopo Validation).
+  i ricaricamenti della stessa sessione (per esempio dopo Validation). Con solo le foto da revisionare
+  (o se tutte le foto segmentate sono segnate, e allora non chiede nulla) il Modo 2 parte dalla
+  **prima** di esse, non dall'ultima salvata.
 - **Validation** e **Auto split** non spostano mai una foto segnata: resta in `Images` finché il segno
   non viene tolto (Auto split la mette poi nel set del suo gruppo di edificio, senza dividere il gruppo);
   i riepiloghi dicono quante foto segnate sono rimaste. **Training / Test / Validation set** chiedono
@@ -67,19 +77,62 @@ packaging/
   - Premuto di nuovo sostituisce le cricche SAM precedenti (con conferma); un solo [U] annulla
     l'intera esecuzione; [Esc] durante l'esecuzione la annulla (un secondo [Esc] chiude l'app).
 - **👆 SAM click to accept** (barra destra, sezione AI, e menu Tools; codice 138;
-  `sam_accept.py`): SAM semi-automatico, foto dopo foto. Su ogni foto in cui la modalità si
-  apre, le crepe di cui il modello è sicuro (probabilità media della regione >=
-  `SAM_ACCEPT_AUTO_MIN_MEAN`, 0,65) vengono aggiunte subito (`"source": "sam"`, un solo [U] le
-  toglie); le altre restano all'operatore. Passando il mouse su una di queste compare la sua
-  mappa di probabilità, giallo scuro dove il modello è più sicuro e giallo chiaro dove lo è meno:
-  esattamente ciò che il clic accetterebbe. Un clic la accetta (`"source": "sam_click"`, mai
-  incerta); oppure la si traccia / modifica con gli strumenti di sempre (la modalità si mette in
-  pausa e si riapre sulla foto successiva). Maiusc+clic sul pulsante (codice 139) colora in
-  arancione tutte le crepe rimaste. JSON e maschere dopo ogni modifica; le cricche dell'operatore
-  e le ignore region non vengono toccate; una regione oltre il 5% della foto viene rifiutata. La
-  modalità resta attiva da una foto all'altra (Invio / Q / Go to image; `SAM_ACCEPT_STAY_ON`)
-  finché non si ripreme il pulsante. Sulle foto che hanno già cricche SAM la parte automatica non
-  viene ripetuta.
+  `sam_accept.py`): SAM semi-automatico, foto dopo foto. **Si salva solo ciò che clicchi.**
+  All'apertura (dalla 2.1.0) tutte le crepe che il modello vede sono colorate secondo quanto il
+  modello è sicuro (probabilità media della regione):
+  - **arancione**: sicuro (>= `SAM_ACCEPT_AUTO_MIN_MEAN`, 0,65);
+  - **giallo scuro**: >= `SAM_ACCEPT_DARK_MIN_MEAN` (0,45);
+  - **giallo chiaro**: sotto, il modello è poco sicuro.
+
+  La crepa sotto il mouse ha un **contorno azzurro**: è esattamente ciò che un clic prende. Un clic la
+  accetta (`"source": "sam_click"`, mai incerta). Premendo e trascinando si apre una **finestra
+  azzurra** (da 10×10 a 12000×12000 px): al rilascio vengono accettate solo le parti delle crepe colorate
+  dentro la finestra, dei colori visibili (un [U] le toglie). Con la modalità attiva queste lettere della
+  tastiera diventano comandi della modalità (anche nel menu Tools; i pulsanti della barra con la
+  stessa lettera mantengono il loro significato):
+  - **H** nasconde / rimostra tutti i colori; **G** solo i gialli; **A** solo gli arancioni;
+  - **L** scarta in un colpo tutte le crepe giallo chiaro, **D** tutte quelle giallo scuro: escono
+    dallo schermo e non vengono più proposte su questa foto (non c'è nulla da cancellare nel JSON,
+    perché non erano salvate). Spegnere e riaccendere la modalità le rimostra;
+  - **accetta tutto** (pulsanti sotto SAM click to accept, bloccati con la modalità spenta): **1**
+    (o **Ctrl/Cmd+clic** sul pulsante) tutte le arancioni, **2** tutte le giallo scuro, **3** tutte le
+    giallo chiaro, **4** tutte insieme (un [U] le toglie);
+  - **🎛 Threshold dial** (**[** / **]**): una ruota come quella dei colori per la soglia della mappa
+    (`SAM_ACCEPT_LOW_THRESHOLD`, 0,25; da 0,02 a 0,90 a passi di 0,02). Girandola in senso antiorario
+    la soglia scende: compaiono più crepe e più lunghe (meno falsi negativi; i falsi positivi basta
+    non cliccarli); in senso orario sale (meno falsi positivi). La mappa viene ritagliata subito e la
+    finestra mostra quante crepe arancioni / giallo scuro / giallo chiaro ci sono e quanta parte della
+    foto è colorata. Le crepe già accettate non cambiano mai, quelle scartate restano scartate; la
+    soglia resta quella scelta anche sulle foto successive. Anche la rotella del mouse e i pulsanti −/+.
+    Nella stessa finestra **Max crack width** (`SAM_ACCEPT_MAX_WIDTH_PX`, 40 px della foto; −/+ a passi
+    di 5, 0 = nessun limite): le parti della mappa più larghe (mancanza di intonaco, spazi tra le
+    pietre, una lesione aperta) vengono mostrate come la loro **linea centrale arancione larga 5 px**
+    (`SAM_WIDE_CENTERLINE_PX`), solo per vederla: un clic o una finestra su di essa accettano **tutta la
+    zona sotto, con la sua larghezza reale** (il PNG per l'addestramento deve mostrare la lesione com'è;
+    `SAM_WIDE_ACCEPT_FULL = False` salva invece solo la linea); con
+    il pulsante "Wider parts" si possono invece nascondere. **limit ON/OFF** (o **0** nella modalità)
+    toglie e rimette il limite senza perderne il valore. Nella stessa finestra le soglie di
+    **arancione** e **giallo scuro** (−/+ a passi di 0,05). Una crepa sottile che tocca una parte larga
+    conserva la sua parte sottile.
+  - **🔄 Recompute crack map here**: ricalcola la mappa della foto sullo schermo con il modello su questo
+    computer (1,5-4 min per una foto 4K) e sostituisce quella salvata, per esempio una mappa di
+    Leonardo che non convince; SAM click to accept si riapre sulla nuova mappa.
+  - **✂ Exclude crack** (**X**): finché è attivo, un clic su una crepa (anche già accettata) la toglie e
+    riscrive subito JSON e maschere PNG; un clic su una crepa colorata non accettata la scarta.
+    Premendo e trascinando si apre invece una **finestra rossa** (da 10×10 a 12000×12000 px sullo schermo,
+    `SAM_WINDOW_MIN_BOX_PX` / `SAM_WINDOW_MAX_BOX_PX`): al rilascio tutto ciò che c'è dentro sparisce,
+    per ogni colore. Le crepe accettate vengono tagliate come con la gomma (i pezzi fuori restano;
+    JSON e PNG riscritti subito; [U] le rimette), le crepe colorate vengono cancellate dentro la finestra. Il
+    contorno sotto il mouse diventa rosso; X o il pulsante tornano ad accettare.
+
+  Con i numeri visibili ([Spazio]) un clic sul numero di una crepa la cancella. Le crepe accettate o
+  cancellate si salvano con la foto (Invio / S), quando si spegne la modalità o si passa a un'altra
+  foto (`SAM_ACCEPT_SAVE_EACH_CHANGE = True` per salvare dopo ogni clic); [U] annulla; le cricche dell'operatore e
+  le ignore region non vengono toccate; una regione oltre il 5% della foto viene rifiutata. Una foto
+  che ha ancora crepe aggiunte in automatico dalla 2.0.0 (`"source": "sam"`, mai cliccate) chiede
+  una volta se toglierle da JSON e maschere. La modalità resta attiva da una foto all'altra (Invio /
+  Q / Go to image; `SAM_ACCEPT_STAY_ON`) finché non si ripreme il pulsante; un altro strumento la
+  mette in pausa su questa foto. Le crepe già tracciate non vengono ricolorate.
 - **Cache delle mappe**: le mappe di probabilità sono salvate in
   `SAM model/probability maps/<modello>/<foto>.png` (cartella per hash dei pesi LoRA, quindi
   le stesse sul Mac e sul Leonardo) e riusate da entrambi i pulsanti. `sam_batch.py

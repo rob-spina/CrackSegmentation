@@ -29,6 +29,7 @@ Run with:  python3 -m unittest test_gui_shell_parity -v
 """
 import json
 import os
+os.environ.setdefault("CRACKSEG_ALL_FEATURES", "1")   # every feature, also those shipped switched off
 import shutil
 import tempfile
 import time

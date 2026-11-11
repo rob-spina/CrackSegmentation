@@ -66,6 +66,7 @@ a = Analysis(
         # v2.0.0 [SAM auto-segment]: plain scripts run by the operator's own Python with PyTorch (never imported
         # by the app, which does not bundle torch); sam_autoseg._sam_script_path() finds them in this folder.
         (str(Path(SRC_DIR) / "sam_infer.py"), "."),
+        (str(Path(SRC_DIR) / "ignore_infer.py"), "."),   # v2.0.1 [Auto ignore], run in the SAM Python
         (str(Path(SRC_DIR) / "cv_domain_adapt.py"), "."),
         # The SAM + LoRA model code (model.py, sam_lora.py, tiling.py), also run by that Python.
         (str(Path(SRC_DIR) / "cracksam" / "model.py"), "cracksam"),
@@ -161,7 +162,7 @@ if sys.platform == "darwin":
         bundle_identifier="local.crackseg.gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "2.0.0",
+            "CFBundleShortVersionString": "2.1.0",
             "NSHumanReadableCopyright": "Internal tool",
         },
     )

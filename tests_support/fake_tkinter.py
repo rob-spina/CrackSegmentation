@@ -11,8 +11,12 @@ tests exercise the REAL cv2.cvtColor()/PIL.Image.fromarray() conversion
 in EmbeddedCanvas.update_frame(). Only the final ImageTk.PhotoImage step
 (which needs a genuine Tk app context) is faked.
 """
+import os
 import sys
 import types
+
+# The tests see every feature, also those a release ships switched off (config FEATURE_*).
+os.environ.setdefault("CRACKSEG_ALL_FEATURES", "1")
 
 
 class _Event:
@@ -140,6 +144,16 @@ class Radiobutton(_Widget):
 
 class Checkbutton(_Widget):
     pass
+
+
+class Entry(_Widget):
+    """tk.Entry stand-in: insert / delete / get on a text value."""
+    def __init__(self, master=None, **kw):
+        super().__init__(master, **kw)
+        self.value = ""
+    def insert(self, index, text): self.value = self.value + str(text)
+    def delete(self, first, last=None): self.value = ""
+    def get(self): return self.value
 
 
 class _Var:
@@ -425,8 +439,14 @@ class Style:
         return "default"
 
 
+class Progressbar(_Widget):
+    """ttk.Progressbar stand-in: the options set with configure() are in .kw (value, maximum, mode)."""
+    def start(self, *a): self.kw["running"] = True
+    def stop(self): self.kw["running"] = False
+
+
 ttk = types.SimpleNamespace(Frame=Frame, LabelFrame=LabelFrame, Button=TtkButton, Label=Label, Scrollbar=Scrollbar,
-                            Combobox=Combobox, Treeview=Treeview, Style=Style)
+                            Combobox=Combobox, Treeview=Treeview, Style=Style, Progressbar=Progressbar)
 
 
 class _simpledialog:
@@ -517,6 +537,7 @@ mod.StringVar = StringVar
 mod.BooleanVar = BooleanVar
 mod.LabelFrame = LabelFrame
 mod.Label = Label
+mod.Entry = Entry
 mod.Button = Button
 mod.Canvas = Canvas
 mod.Text = Text

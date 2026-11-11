@@ -21,6 +21,7 @@ from skimage.morphology import skeletonize
 from config import (Config, resolve_script_dir, migrate_legacy_folders,
                     IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME)
 from ignore_regions import IgnoreRegionsMixin
+from auto_ignore import AutoIgnoreMixin, AUTO_IGNORE_CODE
 from inspection_tools import InspectionToolsMixin
 from route_options import AlternativeRoutesMixin, ALT_ROUTE_CODE
 from crack_filter import CrackFilterMixin, CRACK_FILTER_CODE
@@ -46,11 +47,15 @@ from crack_class_view import CrackClassViewMixin, HIDE_UNCERTAIN_OVERLAY_CODE, H
 from xml_reference import XmlReferenceMixin, XML_REFERENCE_CODE
 from crack_branch_merge import CrackBranchMergeMixin, MERGE_BRANCH_CODE
 from sam_autoseg import SamAutoSegMixin, SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
-from sam_accept import SamAcceptMixin, SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE
-from review_flags import ReviewFlagsMixin, REVIEW_CODE
+from sam_accept import SamAcceptMixin, SAM_ACCEPT_CODE, SAM_RECOMPUTE_MAP_CODE
+from review_flags import ReviewFlagsMixin, REVIEW_CODE, REVIEW_BY_DATE_CODE
+from building_groups import BuildingGroupsMixin, GROUP_PHOTOS_CODE
+from delete_image import DeleteImageMixin, DELETE_IMAGE_CODE
+from active_learning import ActiveLearningMixin, ACTIVE_LEARNING_CODE
+from leonardo_link import LeonardoLinkMixin, LEONARDO_CODE
 
 
-class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
+class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
                         GuidedTraceMixin, PerspectiveMatchMixin, CompatibleAreaMixin, TrainingValidationMixin,
                         CrackCleanupMixin, DatasetSplitMixin, CrossValidationMixin,
                         AutoSplitMixin, GoToImageMixin, PipelineResetMixin,
@@ -58,7 +63,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                         CrackLabelsMixin, WarnUncertainMixin, CrackRelabelMixin,
                         CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin,
                         CrackBranchMergeMixin, SamAutoSegMixin, SamAcceptMixin,
-                        ReviewFlagsMixin):
+                        ReviewFlagsMixin, BuildingGroupsMixin, DeleteImageMixin, ActiveLearningMixin,
+                        LeonardoLinkMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -1949,7 +1955,7 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             return
         if self._is_ignore_shape(shape):
             if loaded_ignores is not None and len(points) >= 3:
-                loaded_ignores.append(self._build_loaded_ignore(points))
+                loaded_ignores.append(self._build_loaded_ignore(points, shape.get("flags")))
         elif label in ["crack", "crepa"] or shape_type in ["linestrip", "linestring"]:
             loaded_cracks.append(self._build_loaded_crack(shape, points))
         elif label in ["detachment", "distacco"] or shape_type == "polygon":
@@ -4565,14 +4571,35 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
                 _wi1 = min(len(_wf_path) - 1, _wi1)
                 if _wi0 > _wi1:
                     continue
-                _wseg_mask = self._width_segment_display_mask(_wf_path, _wi0, _wi1, _wseg, h_actual, w_active, region)
-                if np.any(_wseg_mask):
-                    scene[_wseg_mask == 255] = self._crack_display_bgr(_wf)
+                # v2.0.1: painted only inside the tract's bounding box -- a full-photo mask per tract per frame
+                # made the view sluggish on 4K photos with many (SAM) cracks.
+                entry = self._width_segment_cached(_wf_path, _wi0, _wi1, _wseg, h_actual, w_active)
+                if entry is None:
+                    continue
+                (by0, by1, bx0, bx1), sub = entry
+                y0, y1, x0, x1 = region if region is not None else (0, h_actual, 0, w_active)
+                iy0, iy1, ix0, ix1 = max(y0, by0), min(y1, by1), max(x0, bx0), min(x1, bx1)
+                if iy0 >= iy1 or ix0 >= ix1:
+                    continue
+                view = scene[iy0 - y0:iy1 - y0, ix0 - x0:ix1 - x0]
+                view[sub[iy0 - by0:iy1 - by0, ix0 - bx0:ix1 - bx0] == 255] = self._crack_display_bgr(_wf)
 
     def _width_segment_display_mask(self, path, i0, i1, seg, height, width, region):
         """Display-only, cached version of _render_width_segment_mask() cropped to region:
         re-measuring every tract on every frame made zoomed panning sluggish.
         The key covers the path's points and every tract setting, so any edit re-renders it."""
+        entry = self._width_segment_cached(path, i0, i1, seg, height, width)
+        y0, y1, x0, x1 = region if region is not None else (0, height, 0, width)
+        out = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+        if entry is not None:
+            (by0, by1, bx0, bx1), sub = entry
+            iy0, iy1, ix0, ix1 = max(y0, by0), min(y1, by1), max(x0, bx0), min(x1, bx1)
+            if iy0 < iy1 and ix0 < ix1:
+                out[iy0 - y0:iy1 - y0, ix0 - x0:ix1 - x0] = sub[iy0 - by0:iy1 - by0, ix0 - bx0:ix1 - bx0]
+        return out
+
+    def _width_segment_cached(self, path, i0, i1, seg, height, width):
+        """((by0, by1, bx0, bx1), sub-mask) of a tract's fill, or None when empty; cached by its content."""
         fill = seg.get('fill')
         key = (hash(tuple((int(p[0]), int(p[1])) for p in path)), i0, i1, height, width,
                repr(sorted((k, v) for k, v in seg.items() if k != 'fill')), id(fill), len(fill or ()))
@@ -4580,21 +4607,14 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         if key not in cache:
             full = self._render_width_segment_mask(path, i0, i1, seg, height, width)
             ys, xs = np.nonzero(full)
-            if len(cache) > 256:
+            if len(cache) > 4096:   # v2.0.1: was 256 -- more SAM tracts than that re-rendered every frame
                 cache.clear()
             if ys.size == 0:
                 cache[key] = None
             else:
                 by0, by1, bx0, bx1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
                 cache[key] = ((by0, by1, bx0, bx1), full[by0:by1, bx0:bx1].copy())
-        y0, y1, x0, x1 = region if region is not None else (0, height, 0, width)
-        out = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
-        if cache[key] is not None:
-            (by0, by1, bx0, bx1), sub = cache[key]
-            iy0, iy1, ix0, ix1 = max(y0, by0), min(y1, by1), max(x0, bx0), min(x1, bx1)
-            if iy0 < iy1 and ix0 < ix1:
-                out[iy0 - y0:iy1 - y0, ix0 - x0:ix1 - x0] = sub[iy0 - by0:iy1 - by0, ix0 - bx0:ix1 - bx0]
-        return out
+        return cache[key]
 
     @staticmethod
     def _crop_to_region(mask, region):
@@ -5879,6 +5899,8 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         if self._handle_crack_branch_merge_key(key_clean):   # v1.5.0: Shift+C / code 135 end [Merge crack branches]
             return False
+        if self._handle_sam_mode_key(key_clean):   # v2.0.1: H/G/A/L/D and the menu codes of [SAM click to accept]
+            return False
         self._handle_sam_accept_key(key_clean)   # v2.0.0: another command ends [SAM click to accept]
         self._cancel_crack_relabel_for_key(key_clean)   # v1.3.0: Cut, Join, a tool ... cancel a pending Ctrl/Cmd+C/U
         self._close_crack_extremes_for_key(key_clean)   # v1.4.0: another command closes [Edit extremes] (saved)
@@ -5970,11 +5992,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         elif key_clean == SAM_ACCEPT_CODE:   # v2.0.0: click the real cracks, SAM segments them
             self._toggle_sam_accept()
 
-        elif key_clean == SAM_CANDIDATES_CODE:   # v2.0.0: show / hide the cracks the model sees
-            self._toggle_sam_candidates()
-
         elif key_clean == REVIEW_CODE:   # v2.0.1: mark / unmark the photo as to be reviewed
             self._toggle_review_flag()
+
+        elif key_clean == REVIEW_BY_DATE_CODE:   # v2.0.1: every photo saved up to a date -> to be reviewed
+            self.mark_review_by_date()
 
         elif key_clean == SAM_SETTINGS_CODE:   # v2.0.0: SAM checkpoint / model factory / Python
             self._edit_sam_settings()
@@ -5987,6 +6009,25 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
 
         elif key_clean == AUTO_SPLIT_CODE:
             return self._handle_auto_split_key()
+
+        elif key_clean == GROUP_PHOTOS_CODE:   # v2.0.1: tag the photos of the same building (__BLDGnnn)
+            self.run_group_similar_photos()
+
+        elif key_clean == DELETE_IMAGE_CODE:   # v2.0.1: the photo leaves the dataset (moved to 'Deleted images')
+            return self.run_delete_image()
+
+        elif key_clean == ACTIVE_LEARNING_CODE:   # v2.0.1: new Mode-1 queue of the most uncertain photos
+            return self.run_active_learning()
+
+        elif key_clean == SAM_RECOMPUTE_MAP_CODE:   # v2.0.1: the crack map of this photo computed again, here
+            self.recompute_sam_map_here()
+
+        elif key_clean == AUTO_IGNORE_CODE:   # v2.0.1: ignore regions around trees, fences, people ... (SegFormer)
+            if getattr(self.cfg, "FEATURE_AUTO_IGNORE", True):
+                self.run_auto_ignore()
+
+        elif key_clean == LEONARDO_CODE:   # v2.0.1: connect / send / start / fetch an active-learning round
+            self.run_leonardo()
 
         elif key_clean == GO_TO_IMAGE_CODE:
             return self._handle_go_to_image_key()
@@ -6136,7 +6177,11 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
         return best_pos
 
     def _mode_start_position(self):
-        """Where a freshly (re)built queue starts: Mode 2 on the last segmented photo, Mode 1 on the first."""
+        """Where a freshly (re)built queue starts: Mode 2 on the last segmented photo, Mode 1 on the first.
+        v2.0.1: Mode 2 with only the photos [To be reviewed] starts on the first of them (they are all to see)."""
+        if self.cfg.modalita_scelta == "2" and self.cfg.review_state.get("filter") == "review":
+            print(f"[MODE 2] {len(self.cfg.image_queue)} photo(s) to be reviewed, from the first.")
+            return 0
         if self.cfg.modalita_scelta == "2":
             pos = self._last_segmented_queue_position()
             print(f"[MODE 2] Resuming from the last segmented image: "
@@ -6279,6 +6324,15 @@ class CrackSegmentation(IgnoreRegionsMixin, InspectionToolsMixin, AlternativeRou
             self.make_cv_folds()
         elif code == AUTO_SPLIT_CODE:  # v1.0.8: idle screen, nothing to reload
             self.run_auto_split()
+        elif code == GROUP_PHOTOS_CODE:   # v2.0.1: renames photos of 'Images' only, nothing to reload
+            self.run_group_similar_photos()
+        elif code == ACTIVE_LEARNING_CODE:   # v2.0.1: loads the photos to label next
+            if self.run_active_learning():
+                return True
+        elif code == LEONARDO_CODE:   # v2.0.1: the Leonardo window
+            self.run_leonardo()
+        elif code == REVIEW_BY_DATE_CODE:   # v2.0.1: marks only, nothing to reload
+            self.mark_review_by_date()
         elif code == RESET_PIPELINE_CODE:   # v1.0.9: the photos come back: load the queue again
             if self.run_reset_pipeline() and self._rebuild_queue_for_mode(self.cfg.modalita_scelta):
                 return True

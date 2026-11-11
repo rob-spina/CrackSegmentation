@@ -339,6 +339,8 @@ class IgnoreRegionsMixin:
 
     def _undo_ignore_action(self, last_action):
         """Undoes a saved/deleted ignore polygon. Returns True if last_action was one."""
+        if hasattr(self, "_undo_auto_ignore") and self._undo_auto_ignore(last_action):   # v2.0.1 [Auto ignore] run
+            return True
         if last_action == 'ignore':
             if self.cfg.saved_ignores:
                 self.cfg.redo_history.append(('ignore', self.cfg.saved_ignores.pop()))
@@ -356,6 +358,8 @@ class IgnoreRegionsMixin:
 
     def _redo_ignore_action(self, action_type, restored):
         """Redoes an undone ignore save or delete. Returns True if action_type was one."""
+        if hasattr(self, "_redo_auto_ignore") and self._redo_auto_ignore(action_type, restored):
+            return True
         if action_type == 'ignore':
             self.cfg.saved_ignores.append(restored)
             self.cfg.action_history.append('ignore')
@@ -384,14 +388,19 @@ class IgnoreRegionsMixin:
 
     def _build_ignore_shapes(self):
         """LabelMe polygon shapes for every active ignore region."""
+        # v2.0.1: regions drawn by [Auto ignore] keep "auto_ignore": true, so pressing it again replaces only those.
         return [{"label": self.cfg.IGNORE_LABEL,
                  "points": [[float(pt[0]), float(pt[1])] for pt in r['path']],
-                 "group_id": None, "shape_type": "polygon", "flags": {"ignore": True}}
+                 "group_id": None, "shape_type": "polygon",
+                 "flags": dict({"ignore": True}, **({"auto_ignore": True} if r.get('source') == "auto_ignore" else {}))}
                 for r in self.cfg.saved_ignores if r.get('active', True) and len(r.get('path', [])) >= 3]
 
     @staticmethod
-    def _build_loaded_ignore(points):
-        return {'path': points, 'active': True, 'session_id': 'loaded'}
+    def _build_loaded_ignore(points, flags=None):
+        region = {'path': points, 'active': True, 'session_id': 'loaded'}
+        if (flags or {}).get("auto_ignore"):
+            region['source'] = "auto_ignore"
+        return region
 
     def _build_ignore_area_mask(self):
         """Filled binary mask of every active ignore polygon."""

@@ -43,7 +43,7 @@ _FAKE_INFER = textwrap.dedent('''
     p = argparse.ArgumentParser()
     for a in ("--image", "--out", "--checkpoint", "--model-factory", "--tile", "--overlap", "--scale",
               "--batch-size", "--device", "--backend", "--code-dir", "--sam-checkpoint", "--model-type",
-              "--lora-r", "--lora-weights"):
+              "--lora-r", "--lora-weights", "--upscale"):
         p.add_argument(a, default="")
     args = p.parse_args()
     name = args.checkpoint + args.lora_weights
@@ -367,7 +367,7 @@ class TestSamGui(_TmpDir):
 
     def test_sidebar_menu_and_ctrl_click(self):
         entries = dict(gm._RIGHT_SIDEBAR_SECTIONS)["AI"]
-        self.assertEqual([code for *_, code in entries], [SAM_AUTOSEG_CODE, 138])   # 138 = SAM click to accept
+        self.assertEqual([code for *_, code in entries][:2], [SAM_AUTOSEG_CODE, 138])   # then the 2.0.1 accept / exclude buttons
         self.assertEqual(gm._SIDEBAR_CTRL_CLICK_CODES[SAM_AUTOSEG_CODE], SAM_SETTINGS_CODE)
         codes = [code for _, code in gm._TOOL_COMMANDS]
         self.assertIn(SAM_AUTOSEG_CODE, codes)

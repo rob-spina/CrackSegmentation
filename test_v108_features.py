@@ -138,6 +138,24 @@ class TestEraser(unittest.TestCase):
             self.app.process_keypress(ord('['))
         self.assertEqual(self.app.cfg.ERASER_SIZE_WIN_PX, self.app.cfg.ERASER_MIN_SIZE_WIN_PX)
 
+    def test_window_up_to_1200_with_growing_steps(self):
+        cfg = self.app.cfg
+        cfg.ERASER_SIZE_WIN_PX = 10
+        sizes = []
+        for _ in range(60):
+            self.app.process_keypress(ord(']'))
+            sizes.append(cfg.ERASER_SIZE_WIN_PX)
+        self.assertEqual(sizes[-1], 1200)
+        self.assertEqual(sizes.index(1200), 22)          # 9 x 10 + 6 x 50 + 8 x 100
+        self.assertIn(100, sizes)
+        self.assertIn(400, sizes)
+        for _ in range(23):
+            self.app.process_keypress(ord('['))
+        self.assertEqual(cfg.ERASER_SIZE_WIN_PX, 10)
+        cfg.ERASER_SIZE_WIN_PX = 400
+        self.app.process_keypress(ord('['))
+        self.assertEqual(cfg.ERASER_SIZE_WIN_PX, 350)
+
     def test_erases_while_zoom_window_is_on(self):
         self.app.cfg.zoom_window_state["active"] = True
         _drag(self.app, [(60, 100), (80, 100)])
@@ -424,10 +442,17 @@ class TestSidebar(unittest.TestCase):
             self.assertEqual(self.app._pending_keys, [code])
         cfg.modalita_scelta, cfg.queue_idle = "1", False
         self.app._sidebar.refresh_states(cfg, False)
-        self.assertTrue(all(b.kw.get("state") == "disabled" for b in buttons.values()), "Mode 1: greyed out")
+        sb = self.app._sidebar   # v2.0.1: locked (padlock, readable label, click blocked) instead of disabled
+        self.assertTrue(all(code in sb._locked and b.kw["text"].startswith("\U0001F512")
+                            for code, b in buttons.items()), "Mode 1: locked")
+        self.app._pending_keys.clear()
+        buttons[23].command()
+        self.assertEqual(self.app._pending_keys, [], "a locked button sends nothing")
         cfg.modalita_scelta = "2"
         self.app._sidebar.refresh_states(cfg, False)
-        self.assertTrue(all(b.kw.get("state") == "normal" for b in buttons.values()))
+        self.assertTrue(all(code not in sb._locked and "Training set" in buttons[23].kw["text"]
+                            for code in buttons))
+        self.assertFalse(buttons[23].kw["text"].startswith("\U0001F512"))
 
 
 if __name__ == "__main__":
@@ -485,7 +510,7 @@ class TestSplitCountsOnHover(unittest.TestCase):
         self.assertIn("Training set: 4", self._tip_text(tip))
 
     def test_every_set_button_has_its_tip(self):
-        self.assertEqual(sorted(self.app._sidebar.hover_tips), [23, 24, 25])
+        self.assertEqual(sorted(self.app._sidebar.hover_tips), [17, 23, 24, 25])   # 17: why Validation is greyed out (2.0.1)
 
 
 class TestTwoSidebars(unittest.TestCase):
@@ -523,7 +548,8 @@ class TestTwoSidebars(unittest.TestCase):
         self.assertEqual(len(codes), len(set(codes)))
         self.assertEqual(sorted(self.sb.buttons_by_code), sorted(codes))
         # v1.0.9 added Reset pipeline training and Dataset browser to the Dataset section (left).
-        self.assertLessEqual(abs(len(self.sb.right.buttons) - len(self.sb.left.buttons)), 3)
+        # v2.0.1 added Cut map and Auto ignore on the right.
+        self.assertLessEqual(abs(len(self.sb.right.buttons) - len(self.sb.left.buttons)), 5)
 
     def test_section_headings(self):
         heads = [h.kw["text"] for h in self.sb.right.headings + self.sb.left.headings]
@@ -537,8 +563,8 @@ class TestTwoSidebars(unittest.TestCase):
         self.sb.refresh_states(cfg, False)
         self.assertEqual(self.sb.buttons_by_code[21].kw.get("relief"), "sunken")
         self.assertEqual(self.sb.buttons_by_code[15].kw.get("relief"), "sunken")
-        self.assertEqual(self.sb.buttons_by_code[23].kw.get("state"), "disabled")
-        self.assertEqual(self.sb.buttons_by_code[17].kw.get("state"), "disabled")
+        self.assertIn(23, self.sb._locked)
+        self.assertIn(17, self.sb._locked)
 
     def test_set_counts_tip_opens_towards_the_canvas(self):
         self.assertEqual(self.sb.hover_tips[23].side, "left")

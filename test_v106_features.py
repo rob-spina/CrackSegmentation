@@ -538,12 +538,12 @@ class TestSidebarButtons(unittest.TestCase):
         self.app._sidebar.refresh_states(cfg, self.app._validation_available())
         self.assertEqual(self._button("Zoom window").kw.get("relief"), "sunken")
         self.assertEqual(self._button("HWAV").kw.get("relief"), "raised")
-        self.assertEqual(self._button("Validation").kw.get("state"), "disabled", "b.png has no JSON yet")
+        self.assertIn(17, self.app._sidebar._locked, "b.png has no JSON yet")
         open(os.path.join(jsons, "b.json"), "w").close()
         self.app._all_segmented_cache = None
         cfg.CURRENT_IMAGE_PATH = cfg.image_queue[0]
         self.app._sidebar.refresh_states(cfg, self.app._validation_available())
-        self.assertEqual(self._button("Validation").kw.get("state"), "normal", "on the first image too")
+        self.assertNotIn(17, self.app._sidebar._locked, "on the first image too")
 
 
 if __name__ == "__main__":

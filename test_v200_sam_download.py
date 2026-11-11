@@ -280,6 +280,79 @@ class TestButtonDownload(_Server):
                       cfg.SAM_CRACK_WEIGHTS["url"])
 
 
+class TestDownloadWindow(TestButtonDownload):
+    """v2.0.1: the GUI shows a window with a progress bar while the model downloads."""
+
+    def _app(self):
+        import test_gui_panel_wiring as wiring
+        app = wiring.make_app(self)
+        app.cfg.SCRIPT_DIR = self.tmp
+        self.base_data, app.cfg.SAM_BASE_WEIGHTS = self._publish("sam_vit_h_4b8939.pth", 3000)
+        app.cfg.SAM_BASE_WEIGHTS.pop("sha256")
+        self.crack_data, app.cfg.SAM_CRACK_WEIGHTS = self._publish("cracksam_vit_h_lora_r4.pth", 800)
+        app.cfg.SAM_CRACK_WEIGHTS.pop("size")
+        return app
+
+    def test_window_shows_progress_and_closes(self):
+        app = self._app()
+        seen = []
+        real_update = gm._SamDownloadWindow.update
+
+        def spy(window, head, text, percent):
+            seen.append((head, text, percent, window.bar.kw.get("value")))
+            return real_update(window, head, text, percent)
+        with mock.patch.object(app, "_confirm_sam_download", return_value=True), \
+                mock.patch.object(app, "_pump_extra_events"), \
+                mock.patch.object(gm._SamDownloadWindow, "update", spy), \
+                mock.patch.object(gm._SamDownloadWindow, "close", autospec=True) as close:
+            self.assertIsNotNone(app._usable_sam_settings())
+        close.assert_called_once()
+        self.assertIsNone(app._sam_download_window)
+        heads = {h for h, _, _, _ in seen}
+        self.assertIn("File 1 of 2: sam_vit_h_4b8939.pth", heads)
+        self.assertIn("File 2 of 2: cracksam_vit_h_lora_r4.pth", heads)
+
+    def test_cancel_button_stops_the_download(self):
+        app = self._app()
+
+        def slow(spec, dest, progress, cancelled):
+            app._sam_download_window.cancel()      # the operator presses Cancel
+            while not cancelled():
+                pass
+            raise sam_weights.DownloadCancelled()
+        with mock.patch.object(app, "_confirm_sam_download", return_value=True), \
+                mock.patch.object(app, "_pump_extra_events"), \
+                mock.patch("sam_weights.download", side_effect=slow):
+            self.assertIsNone(app._usable_sam_settings())
+        self.assertIsNone(app._sam_download_window)
+
+    def test_only_missing_files_downloaded(self):
+        app = self._app()
+        model_dir = os.path.join(self.tmp, "SAM model")
+        os.makedirs(model_dir)
+        _write(os.path.join(model_dir, "sam_vit_h_4b8939.pth"), self.base_data)
+        with mock.patch.object(app, "_confirm_sam_download", return_value=True), \
+                mock.patch.object(app, "_pump_extra_events"):
+            self.assertIsNotNone(app._usable_sam_settings())
+        self.assertEqual([p for p, _ in _RangeHandler.served], ["/cracksam_vit_h_lora_r4.pth"])
+
+    def test_status_text(self):
+        import time as _t
+        status = gm.GuiCrackSegmentation.sam_download_status
+        p = {"file": "sam_vit_h_4b8939.pth", "index": 1, "count": 2, "done": 1024 ** 3,
+             "total": 2 * 1024 ** 3, "start": _t.time() - 64, "start_bytes": 0}
+        head, text, percent = status(p)
+        self.assertEqual(head, "File 1 of 2: sam_vit_h_4b8939.pth")
+        self.assertEqual(percent, 50.0)
+        self.assertTrue(text.startswith("1.0 GB of 2.0 GB (50%) - 16.0 MB/s - about 64 s left"), text)
+        p["start"] = _t.time() - 120
+        self.assertIn("about 2 min left", status(p)[1])
+        p.update(total=None, count=1)
+        head, text, percent = status(p)
+        self.assertEqual(head, "sam_vit_h_4b8939.pth")
+        self.assertIsNone(percent)
+
+
 class TestBundledFiles(unittest.TestCase):
 
     def test_cracksam_code_bundled(self):
