@@ -11,7 +11,7 @@ never shares the process with the Tk window. Two kinds of model:
 
     python3 sam_infer.py --image photo.jpg --out photo_prob.png --code-dir ~/echo-twin \
         --sam-checkpoint sam_vit_h_4b8939.pth --model-type vit_h --lora-r 4 --lora-weights best_lora.pth \
-        [--tile 512 --overlap 128 --batch-size 4 --device auto]
+        [--tile 512 --overlap 128 --batch-size 4 --device auto] [--upscale 2]
 
   --backend module: any torch.nn.Module mapping a [B,3,H,W] ImageNet-normalised image to crack logits, as in
       cv_domain_adapt.py: --checkpoint is a whole saved module (torch.save(model) / TorchScript), or a state_dict
@@ -29,6 +29,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cv_domain_adapt as cda  # noqa: E402 -- tiling, normalisation and model helpers shared with training
+import sam_weights  # noqa: E402 -- train_args.json upscale of the LoRA weights (standard library only)
 
 
 def _log(text):
@@ -114,8 +115,15 @@ def read_photo_upright(image_path):
         return ImageOps.exif_transpose(img).convert("RGB")
 
 
-def predict_sam_lora(sam, model_mod, tiling_mod, image_path, tile, overlap, device, batch_size):
-    """infer.py's tiling loop: probability map (float, original size) of the photo."""
+def _forward(model_mod, sam, batch, device, upscale):
+    if abs(upscale - 1.0) < 1e-6:
+        return model_mod.forward_batch(sam, batch, device)   # also an older model.py without the upscale argument
+    return model_mod.forward_batch(sam, batch, device, upscale)
+
+
+def predict_sam_lora(sam, model_mod, tiling_mod, image_path, tile, overlap, device, batch_size, upscale=1.0):
+    """infer.py's tiling loop: probability map (float, original size) of the photo. upscale: each tile is
+    enlarged by this factor inside forward_batch (train.py --upscale of the weights)."""
     torch = cda.torch
     orig = read_photo_upright(image_path)
     orig_w, orig_h = orig.size
@@ -124,7 +132,8 @@ def predict_sam_lora(sam, model_mod, tiling_mod, image_path, tile, overlap, devi
     xs = tiling_mod.compute_tile_origins(width, tile, overlap)
     ys = tiling_mod.compute_tile_origins(height, tile, overlap)
     coords = [(x, y) for y in ys for x in xs]
-    _log(f"photo {orig_w}x{orig_h}: {len(coords)} tiles of {tile}x{tile} (overlap {overlap})")
+    _log(f"photo {orig_w}x{orig_h}: {len(coords)} tiles of {tile}x{tile} (overlap {overlap})"
+         + (f", enlarged x{upscale:g}" if abs(upscale - 1.0) > 1e-6 else ""))
     blend = tiling_mod.make_blend_weight(tile, overlap)
     acc = np.zeros((height, width), dtype=np.float32)
     wsum = np.zeros((height, width), dtype=np.float32)
@@ -137,7 +146,7 @@ def predict_sam_lora(sam, model_mod, tiling_mod, image_path, tile, overlap, devi
         batch = torch.from_numpy(np.stack([arr[y:y + tile, x:x + tile].transpose(2, 0, 1) for x, y in chunk])
                                  .astype(np.float32) / 255.0)
         with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
-            logits = model_mod.forward_batch(sam, batch, device)
+            logits = _forward(model_mod, sam, batch, device, upscale)
             probs = torch.sigmoid(logits)[:, 0].float().cpu().numpy()
         for (x, y), prob in zip(chunk, probs):
             acc[y:y + tile, x:x + tile] += prob * blend
@@ -170,8 +179,13 @@ def make_predictor(args):
     if backend == "sam_lora":
         _log(f"loading SAM {args.model_type} + LoRA r={args.lora_r} on {device} ...")
         sam, model_mod, tiling_mod = load_sam_lora(args, device)
+        upscale = sam_weights.resolve_upscale(getattr(args, "upscale", None), args.lora_weights)
+        if args.tile * upscale > 1024:
+            sys.exit(f"[SAM] --tile {args.tile} x upscale {upscale:g} exceeds the SAM input (1024)")
+        if abs(upscale - 1.0) > 1e-6:
+            _log(f"tiles enlarged x{upscale:g} before SAM")
         return lambda image_path: predict_sam_lora(sam, model_mod, tiling_mod, image_path, args.tile,
-                                                   args.overlap, device, args.batch_size)
+                                                   args.overlap, device, args.batch_size, upscale)
     _log(f"loading the model on {device} ...")
     model = load_model(args.model_factory, args.checkpoint).to(device).eval()
 
@@ -218,6 +232,9 @@ def add_model_args(p):
     p.add_argument("--checkpoint", default="")
     p.add_argument("--model-factory", default="", help="FILE.py:FUNCTION, needed when the checkpoint is a state_dict")
     p.add_argument("--tile", type=int, default=512)
+    p.add_argument("--upscale", type=float, default=None,
+                   help="enlarge each tile by this factor before SAM (train.py --upscale of the weights); "
+                        "default: read from train_args.json next to --lora-weights, 1 when absent")
     p.add_argument("--overlap", type=int, default=128)
     p.add_argument("--scale", type=float, default=1.0)
     p.add_argument("--batch-size", type=int, default=4)

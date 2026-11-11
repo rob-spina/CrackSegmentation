@@ -9,6 +9,8 @@ JSON and 'Binary files' exports (Images / JSON files / Binary files), ready for 
 one folder per fold. Pressed again, both are replaced; 'Training set' itself is never changed.
 A photo saved without any crack (JSON with no crack shape; since 1.0.8 its crack mask is all black, older saves
 have none) is a NEGATIVE example: its whole label is background. folds.csv marks it with negative = 1.
+detachment_mask (v2.0.1) points to '<photo>-detachment_mask.png' (filled [D] polygons) when the photo has one: a
+crack model leaves those pixels out of loss and metrics, a detachment model uses them as its target.
 """
 import csv
 import os
@@ -20,7 +22,8 @@ from training_validation import VALID_IMAGE_EXTENSIONS, binary_exports_of, photo
 
 
 CV_FOLDS_CODE = 26
-FOLDS_FIELDS = ["photo", "group", "fold", "image", "json", "crack_mask", "uncertain_mask", "ignore_mask", "negative"]
+FOLDS_FIELDS = ["photo", "group", "fold", "image", "json", "crack_mask", "uncertain_mask", "ignore_mask",
+                "detachment_mask", "negative"]
 _GROUP_TAG = re.compile(r"__(BLDG\d+)", re.IGNORECASE)
 
 
@@ -76,6 +79,7 @@ def _fold_row(root, photo, base, fold):
         "crack_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-crack_mask.png"),
         "uncertain_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-crack_uncertain_mask.png"),
         "ignore_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-ignore_mask.png"),
+        "detachment_mask": _relative_if_exists(root, BINARY_DIR_NAME, f"{base}-detachment_mask.png"),
     }
     row["negative"] = 1 if is_negative_photo(root, row["json"], row["crack_mask"]) else 0
     return row

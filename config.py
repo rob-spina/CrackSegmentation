@@ -39,6 +39,8 @@ def resolve_script_dir():
 IMAGES_DIR_NAME = "Images"
 BINARY_DIR_NAME = "Binary files"
 JSON_DIR_NAME = "JSON files"
+# Masks whose pixels a crack model never learns from: uncertain cracks, [I] ignore regions, [D] detachments.
+IGNORED_MASK_SUFFIXES = ("-crack_uncertain_mask.png", "-ignore_mask.png", "-detachment_mask.png")
 # Pre-1.0.5 folders, migrated automatically by migrate_legacy_folders().
 LEGACY_ARCHIVE_DIR_NAME = "already processed images"
 LEGACY_OUTPUT_DIR_NAME = "segmentated images"
@@ -294,6 +296,15 @@ class Config:
         # Downscale bound (px) for SIFT during the automatic group-membership decision only; W/L's real crack projection stays full resolution.
         self.AUTO_GROUP_SIFT_MAX_DIM = 1200
 
+        # v2.0.1 [Group similar photos] (building_groups.py, code 141): every photo is SIFT-checked against its
+        # N most similar photos (quick global descriptor); fewer SIFT features than above keep a whole folder in RAM.
+        self.BUILDING_GROUPS_NEIGHBOURS = 10
+        self.BUILDING_GROUPS_SIFT_FEATURES = 2000
+        # Two photos with EXIF GPS closer than this (m) are of the same building; within the second distance they
+        # are at least SIFT-checked.
+        self.BUILDING_GROUPS_GPS_SAME_SITE_M = 25.0
+        self.BUILDING_GROUPS_GPS_CANDIDATE_M = 150.0
+
     def _init_crack_compat_thresholds(self):
         """Thresholds for [G]: a crack is "incompatible" and discarded from the whole group when its sinuosity disagrees by more than this fraction across photos.
         """
@@ -502,8 +513,11 @@ class Config:
         # Side of the eraser window in window pixels (same size on screen at every zoom), and its limits/step.
         self.ERASER_SIZE_WIN_PX = 40
         self.ERASER_MIN_SIZE_WIN_PX = 10
-        self.ERASER_MAX_SIZE_WIN_PX = 200
+        self.ERASER_MAX_SIZE_WIN_PX = 1200   # v2.0.1: up to 1200 x 1200 screen px (was 200)
         self.ERASER_SIZE_STEP_WIN_PX = 10
+        # v2.0.1: larger steps for a larger window, so that [ / ] reach 1200 quickly: (up to size, step) pairs;
+        # 10-100 by 10, 100-400 by 50, then by 100.
+        self.ERASER_SIZE_STEPS = ((100, 10), (400, 50), (None, 100))
 
     def _init_uncertain_trace_state(self):
         """v1.1.0 [Uncertain crack] (sidebar, process_keypress() code 7): while on, every new crack is saved as
@@ -590,15 +604,54 @@ class Config:
         self.SAM_ACCEPT_MAX_AREA_FRACTION = 0.05
         # Every remaining crack tinted orange (Shift+click on the button = show/hide); otherwise only the one under
         # the mouse is shown, light to dark yellow by probability.
-        self.SAM_ACCEPT_SHOW_CANDIDATES = False
-        # On every photo the mode opens on, the regions whose mean probability reaches SAM_ACCEPT_AUTO_MIN_MEAN are
-        # added at once ("source": "sam"); the others are left to the operator.
+        self.SAM_ACCEPT_SHOW_CANDIDATES = False   # v2.0.0 setting, no longer used (see SHOW_YELLOW / SHOW_ORANGE)
+        # v2.0.1: every crack the model sees is coloured when the mode opens: orange (mean probability of the region
+        # >= SAM_ACCEPT_AUTO_MIN_MEAN), dark yellow (>= SAM_ACCEPT_DARK_MIN_MEAN), light yellow (below).
+        # H hides / shows all, G the yellow ones, A the orange ones (while the mode is on).
+        self.SAM_ACCEPT_SHOW_YELLOW = True
+        self.SAM_ACCEPT_SHOW_ORANGE = True
+        self.SAM_ACCEPT_DARK_MIN_MEAN = 0.45
+        # v2.0.1: False = the accepted / deleted cracks are saved with the photo (Enter / S), when the mode is turned
+        # off or when another photo is opened from it -- not after every click (slow on 4K photos).
+        self.SAM_ACCEPT_SAVE_EACH_CHANGE = False
+        # v2.0.1 SAM click to accept: a dragged window accepts the coloured cracks inside it, or with [Exclude crack]
+        # removes everything inside it; sides in screen pixels (smaller = a click).
+        self.SAM_WINDOW_MIN_BOX_PX = 10
+        self.SAM_WINDOW_MAX_BOX_PX = 12000
+        # v2.0.1 threshold of the crack map (SAM_ACCEPT_LOW_THRESHOLD) changed live: dial, [ and ] in the mode.
+        self.SAM_THRESHOLD_MIN = 0.02
+        self.SAM_THRESHOLD_MAX = 0.90
+        self.SAM_THRESHOLD_STEP = 0.02
+        # v2.0.1: parts of the crack map wider than this (photo px) are never coloured nor accepted -- missing
+        # plaster, gaps between stones; a thin crack touching them keeps its thin part. 0 = no limit. Dial window.
+        self.SAM_ACCEPT_MAX_WIDTH_PX = 40
+        # v2.0.1 [width under the mouse]: in SAM click to accept, the crack width (photo px, at the current threshold)
+        # is shown next to the mouse; above SAM_ACCEPT_MAX_WIDTH_PX it turns red: a lesion / missing material, to
+        # cover with an [I] ignore region rather than accept as a crack.
+        self.SAM_SHOW_WIDTH = True
+        # v2.0.1 [Cut map] (K in SAM click to accept): width (photo px) of the cut a dragged line makes in the crack map
+        # (at least 3 screen px, so that the two sides are really separate regions).
+        self.SAM_CUT_WIDTH_PX = 3
+        self.SAM_MAX_WIDTH_LIMIT_PX = 400
+        self.SAM_MAX_WIDTH_STEP_PX = 5
+        self.SAM_WIDTH_LIMIT_ON = True            # [0] in the mode / the dial: the limit on / off, value kept
+        # Wider parts shown as their centre line this wide (orange; accepted as a crack of this width), or hidden.
+        self.SAM_WIDE_AS_CENTERLINE = True
+        self.SAM_WIDE_CENTERLINE_PX = 5
+        # Accepting a centre line takes the whole wide patch under it, at its REAL width (what the training PNG
+        # needs); False = only the centre line.
+        self.SAM_WIDE_ACCEPT_FULL = True
+        # v2.0.1 [Active learning] (active_learning.py, code 153): photos proposed for labelling at every round.
+        self.ACTIVE_LEARNING_BATCH = 50
+        # v2.0.1: the regions whose mean probability reaches SAM_ACCEPT_AUTO_MIN_MEAN are orange (nothing is saved
+        # until clicked; Ctrl+click on the button accepts them all). SAM_ACCEPT_AUTO is no longer used.
         self.SAM_ACCEPT_AUTO = True
         self.SAM_ACCEPT_AUTO_MIN_MEAN = 0.65
         # The mode reopens by itself on the next photo (Enter / Q / Go to image) when it was on.
         self.SAM_ACCEPT_STAY_ON = True
         self.sam_accept_state = {"active": False, "photo": None, "prob": None, "labels": None, "hover": 0,
-                                 "clicks": 0, "sticky": False, "done_labels": set()}
+                                 "clicks": 0, "sticky": False, "done_labels": set(),
+                                 "proposed": set(), "asked_cleanup": set()}
 
     def _init_sam_autoseg_settings(self):
         """v2.0.0 [SAM auto-segment] (sidebar, process_keypress() code 136; settings code 137, sam_autoseg.py):
@@ -627,10 +680,36 @@ class Config:
         # (512 by default); overlap between tiles (px); tiles per batch.
         self.SAM_TILE_PX = 512
         self.SAM_OVERLAP_PX = 128
+        # v2.0.1 [x2 tile upscale]: each tile is enlarged by this factor before SAM (512 -> 1024: SAM sees thin cracks
+        # at twice the size, same compute). None = the factor the weights were trained with (train_args.json next to
+        # best_lora.pth, 1 when absent); a number forces it. Maps at different factors go to different folders.
+        self.SAM_UPSCALE = None
         # Rescale before tiling: only for a single-checkpoint model (cv_domain_adapt.py); SAM + LoRA stays native.
         self.SAM_SCALE = 1.0
         self.SAM_BATCH_SIZE = 4
         self.SAM_DEVICE = "auto"   # auto, cuda, mps or cpu
+        # Features shipped switched off in this release (code in place, no button / menu entry): turned on in a
+        # later release, or by hand here to use them now.
+        # CRACKSEG_ALL_FEATURES=1 in the environment turns them all on (development, tests).
+        all_on = os.environ.get("CRACKSEG_ALL_FEATURES", "") == "1"
+        self.FEATURE_GROUP_SIMILAR_PHOTOS = all_on  # Group similar photos (Building & scale)
+        self.FEATURE_ACTIVE_LEARNING = all_on       # Active learning (Dataset)
+        self.FEATURE_LEONARDO = all_on              # Leonardo window (Dataset)
+        self.FEATURE_AUTO_IGNORE = all_on           # Auto ignore (Tools)
+        # v2.0.1 [Auto ignore] (code 162): ignore regions around trees, fences, people, vehicles, rubble ... found by a
+        # SegFormer model trained on ADE20K (ignore_infer.py, run in the SAM Python with `transformers`).
+        self.AUTO_IGNORE_MODEL = "nvidia/segformer-b5-finetuned-ade-640-640"
+        self.AUTO_IGNORE_LONG_SIDE = 1024          # the photo is classified at this long side (px)
+        self.AUTO_IGNORE_DEVICE = "auto"           # auto, cuda, mps or cpu
+        # ADE20K class names to ignore (synonyms in the model's labels match too; auto_ignore_batch.py --evaluate
+        # tells which classes the hand-drawn ignore regions cover).
+        self.AUTO_IGNORE_CLASSES = ("tree", "palm", "plant", "flower", "grass", "field", "fence", "railing",
+                                    "person", "car", "truck", "van", "bus", "bicycle", "minibike", "rock")
+        self.AUTO_IGNORE_CLOSE_FRACTION = 0.01     # gaps up to 1% of the long side are closed (branches, net meshes)
+        self.AUTO_IGNORE_MIN_AREA_FRACTION = 0.003 # pieces smaller than 0.3% of the photo are dropped
+        self.AUTO_IGNORE_MARGIN_PX = 12            # margin added around each region (photo px)
+        self.AUTO_IGNORE_EPSILON_FRACTION = 0.003  # polygon simplification (fraction of the long side)
+        self.AUTO_IGNORE_MAX_REGIONS = 20
         # A pixel is crack when its probability reaches this; blobs smaller than SAM_MIN_AREA_PX are dropped.
         self.SAM_THRESHOLD = 0.5
         self.SAM_MIN_AREA_PX = 30

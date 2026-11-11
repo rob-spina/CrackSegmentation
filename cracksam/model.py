@@ -70,13 +70,27 @@ def _empty_prompt_embeddings(sam: nn.Module, device: str) -> Tuple[torch.Tensor,
     return sparse.to(device), dense.to(device)
 
 
-def forward_batch(sam: nn.Module, images: torch.Tensor, device: str) -> torch.Tensor:
+def forward_batch(sam: nn.Module, images: torch.Tensor, device: str, upscale: float = 1.0) -> torch.Tensor:
     """
     images: (B, 3, H, W) float tensor in [0, 1] (as produced by dataset.py)
+    upscale: the tiles are enlarged by this factor (bilinear) before SAM sees them. SAM always works on a
+        1024x1024 input and its mask decoder answers on a 256x256 grid (one value every 4 input pixels): a 512
+        tile padded to 1024 leaves half of the input empty and gives one value every 4 photo pixels, while the
+        same tile enlarged x2 fills the input and gives one every 2 -- thin (1-3 px) cracks are seen at twice
+        the size, for the same compute. H * upscale and W * upscale must not exceed sam.image_encoder.img_size.
+        Use the same value in training (train.py --upscale) and in inference.
     returns: (B, 1, H, W) raw logits, resized back to the input resolution
     """
     images = images.to(device)
     B, _, H, W = images.shape
+    in_h, in_w = H, W
+    if upscale and upscale != 1.0:
+        in_h, in_w = int(round(H * upscale)), int(round(W * upscale))
+        limit = getattr(getattr(sam, "image_encoder", None), "img_size", 1024)
+        if max(in_h, in_w) > limit:
+            raise ValueError(f"tile {H}x{W} x{upscale} = {in_h}x{in_w} exceeds the SAM input {limit}: "
+                             f"use a smaller --tile-size / --tile or a smaller --upscale")
+        images = F.interpolate(images, size=(in_h, in_w), mode="bilinear", align_corners=False)
 
     # sam.preprocess expects pixel values roughly in [0, 255] and handles
     # ImageNet normalization + padding to a square img_size (1024) itself.
@@ -97,8 +111,9 @@ def forward_batch(sam: nn.Module, images: torch.Tensor, device: str) -> torch.Te
             multimask_output=False,  # single binary "crack" mask
         )
         # low_res_masks: (1, 1, h_low, w_low) -> back to original (H, W)
+        # (upscaled tile: crop the enlarged area, then back to the tile's own H x W)
         masks = sam.postprocess_masks(
-            low_res_masks, input_size=(H, W), original_size=(H, W)
+            low_res_masks, input_size=(in_h, in_w), original_size=(H, W)
         )
         logits_list.append(masks)
 

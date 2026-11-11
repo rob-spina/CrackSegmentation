@@ -22,6 +22,7 @@ button again replaces the previous SAM cracks of the photo (after a confirmation
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -158,15 +159,16 @@ PROBABILITY_DIR = "probability maps"
 _TAG_CACHE = {}
 
 
-def model_tag(lora_weights="", checkpoint=""):
+def model_tag(lora_weights="", checkpoint="", upscale=None):
     """Folder name of one model's maps. For LoRA weights, their SHA-256 (the same weights give the same folder on the
-    Mac and on Leonardo, whatever the file is called); for a single checkpoint, its file name."""
+    Mac and on Leonardo, whatever the file is called); for a single checkpoint, its file name.
+    v2.0.1: tiles enlarged x2 before SAM add '-x2' (upscale None = the weights' own, from train_args.json)."""
     path = os.path.expanduser(lora_weights or "")
     if path and os.path.isfile(path):
         key = (os.path.abspath(path), os.path.getmtime(path), os.path.getsize(path))
         if key not in _TAG_CACHE:
             _TAG_CACHE[key] = "lora-" + sam_weights.file_digest(path, "sha256")[:12]
-        return _TAG_CACHE[key]
+        return _TAG_CACHE[key] + sam_weights.upscale_suffix(sam_weights.resolve_upscale(upscale, path))
     name = os.path.splitext(os.path.basename(lora_weights or checkpoint or "model"))[0]
     return "".join(c if c.isalnum() or c in "-_." else "_" for c in name) or "model"
 
@@ -406,21 +408,77 @@ class SamAutoSegMixin:
             return None
 
     def _download_sam_weights(self):
-        """Downloads the missing weights, with progress in the status bar; [Esc] cancels. True when both are there."""
-        for spec, dest in self._sam_weight_specs():
-            name = spec["file"]
-            print(f" [SAM] Downloading {name} from {spec['url'].split('/')[2]} ... ([Esc] cancels, it resumes next time)")
-            try:
-                self._run_in_background(lambda cancelled, s=spec, d=dest:
-                                        sam_weights.download(s, d, self._sam_progress_printer(name), cancelled))
-            except sam_weights.DownloadCancelled:
-                print(f" [SAM] Download of {name} stopped; press the button again to resume it.")
-                return False
-            except sam_weights.DownloadError as e:
-                print(f" [SAM] Download failed: {e}", file=sys.stderr)
-                return False
-            print(f" [SAM] {name} ready.")
-        return True
+        """Downloads the missing weights, with progress in the status bar (the GUI also opens a window with a
+        progress bar); [Esc] / [Cancel] stops it. True when both are there."""
+        todo = [(spec, dest) for spec, dest in self._sam_weight_specs()
+                if sam_weights.verify(dest, {"size": spec.get("size")}) is not None or not os.path.isfile(dest)]
+        progress = {"file": "", "index": 0, "count": len(todo), "done": 0, "total": None, "start": time.time(),
+                    "start_bytes": 0}
+        self._sam_download_window_open(progress)
+        try:
+            for i, (spec, dest) in enumerate(todo, 1):
+                name = spec["file"]
+                print(f" [SAM] Downloading {name} from {spec['url'].split('/')[2]} ... "
+                      "([Esc] cancels, it resumes next time)")
+                progress.update(file=name, index=i, done=0, total=spec.get("size"), start=time.time(),
+                                start_bytes=None)
+                printer = self._sam_progress_printer(name)
+
+                def report(done, total, printer=printer):
+                    if progress["start_bytes"] is None:   # resumed download: the speed counts this session only
+                        progress["start_bytes"] = done
+                    progress["done"], progress["total"] = done, total or progress["total"]
+                    printer(done, total)
+                try:
+                    self._run_in_background(lambda cancelled, s=spec, d=dest: sam_weights.download(s, d, report,
+                                                                                                      cancelled),
+                                            tick=lambda: self._sam_download_window_update(progress))
+                except sam_weights.DownloadCancelled:
+                    print(f" [SAM] Download of {name} stopped; press the button again to resume it.")
+                    return False
+                except sam_weights.DownloadError as e:
+                    print(f" [SAM] Download failed: {e}", file=sys.stderr)
+                    self._sam_download_failed(str(e))
+                    return False
+                print(f" [SAM] {name} ready.")
+            return True
+        finally:
+            self._sam_download_window_close()
+
+    # Download window: nothing in the terminal version (the progress is printed); the GUI shows a progress bar.
+    def _sam_download_window_open(self, progress):
+        pass
+
+    def _sam_download_window_update(self, progress):
+        pass
+
+    def _sam_download_window_close(self):
+        pass
+
+    def _sam_download_failed(self, message):
+        pass
+
+    @staticmethod
+    def sam_download_status(progress):
+        """('file 1 of 2: sam_vit_h_4b8939.pth', '1.2 GB of 2.4 GB (50%) - 25.0 MB/s - about 1 min left', percent
+        or None) for the download window."""
+        done, total = progress["done"], progress["total"]
+        head = progress["file"] or "..."
+        if progress.get("count", 1) > 1:
+            head = f"File {progress['index']} of {progress['count']}: {head}"
+        text = sam_weights.human_size(done) + (f" of {sam_weights.human_size(total)}" if total else "")
+        percent = 100.0 * done / total if total else None
+        if percent is not None:
+            text += f" ({percent:.0f}%)"
+        elapsed = time.time() - progress["start"]
+        got = done - (progress.get("start_bytes") or 0)
+        if elapsed > 1 and got > 0:
+            speed = got / elapsed
+            text += f" - {sam_weights.human_size(speed)}/s"
+            if total and done < total:
+                left = (total - done) / speed
+                text += (f" - about {left / 60:.0f} min left" if left >= 90 else f" - about {left:.0f} s left")
+        return head, text, percent
 
     @staticmethod
     def _sam_progress_printer(name):
@@ -435,8 +493,9 @@ class SamAutoSegMixin:
             print(f" [SAM] {name}: {sam_weights.human_size(done)}{of}{share}")
         return progress
 
-    def _run_in_background(self, work):
-        """Runs work(cancelled) in a thread, keeping the window alive; [Esc] sets cancelled. Re-raises its error."""
+    def _run_in_background(self, work, tick=None):
+        """Runs work(cancelled) in a thread, keeping the window alive; [Esc] sets cancelled. Re-raises its error.
+        tick() is called on the main thread at every turn (the GUI redraws its progress window there)."""
         result, stop = {}, threading.Event()
 
         def target():
@@ -449,6 +508,8 @@ class SamAutoSegMixin:
         while thread.is_alive():
             if self._sam_cancel_requested():
                 stop.set()
+            if tick is not None:
+                tick()
             self._pump_extra_events()
             thread.join(0.05)
         if "error" in result:
@@ -493,7 +554,8 @@ class SamAutoSegMixin:
                "--tile", str(cfg.SAM_TILE_PX), "--overlap", str(cfg.SAM_OVERLAP_PX),
                "--batch-size", str(cfg.SAM_BATCH_SIZE), "--device", cfg.SAM_DEVICE]
         if self._sam_backend(settings) == "sam_lora":
-            return cmd + ["--backend", "sam_lora", "--code-dir", exp(settings["code_dir"]),
+            upscale = sam_weights.resolve_upscale(getattr(cfg, "SAM_UPSCALE", None), exp(settings["lora_weights"]))
+            return cmd + ["--backend", "sam_lora", "--upscale", f"{upscale:g}", "--code-dir", exp(settings["code_dir"]),
                           "--sam-checkpoint", exp(settings["sam_checkpoint"]), "--model-type", settings["model_type"],
                           "--lora-r", str(settings.get("lora_r", 4)), "--lora-weights", exp(settings["lora_weights"])]
         cmd += ["--backend", "module", "--checkpoint", exp(settings["checkpoint"]), "--scale", str(cfg.SAM_SCALE)]
@@ -534,14 +596,24 @@ class SamAutoSegMixin:
 
     def _sam_probability_cache_path(self, settings):
         tag = model_tag(settings.get("lora_weights") if self._sam_backend(settings) == "sam_lora" else "",
-                        settings.get("checkpoint", ""))
+                        settings.get("checkpoint", ""), getattr(self.cfg, "SAM_UPSCALE", None))
         return probability_cache_path(self._sam_model_dir(), tag, self.cfg.CURRENT_IMAGE_PATH)
 
     def _sam_probability_map(self, settings):
         """uint8 probability map (x 255) of the photo on screen, or None (failure / cancelled). Reused from the cache
         when this model already processed this photo (here, by [SAM click to accept] or by sam_batch.py)."""
         cache = self._sam_probability_cache_path(settings)
-        prob = read_cached_probability(cache, self.cfg.CURRENT_IMAGE_PATH, (self.cfg.H_img, self.cfg.W_img))
+        shape = (self.cfg.H_img, self.cfg.W_img)
+        prob = read_cached_probability(cache, self.cfg.CURRENT_IMAGE_PATH, shape)
+        untagged = re.sub(r"__BLDG\d+(?=\.png$)", "", cache)
+        if prob is None and untagged != cache:
+            # v2.0.1: map computed (e.g. by sam_batch.py on Leonardo) before the photo got its building tag.
+            prob = read_cached_probability(untagged, self.cfg.CURRENT_IMAGE_PATH, shape)
+            if prob is not None:
+                try:
+                    os.replace(untagged, cache)
+                except OSError:
+                    pass
         if prob is not None:
             print(" [SAM] Using the crack map already computed for this photo.")
             return prob

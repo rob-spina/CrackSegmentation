@@ -13,15 +13,27 @@ can be found again later:
     kept for the reloads of the same pass (e.g. after [Validation]);
   - [Validation] and [Auto split] never move a marked photo (it stays in 'Images' until the mark is removed;
     Auto split then puts it in the set of its building group); [Training / Test / Validation set] ask first.
+
+[To be reviewed by date] (code 160): marks at once every segmented photo whose JSON was last saved on or before a
+date (e.g. today: everything labelled so far, to go over it again with a new SAM model). The photos already marked
+keep their mark and note; "Remove" takes away only the marks given this way (manual marks stay). The JSON files keep
+their saving date (the mark is written in their flags without touching it), so the same date can be used again.
+Mode 2 loads only the photos of 'Images': photos already in Training / Validation / Test set are marked too, and
+[Reset pipeline training] brings them back.
 """
 import datetime
 import json
 import os
 import re
 
-from config import JSON_DIR_NAME
+from config import JSON_DIR_NAME, IMAGES_DIR_NAME
+
+PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff")
 
 REVIEW_CODE = 140
+REVIEW_BY_DATE_CODE = 160   # v2.0.1 [To be reviewed by date]: every photo whose JSON was saved up to a date
+REVIEW_BATCH_KEY = "until"  # index entries of a by-date mark: {"note", "since", "until": "YYYY-MM-DD"}
+REVIEW_SETS = ("Training set", "Validation set", "Test set")
 REVIEW_INDEX_NAME = "to_be_reviewed.json"
 REVIEW_FLAG = "to_be_reviewed"
 REVIEW_REJECT_REASON = "marked TO BE REVIEWED"   # Validation / Auto split leave these photos in 'Images'
@@ -201,6 +213,197 @@ class ReviewFlagsMixin:
             self._forget_review_cache()
             print(f"[TO BE REVIEWED] {added} photo(s) marked in their JSON added to {REVIEW_INDEX_NAME}")
 
+    # --- To be reviewed by date ----------------------------------------------------------------------
+
+    @staticmethod
+    def parse_review_date(text):
+        """'2026-11-08', '08/11/2026', '8-11-2026', '08.11.2026' -> date; '' -> today; None if not a date."""
+        text = (text or "").strip()
+        if not text:
+            return datetime.date.today()
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d"):
+            try:
+                return datetime.datetime.strptime(text, fmt).date()
+            except ValueError:
+                pass
+        return None
+
+    def _segmented_json_folders(self):
+        """(folder, set name or None): the JSON folder of the data folder and of each set."""
+        root = str(self.cfg.SCRIPT_DIR)
+        sets = getattr(self.cfg, "DATASET_SPLIT_DIRS", None) or {}
+        names = list(dict.fromkeys(list(sets.values()) + list(REVIEW_SETS)))
+        folders = [(os.path.join(root, JSON_DIR_NAME), None)]
+        folders += [(os.path.join(root, name, JSON_DIR_NAME), name) for name in names]
+        return [(f, name) for f, name in folders if os.path.isdir(f)]
+
+    def _photo_location(self, key):
+        """'images' when the photo is in the data folder's 'Images', the set's name when it is in a set's, else None."""
+        root = str(self.cfg.SCRIPT_DIR)
+        sets = getattr(self.cfg, "DATASET_SPLIT_DIRS", None) or {}
+        names = list(dict.fromkeys(list(sets.values()) + list(REVIEW_SETS)))
+        cache = self.cfg.review_state.setdefault("_photo_names", {})
+        for label, folder in [("images", os.path.join(root, IMAGES_DIR_NAME))] + \
+                [(n, os.path.join(root, n, IMAGES_DIR_NAME)) for n in names]:
+            if folder not in cache:
+                try:
+                    cache[folder] = {review_key(f) for f in os.listdir(folder) if f.lower().endswith(PHOTO_EXTENSIONS)}
+                except OSError:
+                    cache[folder] = set()
+            if key in cache[folder]:
+                return label
+        return None
+
+    def review_by_date_plan(self, until):
+        """The segmented photos whose JSON was last saved on or before `until` (a date):
+        {"jsons": {key: [json paths]}, "marked": keys already marked, "images": keys whose photo is in 'Images',
+         "sets": {set name: [keys]}, "missing": keys without their photo}."""
+        limit = datetime.datetime.combine(until, datetime.time.max).timestamp()
+        jsons = {}
+        for folder, _ in self._segmented_json_folders():
+            for name in os.listdir(folder):
+                if not name.lower().endswith(".json") or name.startswith("."):
+                    continue
+                path = os.path.join(folder, name)
+                try:
+                    if os.path.getmtime(path) > limit:
+                        continue
+                except OSError:
+                    continue
+                jsons.setdefault(review_key(name), []).append(path)
+        self.cfg.review_state.pop("_photo_names", None)
+        index = self._load_review_index()
+        plan = {"jsons": jsons, "marked": sorted(k for k in jsons if k in index), "images": [], "sets": {},
+                "missing": [], "by_date": sorted(k for k in jsons if REVIEW_BATCH_KEY in (index.get(k) or {}))}
+        for key in sorted(jsons):
+            where = self._photo_location(key)
+            if where == "images":
+                plan["images"].append(key)
+            elif where:
+                plan["sets"].setdefault(where, []).append(key)
+            else:
+                plan["missing"].append(key)
+        self.cfg.review_state.pop("_photo_names", None)
+        return plan
+
+    @staticmethod
+    def _set_json_review_flags(json_path, marked, note):
+        """Writes / removes the mark in a JSON's flags, keeping the file's saving date (so the date filter still
+        sees when the photo was really labelled)."""
+        try:
+            stat = os.stat(json_path)
+            with open(json_path, encoding="utf-8") as f:
+                data = json.load(f)
+            flags = data.get("flags") if isinstance(data.get("flags"), dict) else {}
+            had = flags.get(REVIEW_FLAG) is True
+            if had == marked and (not marked or flags.get(REVIEW_NOTE_FLAG, "") == (note or "")):
+                return True
+            flags.pop(REVIEW_FLAG, None)
+            flags.pop(REVIEW_NOTE_FLAG, None)
+            if marked:
+                flags[REVIEW_FLAG] = True
+                if note:
+                    flags[REVIEW_NOTE_FLAG] = note
+            data["flags"] = flags
+            tmp = json_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp, json_path)
+            os.utime(json_path, (stat.st_atime, stat.st_mtime))
+            return True
+        except (OSError, ValueError) as e:
+            print(f"[TO BE REVIEWED] Cannot update the flags of {json_path}: {e}")
+            return False
+
+    def _prompt_review_by_date(self):
+        """{"date": date, "note": str, "remove": bool} or None. Default: terminal input(); the GUI has a dialog."""
+        try:
+            text = input("[TO BE REVIEWED BY DATE] Mark the photos saved up to (YYYY-MM-DD, ENTER = today): ")
+            note = input("Note (ENTER = 're-segment with the new SAM model'): ").strip()
+        except Exception:
+            return None
+        date = self.parse_review_date(text)
+        if date is None:
+            print(f"[TO BE REVIEWED BY DATE] '{text}' is not a date.")
+            return None
+        return {"date": date, "note": note or "re-segment with the new SAM model", "remove": False}
+
+    def _confirm_review_by_date(self, message):
+        """True = go ahead. Default: terminal input(); the GUI asks with a dialog."""
+        print("\n" + message)
+        try:
+            return input("Type y to go ahead, or ENTER to cancel: ").strip().lower() in ("y", "s")
+        except Exception:
+            return False
+
+    def _notify_review_by_date(self, message):
+        print(message)
+
+    @staticmethod
+    def _review_by_date_message(plan, until, remove):
+        n = len(plan["jsons"])
+        day = until.isoformat()
+        if remove:
+            return (f"{len(plan['by_date'])} of the {n} photo(s) saved up to {day} were marked TO BE REVIEWED by "
+                    f"date: remove their mark?\n(Marks given one photo at a time stay.)")
+        new = n - len(plan["marked"])
+        lines = [f"{n} segmented photo(s) were saved up to {day}: {new} will be marked TO BE REVIEWED"
+                 + (f" ({len(plan['marked'])} are already marked and keep their note)." if plan["marked"] else ".")]
+        lines.append(f"- {len(plan['images'])} in 'Images': Mode 2 (Switch Mode) can load only these.")
+        for name, keys in sorted(plan["sets"].items()):
+            lines.append(f"- {len(keys)} in '{name}': [Reset pipeline training] brings them back to 'Images'.")
+        if plan["missing"]:
+            lines.append(f"- {len(plan['missing'])} JSON(s) without their photo (marked anyway).")
+        lines.append("The JSON files keep their saving date.")
+        return "\n".join(lines)
+
+    def mark_review_by_date(self):
+        """[To be reviewed by date]: marks (or unmarks) every photo whose JSON was saved up to a date."""
+        answer = self._prompt_review_by_date()
+        if not answer:
+            print("[TO BE REVIEWED BY DATE] Cancelled.")
+            return False
+        until, note, remove = answer["date"], (answer.get("note") or "").strip(), bool(answer.get("remove"))
+        if until > datetime.date.today():
+            until = datetime.date.today()
+        plan = self.review_by_date_plan(until)
+        targets = plan["by_date"] if remove else [k for k in plan["jsons"] if k not in plan["marked"]]
+        if not targets:
+            self._notify_review_by_date(
+                f"To be reviewed by date: no photo saved up to {until.isoformat()} "
+                + ("was marked by date." if remove else
+                   ("to mark (all already marked)." if plan["jsons"] else "(no segmented photo found)."))
+            )
+            return False
+        if not self._confirm_review_by_date(self._review_by_date_message(plan, until, remove)):
+            print("[TO BE REVIEWED BY DATE] Cancelled.")
+            return False
+        index = dict(self._load_review_index())
+        today = datetime.date.today().isoformat()
+        for key in targets:
+            if remove:
+                index.pop(key, None)
+            else:
+                index[key] = {"note": note, "since": today, REVIEW_BATCH_KEY: until.isoformat()}
+        if not self._save_review_index(index):
+            return False
+        self._forget_review_cache()
+        for key in targets:
+            for path in plan["jsons"][key]:
+                self._set_json_review_flags(path, not remove, note)
+        verb = "no longer marked" if remove else "marked TO BE REVIEWED"
+        self._notify_review_by_date(
+            f"To be reviewed by date: {len(targets)} photo(s) saved up to {until.isoformat()} {verb}."
+            + ("" if remove else "\nIn Mode 2 (Switch Mode) choose 'Only the photos to be reviewed'; press "
+               "[To be reviewed] on a photo to take its mark away once it is done."))
+        print(f"[TO BE REVIEWED BY DATE] {len(targets)} photo(s) {verb} (saved up to {until.isoformat()}).")
+        if getattr(self.cfg, "CURRENT_IMAGE_PATH", None) and not getattr(self.cfg, "queue_idle", False):
+            try:
+                self.refresh_zoom_viewport()
+            except Exception:
+                pass
+        return True
+
     def _confirm_move_photo_to_be_reviewed(self, message):
         """[Training / Test / Validation set] on a marked photo. Default: terminal input(); the GUI asks."""
         print("\n" + message)
@@ -239,6 +442,9 @@ class ReviewFlagsMixin:
             choice = REVIEW_FILTER_ALL
             if n_review and n_others:
                 choice = self._prompt_review_filter(n_review, n_others)
+            elif n_review:   # every segmented photo is to be reviewed: no question, but start from the first
+                choice = REVIEW_FILTER_ONLY
+                print(f"[MODE 2] All {n_review} segmented photo(s) are marked TO BE REVIEWED.")
             self.cfg.review_state["filter"] = choice if choice in REVIEW_FILTERS else REVIEW_FILTER_ALL
         choice = self.cfg.review_state.get("filter", REVIEW_FILTER_ALL)
         if choice == REVIEW_FILTER_ONLY:
@@ -257,9 +463,30 @@ class ReviewFlagsMixin:
     # --- HUD --------------------------------------------------------------------------------------
 
     def _draw_review_label(self, win_out):
+        """Red frame round the photo and a red banner on it, plus the status-bar line."""
         if self.cfg.queue_idle or not self.is_photo_to_be_reviewed():
             return
         note = self.review_note()
+        text = "TO BE REVIEWED" + (f": {note}" if note else "")
         large = self.cfg.hud_large_size
         y = (135 if large else 120) + 9 * (45 if large else 30)
-        self._put_hud_text(win_out, "TO BE REVIEWED" + (f": {note}" if note else ""), (15, y), (60, 60, 255))
+        self._put_hud_text(win_out, text, (15, y), (60, 60, 255))
+        if win_out is None or not hasattr(win_out, "shape"):
+            return
+        import cv2
+        h, w = win_out.shape[:2]
+        top = 0
+        visible_top = getattr(self, "_visible_canvas_top", None)
+        if visible_top is not None:
+            try:
+                top = int(visible_top())
+            except Exception:
+                top = 0
+        red = (40, 40, 230)
+        cv2.rectangle(win_out, (2, 2), (w - 3, h - 3), red, 6)
+        label = text if len(text) <= 70 else text[:67] + "..."
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+        x0 = max(10, w - tw - 40)
+        y0 = top + 14
+        cv2.rectangle(win_out, (x0 - 12, y0), (x0 + tw + 12, y0 + th + 18), red, -1)
+        cv2.putText(win_out, label, (x0, y0 + th + 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)

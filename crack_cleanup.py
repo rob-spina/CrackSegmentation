@@ -1,7 +1,8 @@
 """crack_cleanup.py
 v1.0.8 crack clean-up tools, mixed into CrackSegmentation (smart_segmentation.py):
   - Eraser (sidebar, code 21): a square window follows the mouse; press and drag it over a crack to erase
-    the part it touches. A crack crossed in the middle is split in two. [ / ] shrink / enlarge the window.
+    the part it touches. A crack crossed in the middle is split in two. [ / ] shrink / enlarge the window
+    (10 to 1200 screen px since 2.0.1; steps of 10 up to 100, 50 up to 400, then 100).
   - Remove uncertain (sidebar, code 22): deletes every crack on screen marked [?] (uncertain);
     cracks hidden by Show cracks by number are kept.
 Both write the JSON and the binary masks right away when the change is done; [U] undoes it on screen
@@ -96,11 +97,21 @@ class CrackCleanupMixin:
         view_w = max(1, self.cfg.zoom_box[2] - self.cfg.zoom_box[0])
         return max(1.0, self.cfg.ERASER_SIZE_WIN_PX / 2.0 * view_w / 1200.0)
 
+    def _eraser_step(self, size, step_sign):
+        """The step from this size: ERASER_SIZE_STEPS (10 up to 100, 50 up to 400, then 100); shrinking uses the
+        step of the band below, so [ undoes ] exactly."""
+        steps = getattr(self.cfg, "ERASER_SIZE_STEPS", None) or ((None, self.cfg.ERASER_SIZE_STEP_WIN_PX),)
+        probe = size if step_sign > 0 else size - 1
+        for limit, step in steps:
+            if limit is None or probe < limit:
+                return int(step)
+        return int(steps[-1][1])
+
     def _resize_eraser(self, step_sign):
         cfg = self.cfg
-        size = cfg.ERASER_SIZE_WIN_PX + step_sign * cfg.ERASER_SIZE_STEP_WIN_PX
+        size = cfg.ERASER_SIZE_WIN_PX + step_sign * self._eraser_step(cfg.ERASER_SIZE_WIN_PX, step_sign)
         cfg.ERASER_SIZE_WIN_PX = int(min(cfg.ERASER_MAX_SIZE_WIN_PX, max(cfg.ERASER_MIN_SIZE_WIN_PX, size)))
-        print(f" [ERASER] Window size: {cfg.ERASER_SIZE_WIN_PX} px.")
+        print(f" [ERASER] Window size: {cfg.ERASER_SIZE_WIN_PX} px (up to {cfg.ERASER_MAX_SIZE_WIN_PX}).")
 
     def _dispatch_eraser_keys(self, key_clean):
         """[ / ] resize the eraser window while the tool is on. True if the key was used."""

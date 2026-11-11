@@ -141,8 +141,11 @@ class ToggleTest(_Base):
         self.assertEqual(texts, [])
         with mock.patch.object(self.app, "_prompt_review_note", return_value="width"):
             _press(self.app, REVIEW_CODE)
-        self.app._draw_review_label(None)
+        frame = np.zeros((400, 600, 3), np.uint8)
+        self.app._draw_review_label(frame)
         self.assertEqual(texts, ["TO BE REVIEWED: width"])
+        self.assertEqual(tuple(frame[200, 3]), (40, 40, 230))   # red frame on the photo
+        self.assertTrue((frame[20:50, 400:590] == (40, 40, 230)).all(axis=2).any())   # red banner
 
 
 class Mode2FilterTest(_Base):
@@ -174,6 +177,35 @@ class Mode2FilterTest(_Base):
     def test_all(self):
         queue, _ = self._rebuild(rf.REVIEW_FILTER_ALL)
         self.assertEqual(queue, ["a.jpg", "b.jpg", "c.jpg"])
+
+    def test_only_to_be_reviewed_starts_from_the_first(self):
+        """Mode 2 normally resumes from the last segmented photo: with only the marked photos it starts from the
+        first, or the photos before the last saved one would be skipped."""
+        self._show(self.a)
+        with mock.patch.object(self.app, "_prompt_review_note", return_value=""):
+            _press(self.app, REVIEW_CODE)
+        self._show(self.c)
+        with mock.patch.object(self.app, "_prompt_review_note", return_value=""):
+            _press(self.app, REVIEW_CODE)
+        os.utime(os.path.join(self.jsons, "c.json"), (2e9, 2e9))    # c saved last
+        queue, _ = self._rebuild(rf.REVIEW_FILTER_ONLY)
+        self.assertEqual(queue, ["a.jpg", "b.jpg", "c.jpg"])
+        self.assertEqual(self.app._mode_start_position(), 0)
+        self._show(self.a)
+        _press(self.app, REVIEW_CODE)                     # a no longer marked: the question comes back
+        self._rebuild(rf.REVIEW_FILTER_ALL)
+        self.assertEqual(self.app._mode_start_position(), 2)   # all: resumes from c, saved last
+
+    def test_all_marked_no_question_starts_from_the_first(self):
+        for p in (self.a, self.c):
+            self._show(p)
+            with mock.patch.object(self.app, "_prompt_review_note", return_value=""):
+                _press(self.app, REVIEW_CODE)
+        os.utime(os.path.join(self.jsons, "c.json"), (2e9, 2e9))
+        queue, prompt = self._rebuild(rf.REVIEW_FILTER_ALL)
+        prompt.assert_not_called()
+        self.assertEqual(queue, ["a.jpg", "b.jpg", "c.jpg"])
+        self.assertEqual(self.app._mode_start_position(), 0)
 
     def test_choice_reapplied_without_asking(self):
         self._rebuild(rf.REVIEW_FILTER_ONLY)

@@ -3,6 +3,8 @@
 import sys
 import os
 import cv2
+import time
+
 import numpy as np
 import tkinter as tk
 from tkinter import simpledialog, messagebox, filedialog, ttk
@@ -13,8 +15,17 @@ from smart_segmentation import CrackSegmentation
 from go_to_image import PagedChooser
 from crack_relabel import MARK_UNCERTAIN_CODE, MARK_NORMAL_CODE
 from sam_autoseg import SAM_AUTOSEG_CODE, SAM_SETTINGS_CODE
-from sam_accept import SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE
-from review_flags import review_key, REVIEW_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
+from sam_accept import (SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE, SAM_ACCEPT_ALL_CODE, SAM_OVERLAY_CODE,
+                        SAM_YELLOW_CODE, SAM_ORANGE_CODE, SAM_DISCARD_LIGHT_CODE, SAM_DISCARD_DARK_CODE,
+                        SAM_MODE_KEYS, SAM_EXCLUDE_CODE, SAM_ACCEPT_DARK_CODE, SAM_ACCEPT_LIGHT_CODE,
+                        SAM_ACCEPT_EVERY_CODE, SAM_THRESHOLD_DIAL_CODE, SAM_THRESHOLD_DOWN_CODE,
+                        SAM_THRESHOLD_UP_CODE, SAM_RECOMPUTE_MAP_CODE, SAM_CUT_CODE)
+from delete_image import DELETE_IMAGE_CODE
+from auto_ignore import AUTO_IGNORE_CODE
+from active_learning import ACTIVE_LEARNING_CODE
+from leonardo_link import LEONARDO_CODE, FIELDS as LEONARDO_FIELDS, save_settings as save_leonardo_settings
+from building_groups import GROUP_PHOTOS_CODE, progress_text as group_progress_text
+from review_flags import review_key, REVIEW_CODE, REVIEW_BY_DATE_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
 from crack_branch_merge import MERGE_BRANCH_CODE, MERGE_BRANCH_EXIT_CODE
 
 
@@ -547,11 +558,25 @@ _RIGHT_SIDEBAR_SECTIONS = [
         ("\U0001F916", "SAM auto-segment", "", SAM_AUTOSEG_CODE),
         # v2.0.0: click the real cracks, the model segments them; press again to finish (sam_accept.py).
         ("\U0001F446", "SAM click to accept", "", SAM_ACCEPT_CODE),
+        # v2.0.1: while SAM click to accept is on (locked otherwise); keys 1-4 / X in the mode.
+        ("\U0001F7E0", "Accept all orange", "1", SAM_ACCEPT_ALL_CODE),
+        ("\U0001F7E1", "Accept all dark yellow", "2", SAM_ACCEPT_DARK_CODE),
+        ("\U0001F7E8", "Accept all light yellow", "3", SAM_ACCEPT_LIGHT_CODE),
+        ("\u2705", "Accept all colours", "4", SAM_ACCEPT_EVERY_CODE),
+        ("\u2702", "Exclude crack", "X", SAM_EXCLUDE_CODE),
+        # v2.0.1: a line dragged across the crack map splits it (a crack joined to tree branches ...).
+        ("\U0001FA93", "Cut map", "K", SAM_CUT_CODE),
+        # v2.0.1: round dial for the crack-map threshold (fewer false negatives / positives, live).
+        ("\U0001F39B", "Threshold dial", "[ ]", SAM_THRESHOLD_DIAL_CODE),
+        # v2.0.1: the crack map of this photo computed again on this computer (e.g. a Leonardo map looks wrong).
+        ("\U0001F504", "Recompute crack map here", "", SAM_RECOMPUTE_MAP_CODE),
     ]),
     ("Tools", [
         ("\u26A1", "Crack tool", "C", ord('c')),
         ("\u25A6", "Detachment tool", "D", ord('d')),
         ("\U0001F6AB", "Ignore region", "I", ord('i')),
+        # v2.0.1: ignore regions drawn automatically around trees, fences, people, vehicles, rubble (code 162).
+        ("\U0001F333", "Auto ignore", "", AUTO_IGNORE_CODE),
         # v1.1.0: on = the next cracks are traced as uncertain (red); again = normal (code 7, uncertain_trace.py).
         ("\U0001F534", "Uncertain crack", "", 7),
         # v1.3.0: after each trace, a weak crack is proposed as uncertain (code 12, warn_uncertain.py).
@@ -598,6 +623,8 @@ _LEFT_SIDEBAR_SECTIONS = [
     ]),
     ("Building & scale", [
         ("\U0001F3F7", "Assign building", "B", ord('b')),
+        # v2.0.1: tags all the photos of 'Images' that show the same building (code 141, building_groups.py).
+        ("\U0001F3D8", "Group similar photos", "", GROUP_PHOTOS_CODE),
         ("\u2B1C", "Building portion (import)", "5", 20),
         ("\U0001F50D", "Compatibility check", "G", ord('g')),
         ("\U0001F4D0", "Set scale", "K", ord('k')),
@@ -606,6 +633,14 @@ _LEFT_SIDEBAR_SECTIONS = [
         ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
         # v2.0.1: mark the photo as doubtful; Mode 2 / Switch Mode can then load only these (code 140, review_flags.py).
         ("\U0001F6A9", "To be reviewed", "", REVIEW_CODE),
+        # v2.0.1: every photo whose JSON was saved up to a date -> to be reviewed (code 160).
+        ("\U0001F4C5", "To be reviewed by date", "", REVIEW_BY_DATE_CODE),
+        # v2.0.1: newest round's weights -> rank the photos still to label -> the 50 most uncertain in Mode 1.
+        ("\U0001F501", "Active learning (next round)", "", ACTIVE_LEARNING_CODE),
+        # v2.0.1: log in, send the dataset, start the round on Leonardo, fetch the results (code 154).
+        ("\U0001F5A5", "Leonardo (train the next round)", "", LEONARDO_CODE),
+        # v2.0.1: an unsuitable photo leaves the dataset (moved to 'Deleted images', code 149, delete_image.py).
+        ("\U0001F5D1", "Delete image", "", DELETE_IMAGE_CODE),
         ("\u2705", "Validation", "", 17),
         # v1.0.8 dataset split, Mode 2 only (codes 23-25, see dataset_split.py).
         ("\U0001F4DA", "Training set", "", 23),
@@ -620,6 +655,26 @@ _LEFT_SIDEBAR_SECTIONS = [
 RIGHT_SIDEBAR_TITLE = "More Features"
 LEFT_SIDEBAR_TITLE = "View & Dataset"
 # Every sidebar command, right panel first then left, in on-screen order.
+# Commands of the features a release ships switched off (config FEATURE_* = False): no button, no menu entry.
+_FEATURE_CODES = {"FEATURE_GROUP_SIMILAR_PHOTOS": GROUP_PHOTOS_CODE, "FEATURE_ACTIVE_LEARNING": ACTIVE_LEARNING_CODE,
+                  "FEATURE_LEONARDO": LEONARDO_CODE, "FEATURE_AUTO_IGNORE": AUTO_IGNORE_CODE}
+
+
+def hidden_feature_codes(cfg):
+    """Codes of the commands whose feature is switched off in cfg."""
+    return {code for flag, code in _FEATURE_CODES.items() if not getattr(cfg, flag, True)}
+
+
+def _visible_sections(sections, hidden):
+    """The sidebar sections without the hidden commands (a section left empty disappears)."""
+    out = []
+    for title, buttons in sections:
+        kept = [b for b in buttons if b[3] not in hidden]
+        if kept:
+            out.append((title, kept))
+    return out
+
+
 _SIDEBAR_SHORTCUTS = [entry for sections in (_RIGHT_SIDEBAR_SECTIONS, _LEFT_SIDEBAR_SECTIONS)
                       for _, entries in sections for entry in entries]
 
@@ -642,6 +697,8 @@ _SIDEBAR_TOGGLE_STATES = {
     133: lambda cfg: cfg.show_xml_reference,
     MERGE_BRANCH_CODE: lambda cfg: cfg.crack_branch_merge_state["active"],
     SAM_ACCEPT_CODE: lambda cfg: cfg.sam_accept_state["active"],
+    SAM_EXCLUDE_CODE: lambda cfg: bool(cfg.sam_accept_state.get("exclude")) and cfg.sam_accept_state["active"],
+    SAM_CUT_CODE: lambda cfg: bool(cfg.sam_accept_state.get("cut")) and cfg.sam_accept_state["active"],
     # v2.0.1: the photo on screen is marked (index cache refreshed by the HUD every frame).
     REVIEW_CODE: lambda cfg: (not cfg.queue_idle and bool(cfg.CURRENT_IMAGE_PATH)
                               and review_key(cfg.CURRENT_IMAGE_PATH) in cfg.review_state["index"]),
@@ -655,7 +712,8 @@ VALIDATION_CODE = 17
 # v1.3.0: Ctrl/Cmd+click on these sidebar buttons sends another code: [Crack tool] -> make a blue crack uncertain,
 # [Uncertain crack] -> make a red crack normal (then click the crack or its number); v2.0.0: [SAM auto-segment] ->
 # SAM model settings.
-_SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE, SAM_AUTOSEG_CODE: SAM_SETTINGS_CODE}
+_SIDEBAR_CTRL_CLICK_CODES = {ord('c'): MARK_UNCERTAIN_CODE, 7: MARK_NORMAL_CODE, SAM_AUTOSEG_CODE: SAM_SETTINGS_CODE,
+                             SAM_ACCEPT_CODE: SAM_ACCEPT_ALL_CODE}   # v2.0.1: accept every magenta proposal
 # v1.5.0: Shift+click on these sidebar buttons sends another code: [Merge crack branches] -> exit the mode;
 # v2.0.0: [SAM click to accept] -> hide / show the cracks the model sees.
 _SIDEBAR_SHIFT_CLICK_CODES = {MERGE_BRANCH_CODE: MERGE_BRANCH_EXIT_CODE, SAM_ACCEPT_CODE: SAM_CANDIDATES_CODE}
@@ -663,6 +721,14 @@ _SIDEBAR_SHIFT_CLICK_CODES = {MERGE_BRANCH_CODE: MERGE_BRANCH_EXIT_CODE, SAM_ACC
 _SIDEBAR_ENABLED_STATES = {
     code: (lambda cfg: cfg.modalita_scelta == "2" and not cfg.queue_idle) for code in (23, 24, 25)
 }
+# v2.0.1: the accept-all / exclude buttons work while SAM click to accept is on; Delete image with a photo on screen.
+_SIDEBAR_ENABLED_STATES.update({code: (lambda cfg: cfg.sam_accept_state["active"])
+                                for code in (SAM_ACCEPT_ALL_CODE, SAM_ACCEPT_DARK_CODE, SAM_ACCEPT_LIGHT_CODE,
+                                             SAM_ACCEPT_EVERY_CODE, SAM_EXCLUDE_CODE, SAM_THRESHOLD_DIAL_CODE,
+                                             SAM_CUT_CODE)})
+_SIDEBAR_ENABLED_STATES[DELETE_IMAGE_CODE] = lambda cfg: not cfg.queue_idle and bool(cfg.CURRENT_IMAGE_PATH)
+_SIDEBAR_ENABLED_STATES[SAM_RECOMPUTE_MAP_CODE] = _SIDEBAR_ENABLED_STATES[DELETE_IMAGE_CODE]
+_SIDEBAR_ENABLED_STATES[AUTO_IGNORE_CODE] = _SIDEBAR_ENABLED_STATES[DELETE_IMAGE_CODE]
 # Dataset split buttons: hovering one shows how many photos each set holds (code -> DATASET_SPLIT_DIRS key).
 _SPLIT_SET_BUTTONS = {23: "training", 24: "test", 25: "validation"}
 
@@ -806,8 +872,11 @@ class ShortcutsSidebar:
 
     def __init__(self, master, app):
         self.app = app
-        self.right = SidebarPanel(master, app, RIGHT_SIDEBAR_TITLE, _RIGHT_SIDEBAR_SECTIONS, side="right")
-        self.left = SidebarPanel(master, app, LEFT_SIDEBAR_TITLE, _LEFT_SIDEBAR_SECTIONS, side="left")
+        hidden = hidden_feature_codes(getattr(app, "cfg", None))
+        self.right = SidebarPanel(master, app, RIGHT_SIDEBAR_TITLE, _visible_sections(_RIGHT_SIDEBAR_SECTIONS, hidden),
+                                  side="right")
+        self.left = SidebarPanel(master, app, LEFT_SIDEBAR_TITLE, _visible_sections(_LEFT_SIDEBAR_SECTIONS, hidden),
+                                 side="left")
         self.panels = (self.right, self.left)
         self.frame, self._canvas = self.right.frame, self.right._canvas
         self.buttons = self.right.buttons + self.left.buttons
@@ -817,6 +886,11 @@ class ShortcutsSidebar:
     def refresh_states(self, cfg, validation_available):
         for panel in self.panels:
             panel.refresh_states(cfg, validation_available)
+
+    @property
+    def _locked(self):
+        """v2.0.1: codes of the buttons locked now (padlock, click blocked), on either panel."""
+        return self.right._locked | self.left._locked
 
     def hidden_sides(self):
         """v1.2.0: the sides whose sidebar is currently hidden ('left', 'right')."""
@@ -855,7 +929,10 @@ class SidebarPanel:
         self.buttons_by_code = {}
         self.headings = []
         self._labels_by_code = {code: (label, key) for _, entries in sections for _, label, key, code in entries}
-        self._shown_texts = {}  # code -> text last set by _set_icon()
+        self._icons = {code: icon for _, entries in sections for icon, _, _, code in entries}
+        self._locked = set()    # v2.0.1: buttons not usable now -- label kept readable, padlock icon, click explained
+        self._shown_texts = {}  # code -> text last set by _render_text()
+        self._heading_fg = self._readable_heading_colour()
         for heading, entries in sections:
             self.headings.append(self._add_heading(inner, heading))
             for icon, label, key, code in entries:
@@ -864,6 +941,11 @@ class SidebarPanel:
                 self.buttons_by_code[code] = btn
         self.hover_tips = {code: HoverTip(self.buttons_by_code[code], self._split_tip_text(split), side=side)
                            for code, split in _SPLIT_SET_BUTTONS.items() if code in self.buttons_by_code}
+        if VALIDATION_CODE in self.buttons_by_code:   # v2.0.1: say why it is greyed out
+            self.hover_tips[VALIDATION_CODE] = HoverTip(
+                self.buttons_by_code[VALIDATION_CODE],
+                lambda: "Picks the photos for 'Suitable for training' by quality.\n"
+                        "Available once every photo of 'Images' is segmented.", side=side)
 
     def _build_header(self, title):
         """Title row with the small sidebar icon that hides/shows the panel (v1.2.0), on the canvas side."""
@@ -872,7 +954,8 @@ class SidebarPanel:
         button_side = "left" if self.side == "right" else "right"
         self.collapse_button = SidebarToggle(header, self.side, self.toggle_collapsed)
         self.collapse_button.pack(side=button_side, padx=2, pady=2)
-        self.title_label = tk.Label(header, text=title, font=("TkDefaultFont", 10, "bold"), anchor="w")
+        self.title_label = tk.Label(header, text=title, font=("TkDefaultFont", 11, "bold"), anchor="w",
+                                    fg="#FFFFFF" if self._dark_sidebar() else "#111827")
         self._pack_title()
         # The tip opens towards the canvas, like the button itself; made first, the toggle's hover adds to it.
         self.collapse_tip = HoverTip(self.collapse_button.canvas, self._collapse_tip_text, side=button_side)
@@ -910,15 +993,71 @@ class SidebarPanel:
         self.collapse_button.set_collapsed(collapsed)
         self.app._on_sidebar_layout_changed()
 
+    def _dark_sidebar(self):
+        return self._readable_heading_colour() == "#FFD54F"
+
+    def _readable_heading_colour(self):
+        """v2.0.1: section titles in yellow on a dark sidebar (macOS dark mode), near-black on a light one."""
+        try:
+            probe = tk.Label(self.frame)
+            r, g, b = (v / 257.0 for v in probe.winfo_rgb(probe.cget("bg")))
+            probe.destroy()
+        except Exception:
+            return "#FFD54F"
+        return "#FFD54F" if 0.299 * r + 0.587 * g + 0.114 * b < 140 else "#1f2937"
+
+    def _on_button(self, code):
+        """A click: the command, or -- for a button not usable now -- why, in the status bar."""
+        if code in self._locked:
+            print(f" [LOCKED] {self._lock_reason(code)}")
+            return
+        self.app._send(code)
+
     @staticmethod
-    def _add_heading(master, text):
-        """Small grey section title above a group of similar commands."""
-        label = tk.Label(master, text=text.upper(), font=("TkDefaultFont", 8, "bold"), fg="#6b7280", anchor="w")
+    def _lock_reason(code):
+        if code == VALIDATION_CODE:
+            return "Validation is available once every photo of 'Images' is segmented."
+        if code in (SAM_ACCEPT_ALL_CODE, SAM_ACCEPT_DARK_CODE, SAM_ACCEPT_LIGHT_CODE, SAM_ACCEPT_EVERY_CODE,
+                    SAM_EXCLUDE_CODE, SAM_THRESHOLD_DIAL_CODE, SAM_CUT_CODE):
+            return "Turn SAM click to accept on first: these buttons work on its coloured cracks."
+        if code in (DELETE_IMAGE_CODE, SAM_RECOMPUTE_MAP_CODE, AUTO_IGNORE_CODE):
+            return "No photo on screen."
+        return ("Training / Test / Validation set work in Mode 2 with a segmented photo on screen (they move that "
+                "photo); Auto split moves all the segmented photos at once.")
+
+    def _set_locked(self, code, locked):
+        if code not in self.buttons_by_code or (code in self._locked) == locked:
+            return
+        (self._locked.add if locked else self._locked.discard)(code)
+        self._render_text(code)
+
+    def _render_text(self, code):
+        btn = self.buttons_by_code.get(code)
+        if btn is None:
+            return
+        label, key = self._labels_by_code[code]
+        icon = "\U0001F512" if code in self._locked else self._icons.get(code, "")
+        text = f"{icon} {label}" + (f" [{key}]" if key else "")
+        if self._shown_texts.get(code) != text:
+            btn.configure(text=text)
+            self._shown_texts[code] = text
+
+    def _add_heading(self, master, text):
+        """Section title above a group of similar commands, in a colour readable on the sidebar (v2.0.1)."""
+        label = tk.Label(master, text=text.upper(), font=("TkDefaultFont", 9, "bold"), fg=self._heading_fg,
+                         anchor="w")
         label.pack(fill="x", padx=6, pady=(8, 1))
         return label
 
     def _split_tip_text(self, split):
-        return lambda: split_counts_text(self.app.dataset_split_counts(), self.app.cfg.DATASET_SPLIT_DIRS[split])
+        def text():
+            counts = split_counts_text(self.app.dataset_split_counts(), self.app.cfg.DATASET_SPLIT_DIRS[split])
+            cfg = self.app.cfg
+            if cfg.modalita_scelta != "2" or cfg.queue_idle:   # v2.0.1: say why the button is greyed out
+                return ("Available in Mode 2, with a segmented photo on screen: moves that photo to this set.\n"
+                        "To split all the segmented photos at once use Auto split.\n\n" + counts)
+            return counts
+        return text
 
     def refresh_states(self, cfg, validation_available):
         """Toggle buttons look pressed while their tool is on; Validation is enabled once every photo is segmented."""
@@ -926,26 +1065,19 @@ class SidebarPanel:
             btn = self.buttons_by_code.get(code)
             if btn is not None:
                 btn.configure(relief=("sunken" if is_on(cfg) else "raised"))
-        btn = self.buttons_by_code.get(VALIDATION_CODE)
-        if btn is not None:
-            btn.configure(state=("normal" if validation_available else "disabled"))
+        # v2.0.1: never state="disabled" (its grey label vanishes on macOS): a padlock and a blocked click instead.
+        self._set_locked(VALIDATION_CODE, not validation_available)
         for code, enabled in _SIDEBAR_ENABLED_STATES.items():
-            btn = self.buttons_by_code.get(code)
-            if btn is not None:
-                btn.configure(state=("normal" if enabled(cfg) else "disabled"))
+            self._set_locked(code, not enabled(cfg))
         for code, icon_of in _SIDEBAR_DYNAMIC_ICONS.items():
             self._set_icon(code, icon_of(cfg))
 
     def _set_icon(self, code, icon):
         """Re-labels a sidebar button with a new icon, only when it actually changed."""
-        btn = self.buttons_by_code.get(code)
-        if btn is None:
+        if code not in self.buttons_by_code:
             return
-        label, key = self._labels_by_code[code]
-        text = f"{icon} {label}" + (f" [{key}]" if key else "")
-        if self._shown_texts.get(code) != text:
-            btn.configure(text=text)
-            self._shown_texts[code] = text
+        self._icons[code] = icon
+        self._render_text(code)
 
     def _bind_wheel(self):
         # Same bind_all-while-hovering pattern as EmbeddedCanvas/PdfManualPanel/toolbar.
@@ -979,7 +1111,7 @@ class SidebarPanel:
             text=f"{icon} {label}{key_part}",
             wraplength=SIDEBAR_WIDTH - 20, justify="left", anchor="w",
             font=("TkDefaultFont", 9),
-            command=lambda c=code: self.app._send(c),
+            command=lambda c=code: self._on_button(c),
         )
         btn.pack(fill="x", padx=4, pady=2, ipady=3)
         if code in _SIDEBAR_CTRL_CLICK_CODES:
@@ -1216,6 +1348,311 @@ class _ModeChoiceDialog:
         self.top.destroy()
 
 
+class _ProgressWindow:
+    """v2.0.1: window with a progress bar for long jobs (the SAM model download, Group similar photos).
+    Updated from the main thread; [Cancel] / [Esc] / closing the window sets .cancelled."""
+
+    def __init__(self, master, title, heading, note):
+        self.cancelled = False
+        self.top = tk.Toplevel(master)
+        self.top.title(title)
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self.cancel)
+        body = tk.Frame(self.top, padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text=heading, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        self.file_label = tk.Label(body, text="...", anchor="w")
+        self.file_label.pack(fill="x")
+        self.bar = ttk.Progressbar(body, orient="horizontal", length=420, mode="determinate", maximum=100)
+        self.bar.pack(fill="x", pady=8)
+        self.status_label = tk.Label(body, text="Starting...", anchor="w")
+        self.status_label.pack(fill="x")
+        tk.Label(body, text=note, fg="#666666", anchor="w", justify="left").pack(fill="x", pady=(8, 8))
+        tk.Button(body, text="Cancel", command=self.cancel).pack(anchor="e")
+        self.top.bind("<Escape>", lambda e: self.cancel())
+        self._indeterminate = False
+
+    def cancel(self):
+        self.cancelled = True
+        self.status_label.config(text="Stopping...")
+
+    def update(self, head, text, percent):
+        self.file_label.config(text=head)
+        if not self.cancelled:
+            self.status_label.config(text=text)
+        if percent is None:
+            if not self._indeterminate:
+                self.bar.config(mode="indeterminate")
+                self.bar.start(15)
+                self._indeterminate = True
+        else:
+            if self._indeterminate:
+                self.bar.stop()
+                self.bar.config(mode="determinate")
+                self._indeterminate = False
+            self.bar.config(value=percent)
+
+    def close(self):
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
+
+
+class _SamDownloadWindow(_ProgressWindow):
+    """The SAM model (SAM ViT-H base weights + crack weights) downloading."""
+
+    def __init__(self, master):
+        super().__init__(master, "Downloading the SAM model", "Downloading the SAM crack model (only the first time).",
+                         "Cancel stops it: the download resumes from here next time.")
+
+
+class _SamThresholdDial:
+    """v2.0.1: round dial for the threshold of the SAM crack map (like a colour wheel). Turning it re-cuts the map
+    at once: anticlockwise = lower threshold = more and longer cracks (fewer false negatives), clockwise = fewer
+    (fewer false positives). The accepted cracks never change. Also the mouse wheel and the - / + buttons."""
+
+    SIZE = 190
+    ARC_START, ARC_SPAN = 225.0, 270.0          # degrees: the value runs clockwise from 225 deg to -45 deg
+
+    def __init__(self, master, app):
+        self.app = app
+        self.top = tk.Toplevel(master)
+        self.top.title("SAM threshold")
+        self.top.resizable(False, False)
+        try:
+            self.top.attributes("-topmost", True)    # stays above the photo while turning it
+        except (tk.TclError, AttributeError):
+            pass
+        body = tk.Frame(self.top, padx=12, pady=10)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Crack-map threshold", font=("TkDefaultFont", 10, "bold")).pack()
+        self.canvas = tk.Canvas(body, width=self.SIZE, height=self.SIZE, highlightthickness=0)
+        self.canvas.pack(pady=4)
+        row = tk.Frame(body)
+        row.pack()
+        tk.Button(row, text="\u2212", width=3, command=lambda: self.step(-1)).pack(side="left", padx=4)
+        self.value_label = tk.Label(row, text="", font=("TkDefaultFont", 14, "bold"), width=6)
+        self.value_label.pack(side="left")
+        tk.Button(row, text="+", width=3, command=lambda: self.step(1)).pack(side="left", padx=4)
+        width_row = tk.Frame(body)
+        width_row.pack(pady=(8, 0))
+        tk.Label(width_row, text="Max crack width").pack(side="left")
+        tk.Button(width_row, text="\u2212", width=2, command=lambda: self.width_step(-1)).pack(side="left", padx=3)
+        self.width_label = tk.Label(width_row, text="", width=7, font=("TkDefaultFont", 11, "bold"))
+        self.width_label.pack(side="left")
+        tk.Button(width_row, text="+", width=2, command=lambda: self.width_step(1)).pack(side="left", padx=3)
+        self.limit_button = tk.Button(width_row, text="", width=9, command=self.toggle_limit)
+        self.limit_button.pack(side="left", padx=(6, 0))
+        self.centre_button = tk.Button(body, text="", command=self.toggle_centre)
+        self.centre_button.pack(pady=(4, 0))
+        tk.Label(body, text="wider parts: an open lesion, missing plaster, gaps between stones\n"
+                            "[0] in the mode turns the limit on / off", fg="#888888", justify="center").pack()
+        self.class_labels = {}
+        for which, title in (("orange", "Orange from"), ("dark", "Dark yellow from")):
+            row_c = tk.Frame(body)
+            row_c.pack(pady=(4, 0))
+            tk.Label(row_c, text=title, width=15, anchor="e").pack(side="left")
+            tk.Button(row_c, text="\u2212", width=2, command=lambda w=which: self.class_step(w, -1)).pack(
+                side="left", padx=3)
+            self.class_labels[which] = tk.Label(row_c, text="", width=5, font=("TkDefaultFont", 11, "bold"))
+            self.class_labels[which].pack(side="left")
+            tk.Button(row_c, text="+", width=2, command=lambda w=which: self.class_step(w, 1)).pack(
+                side="left", padx=3)
+        self.counts_label = tk.Label(body, text="", justify="center")
+        self.counts_label.pack(pady=(6, 0))
+        tk.Label(body, text="lower = fewer false negatives (more cracks)\nhigher = fewer false positives\n"
+                            "accepted cracks never change", fg="#888888", justify="center").pack(pady=(4, 0))
+        self.canvas.bind("<Button-1>", self.on_drag)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_release)
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.canvas.bind(seq, self.on_wheel)
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+        self._pending, self._last_apply, self._shown = None, 0.0, None
+        self.refresh(force=True)
+
+    # value <-> angle
+    def _limits(self):
+        cfg = self.app.cfg
+        return cfg.SAM_THRESHOLD_MIN, cfg.SAM_THRESHOLD_MAX
+
+    def value_to_angle(self, value):
+        lo, hi = self._limits()
+        t = (min(hi, max(lo, value)) - lo) / max(1e-9, hi - lo)
+        return self.ARC_START - t * self.ARC_SPAN
+
+    def angle_to_value(self, angle):
+        lo, hi = self._limits()
+        a = (self.ARC_START - angle) % 360.0
+        if a > self.ARC_SPAN:                       # in the gap at the bottom: the nearer end
+            a = self.ARC_SPAN if a - self.ARC_SPAN < (360.0 - a) else 0.0
+        step = self.app.cfg.SAM_THRESHOLD_STEP / 2.0
+        return round(round((lo + a / self.ARC_SPAN * (hi - lo)) / step) * step, 3)
+
+    def _point(self, angle, radius):
+        c = self.SIZE / 2.0
+        r = np.radians(angle)
+        return c + radius * np.cos(r), c - radius * np.sin(r)
+
+    def draw(self, value):
+        cv = self.canvas
+        cv.delete("all")
+        c, ring = self.SIZE / 2.0, self.SIZE / 2.0 - 14
+        n = 54                                      # the ring: from light yellow (low) to orange (high)
+        for i in range(n):
+            a0 = self.ARC_START - self.ARC_SPAN * i / n
+            a1 = self.ARC_START - self.ARC_SPAN * (i + 1) / n
+            t = i / (n - 1)
+            colour = "#%02x%02x%02x" % (255, int(255 - 145 * t), int(150 - 150 * t))
+            cv.create_line(*self._point(a0, ring), *self._point(a1, ring), fill=colour, width=14)
+        x, y = self._point(self.value_to_angle(value), ring)
+        cv.create_line(c, c, x, y, fill="#00b7ff", width=3)
+        cv.create_oval(x - 9, y - 9, x + 9, y + 9, fill="#00b7ff", outline="white", width=2)
+        cv.create_oval(c - 5, c - 5, c + 5, c + 5, fill="#00b7ff", outline="")
+
+    # events
+    def on_drag(self, event):
+        c = self.SIZE / 2.0
+        angle = np.degrees(np.arctan2(c - event.y, event.x - c))
+        self.preview(self.angle_to_value(angle))
+
+    def on_release(self, event=None):
+        if self._pending is not None:
+            self.apply(self._pending)
+
+    def on_wheel(self, event):
+        up = getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4
+        self.step(1 if up else -1)
+
+    def step(self, direction):
+        cfg = self.app.cfg
+        self.apply(cfg.SAM_ACCEPT_LOW_THRESHOLD + direction * cfg.SAM_THRESHOLD_STEP)
+
+    def toggle_limit(self):
+        self.app._toggle_sam_width_limit()
+        self.refresh(force=True)
+
+    def toggle_centre(self):
+        self.app._toggle_sam_centre_lines()
+        self.refresh(force=True)
+
+    def class_step(self, which, direction):
+        cfg = self.app.cfg
+        current = cfg.SAM_ACCEPT_AUTO_MIN_MEAN if which == "orange" else cfg.SAM_ACCEPT_DARK_MIN_MEAN
+        self.app._set_sam_class_threshold(which, current + 0.05 * direction)
+        self.refresh(force=True)
+
+    def width_step(self, direction):
+        cfg = self.app.cfg
+        self.app._set_sam_max_width(cfg.SAM_ACCEPT_MAX_WIDTH_PX + direction * cfg.SAM_MAX_WIDTH_STEP_PX)
+        self.refresh(force=True)
+
+    def preview(self, value):
+        """While dragging: the dial follows at once, the map is re-cut at most ~6 times a second."""
+        self._pending = value
+        self.draw(value)
+        self.value_label.config(text=f"{value:.2f}")
+        if time.time() - self._last_apply > 0.15:
+            self.apply(value)
+
+    def apply(self, value):
+        self._pending = None
+        self._last_apply = time.time()
+        self.app._set_sam_threshold(value)
+        self.refresh(force=True)
+
+    def refresh(self, force=False):
+        """Called every frame by the app: follows [ / ] and the photo changes."""
+        value, counts, share = self.app.sam_threshold_feedback()
+        cfg = self.app.cfg
+        max_w = cfg.SAM_ACCEPT_MAX_WIDTH_PX
+        key = (value, max_w, cfg.SAM_WIDTH_LIMIT_ON, cfg.SAM_WIDE_AS_CENTERLINE, cfg.SAM_ACCEPT_AUTO_MIN_MEAN,
+               cfg.SAM_ACCEPT_DARK_MIN_MEAN, None if counts is None else tuple(sorted(counts.items())),
+               round(share, 4))
+        if not force and key == self._shown:
+            return
+        self._shown = key
+        if self._pending is None:
+            self.draw(value)
+            self.value_label.config(text=f"{value:.2f}")
+        self.width_label.config(text=f"{max_w} px" if max_w else "no limit")
+        self.limit_button.config(text="limit ON" if cfg.SAM_WIDTH_LIMIT_ON else "limit OFF")
+        self.centre_button.config(text=(f"Wider parts: {cfg.SAM_WIDE_CENTERLINE_PX} px orange centre line"
+                                        if cfg.SAM_WIDE_AS_CENTERLINE else "Wider parts: hidden"))
+        self.class_labels["orange"].config(text=f"{cfg.SAM_ACCEPT_AUTO_MIN_MEAN:.2f}")
+        self.class_labels["dark"].config(text=f"{cfg.SAM_ACCEPT_DARK_MIN_MEAN:.2f}")
+        if counts is None:
+            self.counts_label.config(text="Turn SAM click to accept on to see the cracks.")
+        else:
+            self.counts_label.config(text=f"orange {counts[3]}  \u00b7  dark yellow {counts[2]}  \u00b7  light yellow "
+                                          f"{counts[1]}\ncoloured: {share * 100:.2f}% of the photo")
+
+    def close(self):
+        self.app._sam_dial = None
+        self.top.destroy()
+
+
+class _LeonardoDialog:
+    """v2.0.1 [Leonardo]: the connection fields and the four actions; the fields can be kept on this computer."""
+
+    def __init__(self, master, app, settings):
+        self.app, self.settings = app, settings
+        self.top = tk.Toplevel(master)
+        self.top.title("Leonardo (CINECA) -- active-learning round")
+        self.top.resizable(False, False)
+        body = tk.Frame(self.top, padx=16, pady=12)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Training rounds on Leonardo", font=("TkDefaultFont", 11, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self.entries = {}
+        for row, (key, label, _) in enumerate(LEONARDO_FIELDS, start=1):
+            tk.Label(body, text=label, anchor="w").grid(row=row, column=0, sticky="w", padx=(0, 10), pady=2)
+            entry = tk.Entry(body, width=58)
+            entry.insert(0, settings.get(key, ""))
+            entry.grid(row=row, column=1, sticky="we", pady=2)
+            self.entries[key] = entry
+        row = len(LEONARDO_FIELDS) + 1
+        self.remember = tk.BooleanVar(master=self.top, value=True)
+        tk.Checkbutton(body, text="Remember these fields on this computer (~/.crack_segmentation/leonardo.json; "
+                                  "no password is stored)", variable=self.remember).grid(
+            row=row, column=0, columnspan=2, sticky="w", pady=(8, 4))
+        buttons = tk.Frame(body)
+        buttons.grid(row=row + 1, column=0, columnspan=2, sticky="we", pady=(6, 4))
+        for text, action in (("Connect", app.leonardo_connect), ("Send data + start round", app.leonardo_send_and_start),
+                             ("Job status", app.leonardo_status), ("Fetch results", app.leonardo_fetch)):
+            tk.Button(buttons, text=text, command=lambda a=action: self.run(a)).pack(side="left", padx=(0, 6))
+        tk.Button(buttons, text="Close", command=self.close).pack(side="right")
+        self.message = tk.Label(body, text="Job: " + (settings.get("job_id") or "none yet"), anchor="w",
+                                justify="left", wraplength=620)
+        self.message.grid(row=row + 2, column=0, columnspan=2, sticky="we", pady=(6, 0))
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+
+    def read_fields(self):
+        for key, entry in self.entries.items():
+            self.settings[key] = entry.get().strip()
+        return self.settings
+
+    def keep(self):
+        if self.remember.get():
+            try:
+                save_leonardo_settings(self.settings)
+            except OSError as e:
+                print(f" [LEONARDO] Could not save the fields: {e}")
+
+    def run(self, action):
+        self.read_fields()
+        self.message.config(text="Working... (the details are in the status bar; Esc stops)")
+        ok, text = action(self.settings)
+        self.message.config(text=("\u2705 " if ok else "\u26A0 ") + text)
+        self.keep()
+
+    def close(self):
+        self.read_fields()
+        self.keep()
+        self.top.destroy()
+
+
 class _ReviewFilterDialog:
     """v2.0.1 Mode 2 / Switch Mode: which segmented photos to load when some are marked [To be reviewed]."""
 
@@ -1240,6 +1677,51 @@ class _ReviewFilterDialog:
 
     def _choose(self, value):
         self.result = value
+        self.top.destroy()
+
+
+class _ReviewByDateDialog:
+    """v2.0.1 [To be reviewed by date]: date (default today), note, and Mark / Remove."""
+
+    def __init__(self, master):
+        import datetime
+        self.result = None
+        self.top = tk.Toplevel(master)
+        self.top.title("To be reviewed by date")
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self.top.destroy)
+        body = tk.Frame(self.top, padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Mark TO BE REVIEWED every segmented photo whose JSON was saved up to this date",
+                 font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        tk.Label(body, text="Date (YYYY-MM-DD or DD/MM/YYYY; today = everything labelled so far):").pack(anchor="w")
+        self.date_var = tk.StringVar(master=self.top, value=datetime.date.today().isoformat())
+        self.date_entry = tk.Entry(body, textvariable=self.date_var, width=16)
+        self.date_entry.pack(anchor="w", pady=(2, 8))
+        tk.Label(body, text="Note:").pack(anchor="w")
+        self.note_var = tk.StringVar(master=self.top, value="re-segment with the new SAM model (x2 upscale)")
+        tk.Entry(body, textvariable=self.note_var, width=52).pack(anchor="w", pady=(2, 8))
+        self.remove_var = tk.BooleanVar(master=self.top, value=False)
+        tk.Checkbutton(body, text="Remove instead the marks given by date to these photos",
+                       variable=self.remove_var).pack(anchor="w", pady=(0, 6))
+        self.error = tk.Label(body, text="", fg="#d04040")
+        self.error.pack(anchor="w")
+        buttons = tk.Frame(body)
+        buttons.pack(fill="x", pady=(8, 0))
+        tk.Button(buttons, text="OK", width=10, command=self._ok).pack(side="right", padx=(6, 0))
+        tk.Button(buttons, text="Cancel", width=10, command=self.top.destroy).pack(side="right")
+        self.top.bind("<Return>", lambda e: self._ok())
+        self.top.bind("<Escape>", lambda e: self.top.destroy())
+        self.top.grab_set()
+        self.top.focus_force()
+
+    def _ok(self):
+        from review_flags import ReviewFlagsMixin
+        date = ReviewFlagsMixin.parse_review_date(self.date_var.get())
+        if date is None:
+            self.error.config(text=f"'{self.date_var.get()}' is not a date (e.g. 2026-11-08 or 08/11/2026).")
+            return
+        self.result = {"date": date, "note": self.note_var.get().strip(), "remove": bool(self.remove_var.get())}
         self.top.destroy()
 
 
@@ -1384,6 +1866,8 @@ _FILE_COMMANDS = [
     ("\U0001F4DA Move to Training set (photo, JSON, masks - Mode 2)", 23),
     ("\U0001F9EA Move to Test set (photo only - Mode 2)", 24),
     ("\U0001F4CF Move to Validation set (photo only - Mode 2)", 25),
+    ("\U0001F3D8 Group similar photos: tag the photos of the same building (before Auto split)", GROUP_PHOTOS_CODE),
+    ("\U0001F5D1 Delete image: move the photo on screen to 'Deleted images'", DELETE_IMAGE_CODE),
     ("\u21F6 Auto split: every segmented photo into the sets, by building", 28),
     ("\u21BA Reset pipeline training: every set back to Images / JSON / Binary files", 30),
     ("\U0001F4C2 Dataset browser: every photo of the sets, with its building", 31),
@@ -1402,11 +1886,30 @@ _TOOL_COMMANDS = [
     # v2.0.0: the fine-tuned SAM model segments the photo; JSON and binary masks are written (sam_autoseg.py).
     ("\U0001F916 SAM auto-segment: cracks found by the AI model, JSON and masks saved", SAM_AUTOSEG_CODE),
     ("\U0001F446 SAM click to accept: click the real cracks, the model segments them", SAM_ACCEPT_CODE),
-    ("\U0001F446 Show / hide the cracks the model sees (SAM click to accept)", SAM_CANDIDATES_CODE),
+    # v2.0.1 SAM click to accept, while it is on: H / G / A / L / D replace those letters' usual commands.
+    ("\U0001F3A8 SAM colours: hide / show all (H in SAM click to accept)", SAM_OVERLAY_CODE),
+    ("\U0001F7E1 SAM colours: hide / show the yellow cracks (G)", SAM_YELLOW_CODE),
+    ("\U0001F7E0 SAM colours: hide / show the orange cracks (A)", SAM_ORANGE_CODE),
+    ("\u2716 SAM: discard every light-yellow crack (L)", SAM_DISCARD_LIGHT_CODE),
+    ("\u2716 SAM: discard every dark-yellow crack (D)", SAM_DISCARD_DARK_CODE),
+    ("\u2714 SAM: accept every orange crack (1, or Ctrl+click on SAM click to accept)", SAM_ACCEPT_ALL_CODE),
+    ("\u2714 SAM: accept every dark-yellow crack (2)", SAM_ACCEPT_DARK_CODE),
+    ("\u2714 SAM: accept every light-yellow crack (3)", SAM_ACCEPT_LIGHT_CODE),
+    ("\u2714 SAM: accept every coloured crack (4)", SAM_ACCEPT_EVERY_CODE),
+    ("\u2702 SAM: Exclude crack on / off -- a click removes a crack, also from JSON and PNG (X)", SAM_EXCLUDE_CODE),
+    ("\U0001FA93 SAM: Cut map on / off -- a dragged line splits the map, e.g. a crack from tree branches (K)",
+     SAM_CUT_CODE),
+    ("\U0001F39B SAM: threshold dial -- fewer false negatives / positives, live", SAM_THRESHOLD_DIAL_CODE),
+    ("\u2796 SAM: lower the threshold (more cracks) ([)", SAM_THRESHOLD_DOWN_CODE),
+    ("\u2795 SAM: raise the threshold (fewer cracks) (])", SAM_THRESHOLD_UP_CODE),
+    ("\U0001F504 SAM: compute the crack map of this photo again, here", SAM_RECOMPUTE_MAP_CODE),
+    ("\U0001F501 Active learning: newest round's model, the most uncertain photos to label next", ACTIVE_LEARNING_CODE),
+    ("\U0001F5A5 Leonardo: connect, send the dataset, start the round, fetch the results", LEONARDO_CODE),
     ("\u2699 SAM model settings (checkpoint, model factory, Python with PyTorch)", SAM_SETTINGS_CODE),
     ("\u26A1 Tool: Crack\tC", ord('c')),
     ("\u25A6 Tool: Detachment\tD", ord('d')),
     ("\U0001F6AB Tool: Ignore region (occluded area)\tI", ord('i')),
+    ("\U0001F333 Auto ignore: regions around trees, fences, people, vehicles, rubble", AUTO_IGNORE_CODE),
     ("\U0001F534 Uncertain crack: next cracks traced as uncertain (red) / back to normal", 7),
     ("\u26A0 Warn uncertain: propose weak new cracks as uncertain (confirm) / off", 12),
     ("\U0001F534 Make a crack uncertain: click a blue crack or its number\tCtrl/Cmd+C", MARK_UNCERTAIN_CODE),
@@ -1428,6 +1931,7 @@ _TOOL_COMMANDS = [
     ("\U0001F4CB Crack report (click a crack)", 16),
     ("\U0001F4AC Crack labels: hover a crack to read its data / off", 11),
     ("\U0001F6A9 To be reviewed: mark / unmark this photo (Mode 2 can load only these)", REVIEW_CODE),
+    ("\U0001F4C5 To be reviewed by date: every photo saved up to a date (e.g. today)", REVIEW_BY_DATE_CODE),
 ]
 
 _WIDTH_COMMANDS = [
@@ -1606,16 +2110,25 @@ class GuiCrackSegmentation(CrackSegmentation):
         except tk.TclError:
             pass
 
+    # v2.0.1: H/G/A/L/D of SAM click to accept come from the keyboard only (see _on_keypress), not from the sidebar
+    # buttons that send the same letters.
+    _SAM_LETTERS_IN_PROCESS = False
+
     def _on_keypress(self, event):
         code = tk_key_event_to_code(event)
         if code is not None:
+            if self.cfg.sam_accept_state["active"] and code in SAM_MODE_KEYS:
+                code = SAM_MODE_KEYS[code]
             self._pending_keys.append(code)
 
     def _build_menu_bar(self):
         menubar = tk.Menu(self._tk_root)
+        hidden = hidden_feature_codes(self.cfg)
         for group_name, commands in _ALL_MENU_GROUPS:
             menu = tk.Menu(menubar, tearoff=0)
             for label, code in commands:
+                if code in hidden:
+                    continue
                 menu.add_command(label=label, command=lambda c=code: self._send(c))
             menubar.add_cascade(label=group_name, menu=menu)
 
@@ -1751,6 +2264,17 @@ class GuiCrackSegmentation(CrackSegmentation):
             initialvalue=current_note or "", parent=self._tk_root,
         )
 
+    def _prompt_review_by_date(self):
+        dialog = _ReviewByDateDialog(self._tk_root)
+        self._tk_root.wait_window(dialog.top)
+        return dialog.result
+
+    def _confirm_review_by_date(self, message):
+        return bool(messagebox.askyesno("Crack Detector - To be reviewed by date", message, parent=self._tk_root))
+
+    def _notify_review_by_date(self, message):
+        messagebox.showinfo("Crack Detector - To be reviewed by date", message, parent=self._tk_root)
+
     def _prompt_review_filter(self, n_review, n_others):
         dialog = _ReviewFilterDialog(self._tk_root, n_review, n_others)
         self._tk_root.wait_window(dialog.top)
@@ -1807,6 +2331,42 @@ class GuiCrackSegmentation(CrackSegmentation):
             parent=self._tk_root,
         )
 
+    def _open_sam_threshold_dial(self):
+        """v2.0.1: the round threshold dial (one window; pressing again brings it to the front)."""
+        dial = getattr(self, "_sam_dial", None)
+        if dial is not None:
+            try:
+                dial.top.lift()
+                return
+            except tk.TclError:
+                self._sam_dial = None
+        self._sam_dial = _SamThresholdDial(self._tk_root, self)
+
+    def _leonardo_window(self, settings):
+        dialog = _LeonardoDialog(self._tk_root, self, settings)
+        self._tk_root.wait_window(dialog.top)
+
+    def _confirm_active_learning(self, message):
+        answer = messagebox.askyesnocancel(
+            "Crack Detector - Active learning",
+            message + "\n\nYes = compute the missing maps here\nNo = rank only the photos that have a map\n"
+                      "Cancel = stop (e.g. to compute them on Leonardo)", parent=self._tk_root)
+        return None if answer is None else ("local" if answer else "skip")
+
+    def _notify_active_learning(self, message):
+        messagebox.showinfo("Crack Detector - Active learning", message, parent=self._tk_root)
+
+    def _confirm_delete_image(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Delete image", message, icon="warning",
+                                        parent=self._tk_root))
+
+    def _confirm_remove_automatic_sam_cracks(self, count):
+        return bool(messagebox.askyesno(
+            "Crack Detector - SAM click to accept",
+            f"This photo has {count} crack(s) added automatically by SAM that you never clicked "
+            "(they are in its JSON and binary mask).\n\nRemove them, and keep only the cracks you click?\n"
+            "[U] brings them back.", parent=self._tk_root))
+
     def _confirm_move_photo_to_be_reviewed(self, message):
         return bool(messagebox.askyesno("Crack Detector - To be reviewed", message, parent=self._tk_root))
 
@@ -1862,6 +2422,14 @@ class GuiCrackSegmentation(CrackSegmentation):
                    "Replace them with a new run? Your own cracks stay.\n[U] undoes the whole run.")
         return bool(messagebox.askyesno("Crack Detector - SAM auto-segment", message, parent=self._tk_root))
 
+    def _confirm_auto_ignore_replace(self, count):
+        message = (f"This photo already has {count} ignore region(s) drawn by Auto ignore.\n\n"
+                   "Replace them with a new run? The regions you drew yourself stay.\n[U] undoes the whole run.")
+        return bool(messagebox.askyesno("Crack Detector - Auto ignore", message, parent=self._tk_root))
+
+    def _notify_auto_ignore(self, message):
+        messagebox.showinfo("Crack Detector - Auto ignore", message, parent=self._tk_root)
+
     _SAM_TITLE = "Crack Detector - SAM model settings"
 
     def _confirm_sam_download(self, text):
@@ -1869,6 +2437,57 @@ class GuiCrackSegmentation(CrackSegmentation):
             "Crack Detector - SAM auto-segment",
             f"{text}\n\nYes = download it now ([Esc] stops it; it resumes next time)\n"
             "No = choose model files of your own\nCancel = do nothing", parent=self._tk_root)
+
+    def _sam_download_window_open(self, progress):
+        self._sam_download_window = _SamDownloadWindow(self._tk_root)
+        self._sam_download_window_update(progress)
+
+    def _sam_download_window_update(self, progress):
+        window = getattr(self, "_sam_download_window", None)
+        if window is not None:
+            window.update(*self.sam_download_status(progress))
+
+    def _sam_download_window_close(self):
+        window = getattr(self, "_sam_download_window", None)
+        self._sam_download_window = None
+        if window is not None:
+            window.close()
+
+    def _sam_download_failed(self, message):
+        messagebox.showerror("Crack Detector - SAM model download",
+                             f"The download stopped:\n{message}\n\nPress the button again to resume it.",
+                             parent=self._tk_root)
+
+    def _sam_cancel_requested(self):
+        for name in ("_sam_download_window", "_group_window"):
+            window = getattr(self, name, None)
+            if window is not None and window.cancelled:
+                return True
+        return super()._sam_cancel_requested()
+
+    # v2.0.1 [Group similar photos]: the same kind of window.
+    def _group_progress_open(self, state):
+        self._group_window = _ProgressWindow(
+            self._tk_root, "Group similar photos", "Looking for the photos of the same building...",
+            "Cancel stops it: nothing is renamed.\nA preview of every group is written before anything is renamed.")
+        self._group_progress_update(state)
+
+    def _group_progress_update(self, state):
+        window = getattr(self, "_group_window", None)
+        if window is not None:
+            window.update(*group_progress_text(state))
+
+    def _group_progress_close(self):
+        window = getattr(self, "_group_window", None)
+        self._group_window = None
+        if window is not None:
+            window.close()
+
+    def _confirm_building_groups(self, message):
+        return bool(messagebox.askyesno("Crack Detector - Group similar photos", message, parent=self._tk_root))
+
+    def _notify_building_groups(self, message):
+        messagebox.showinfo("Crack Detector - Group similar photos", message, parent=self._tk_root)
 
     def _ask_sam_python(self, current):
         return simpledialog.askstring(
@@ -2073,6 +2692,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         try:
             self._update_navigation_button_states()
             self._sidebar.refresh_states(self.cfg, self._validation_available())
+            if getattr(self, "_sam_dial", None) is not None:
+                self._sam_dial.refresh()
         except tk.TclError:
             pass
         try:

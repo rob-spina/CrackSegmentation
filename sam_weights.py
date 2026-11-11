@@ -121,3 +121,36 @@ def human_size(n):
         if n < 1024 or unit == "GB":
             return f"{n:.0f} {unit}" if unit == "bytes" else f"{n:.1f} {unit}"
         n /= 1024.0
+
+
+# v2.0.1 [x2 tile upscale]: a model trained with train.py --upscale U must be run with the same U. train.py writes
+# its options in train_args.json next to best_lora.pth (the Leonardo round script copies it into round_NN/).
+TRAIN_ARGS_FILE = "train_args.json"
+
+
+def lora_upscale(lora_weights):
+    """train.py --upscale of these LoRA weights (train_args.json in the same folder), 1.0 when unknown."""
+    import json
+    path = os.path.join(os.path.dirname(os.path.expanduser(lora_weights or "")), TRAIN_ARGS_FILE)
+    try:
+        with open(path) as f:
+            value = float(json.load(f).get("upscale", 1.0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 1.0
+    return value if value > 0 else 1.0
+
+
+def resolve_upscale(override, lora_weights):
+    """The upscale to run these weights with: the setting when given (not None / 0), else the weights' own."""
+    try:
+        if override is not None and float(override) > 0:
+            return float(override)
+    except (TypeError, ValueError):
+        pass
+    return lora_upscale(lora_weights) if lora_weights else 1.0
+
+
+def upscale_suffix(upscale):
+    """'' for 1, '-x2' for 2, '-x1.5' for 1.5: appended to the maps folder name so maps of the same weights at
+    different upscales never mix."""
+    return "" if abs(float(upscale) - 1.0) < 1e-6 else f"-x{float(upscale):g}"

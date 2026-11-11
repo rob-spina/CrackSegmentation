@@ -132,13 +132,19 @@ def write_report(path, rows):
 def run(args, predictor_factory=None):
     """Processes the folder. predictor_factory(args) -> predict(image_path); default: sam_infer.make_predictor."""
     data_dir = os.path.abspath(os.path.expanduser(args.data_dir))
-    images_dir = os.path.join(data_dir, IMAGES_DIR_NAME)
+    sub = getattr(args, "images_subdir", None) or IMAGES_DIR_NAME
+    images_dir = os.path.join(data_dir, sub)
     if not os.path.isdir(images_dir):
-        sys.exit(f"[SAM batch] No '{IMAGES_DIR_NAME}' folder in {data_dir}")
+        sys.exit(f"[SAM batch] No '{sub}' folder in {data_dir}")
     photos = list_photos(images_dir, args.only)
     json_dir = os.path.join(data_dir, JSON_DIR_NAME)
-    todo = [p for p in photos if args.prob_only or args.existing == "update" or not os.path.isfile(
-        os.path.join(json_dir, os.path.splitext(os.path.basename(p))[0] + ".json"))]
+
+    def labelled(p):
+        return os.path.isfile(os.path.join(json_dir, os.path.splitext(os.path.basename(p))[0] + ".json"))
+    if args.prob_only:   # v2.0.1: --skip-labelled = maps of the photos still to label only (active learning)
+        todo = [p for p in photos if not (getattr(args, "skip_labelled", False) and labelled(p))]
+    else:
+        todo = [p for p in photos if args.existing == "update" or not labelled(p)]
     if args.limit:
         todo = todo[:args.limit]
     print(f"[SAM batch] {len(photos)} photo(s) in {images_dir}; {len(todo)} to segment "
@@ -149,7 +155,8 @@ def run(args, predictor_factory=None):
         import sam_infer
         predictor_factory = sam_infer.make_predictor
     app = BatchCrackSegmentation(data_dir, predictor_factory(args), Config(),
-                                 tag=model_tag(args.lora_weights, args.checkpoint), prob_only=args.prob_only)
+                                 tag=model_tag(args.lora_weights, args.checkpoint, getattr(args, "upscale", None)),
+                                 prob_only=args.prob_only)
     cfg = app.cfg
     cfg.SAM_THRESHOLD = args.threshold
     if args.uncertain_below is not None:
@@ -190,6 +197,11 @@ def parse_args(argv=None):
     p.add_argument("--prob-only", action="store_true",
                    help="only compute the crack maps (no JSON): [SAM click to accept] then works instantly in the app; "
                         "the report ranks the photos by uncertainty (active learning)")
+    p.add_argument("--images-subdir", default=IMAGES_DIR_NAME,
+                   help="folder of the photos inside --data-dir (default Images; e.g. 'Test set/Images' for the "
+                        "Test set crack maps of an active-learning round)")
+    p.add_argument("--skip-labelled", action="store_true",
+                   help="with --prob-only: skip the photos that already have a JSON (active learning)")
     p.add_argument("--threshold", type=float, default=0.5, help="probability that makes a pixel crack")
     p.add_argument("--uncertain-below", type=float, default=None,
                    help="cracks with a lower mean probability are saved as uncertain (default 0.6; 0 = never)")
