@@ -689,12 +689,12 @@ class Config:
         self.SAM_BATCH_SIZE = 4
         self.SAM_DEVICE = "auto"   # auto, cuda, mps or cpu
         # Features shipped switched off in this release (code in place, no button / menu entry): turned on in a
-        # later release, or by hand here to use them now.
+        # later release, or by hand here to use them now. Active learning and Leonardo are on since 2.2.0.
         # CRACKSEG_ALL_FEATURES=1 in the environment turns them all on (development, tests).
         all_on = os.environ.get("CRACKSEG_ALL_FEATURES", "") == "1"
         self.FEATURE_GROUP_SIMILAR_PHOTOS = all_on  # Group similar photos (Building & scale)
-        self.FEATURE_ACTIVE_LEARNING = all_on       # Active learning (Dataset)
-        self.FEATURE_LEONARDO = all_on              # Leonardo window (Dataset)
+        self.FEATURE_ACTIVE_LEARNING = True         # Active learning (Dataset), since 2.2.0
+        self.FEATURE_LEONARDO = True                # Leonardo window (Dataset), since 2.2.0
         self.FEATURE_AUTO_IGNORE = all_on           # Auto ignore (Tools)
         # v2.0.1 [Auto ignore] (code 162): ignore regions around trees, fences, people, vehicles, rubble ... found by a
         # SegFormer model trained on ADE20K (ignore_infer.py, run in the SAM Python with `transformers`).
