@@ -1,5 +1,6 @@
-"""test_v210_features_off.py -- 2.1.0 ships some features switched off (config FEATURE_* = False): their commands
+"""test_v210_features_off.py -- 2.1.0 shipped some features switched off (config FEATURE_* = False): their commands
 have no sidebar button and no menu entry, and Auto ignore does nothing; CRACKSEG_ALL_FEATURES=1 turns them on.
+Since 2.2.0 Active learning and Leonardo are on by default; Group similar photos and Auto ignore stay off.
 
 Run with:  python3 -m unittest test_v210_features_off -v
 """
@@ -17,7 +18,8 @@ from active_learning import ACTIVE_LEARNING_CODE
 from auto_ignore import AUTO_IGNORE_CODE
 from leonardo_link import LEONARDO_CODE
 
-OFF = {"FEATURE_GROUP_SIMILAR_PHOTOS", "FEATURE_ACTIVE_LEARNING", "FEATURE_LEONARDO", "FEATURE_AUTO_IGNORE"}
+OFF = {"FEATURE_GROUP_SIMILAR_PHOTOS", "FEATURE_AUTO_IGNORE"}
+ON_SINCE_220 = {"FEATURE_ACTIVE_LEARNING", "FEATURE_LEONARDO"}
 
 
 def _cfg_without_env():
@@ -31,15 +33,17 @@ class TestFeaturesOff(unittest.TestCase):
         cfg = _cfg_without_env()
         for flag in OFF:
             self.assertFalse(getattr(cfg, flag), flag)
+        for flag in ON_SINCE_220:
+            self.assertTrue(getattr(cfg, flag), flag)
 
     def test_env_turns_them_on(self):
         with mock.patch.dict(os.environ, {"CRACKSEG_ALL_FEATURES": "1"}):
             cfg = Config()
-        self.assertTrue(all(getattr(cfg, f) for f in OFF))
+        self.assertTrue(all(getattr(cfg, f) for f in OFF | ON_SINCE_220))
 
     def test_hidden_codes(self):
         hidden = gm.hidden_feature_codes(_cfg_without_env())
-        self.assertEqual(hidden, {gm.GROUP_PHOTOS_CODE, ACTIVE_LEARNING_CODE, LEONARDO_CODE, AUTO_IGNORE_CODE})
+        self.assertEqual(hidden, {gm.GROUP_PHOTOS_CODE, AUTO_IGNORE_CODE})
 
     def test_sidebar_sections_filtered(self):
         hidden = gm.hidden_feature_codes(_cfg_without_env())
@@ -47,14 +51,17 @@ class TestFeaturesOff(unittest.TestCase):
                  for _, buttons in gm._visible_sections(sections, hidden) for b in buttons]
         self.assertFalse(hidden & set(codes))
         everything = [b[3] for _, buttons in gm._RIGHT_SIDEBAR_SECTIONS + gm._LEFT_SIDEBAR_SECTIONS for b in buttons]
-        self.assertEqual(len(codes), len(everything) - 4)
+        self.assertEqual(len(codes), len(everything) - 2)
+        self.assertIn(ACTIVE_LEARNING_CODE, codes)
+        self.assertIn(LEONARDO_CODE, codes)
 
     def test_gui_without_the_features(self):
         from test_gui_panel_wiring import make_app as make_gui_app
         with mock.patch.dict(os.environ, {"CRACKSEG_ALL_FEATURES": ""}):
             app = make_gui_app(self)
         self.assertNotIn(AUTO_IGNORE_CODE, app._sidebar.buttons_by_code)
-        self.assertNotIn(LEONARDO_CODE, app._sidebar.buttons_by_code)
+        self.assertIn(LEONARDO_CODE, app._sidebar.buttons_by_code)
+        self.assertIn(ACTIVE_LEARNING_CODE, app._sidebar.buttons_by_code)
         self.assertIn(ord('i'), app._sidebar.buttons_by_code)          # Ignore region stays
 
     def test_auto_ignore_code_does_nothing_when_off(self):

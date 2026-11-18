@@ -32,6 +32,45 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 2.2.0: Active learning e Leonardo accesi
+
+I due pulsanti erano già nel codice della 2.1.0 ma spenti; dalla 2.2.0 compaiono nella barra sinistra (sezione Dataset) e nel menu Tools. Group similar photos e Auto ignore restano spenti (`CRACKSEG_ALL_FEATURES=1` li accende).
+
+
+- **🔁 Active learning (next round)** (barra sinistra, sezione Dataset, e menu Tools; codice 153): a ogni
+  giro il modello più recente sceglie le foto da etichettare.
+  1. Prende il `best_lora.pth` più recente in `SAM model/rounds/round_NN/` e lo imposta come modello
+     SAM (senza round usa il modello attuale, SAM + CrackSeg9K + Facade390 = round 0).
+  2. Per ogni foto di `Images` non ancora etichettata usa la mappa di crepa di quel modello, calcolata su
+     Leonardo; se mancano chiede se calcolarle qui (lento: 1,5-4 min per foto 4K), se ordinare solo le
+     foto che ce l'hanno, o se fermarsi.
+  3. Ordina le foto per incertezza (quota di pixel con 0,3 <= p <= 0,7) e carica le
+     `ACTIVE_LEARNING_BATCH` (50) più incerte in Modo 1 con **SAM click to accept** già attivo.
+     La classifica è in `SAM model/rounds/ranking_<tag>.csv`.
+  4. Se il Test set ha etichette e mappe, calcola IoU e F1 del modello, li aggiunge a
+     `SAM model/rounds/history.csv` e li confronta con il round precedente.
+- **Su Leonardo**, dopo aver etichettato e fatto Auto split, un round è un solo comando:
+  `ROUND=1 PREV=<best_lora.pth precedente> sbatch docs/sam_model/active_learning_round_leonardo.sbatch`.
+  Esporta Training + Validation set (`active_learning_prep.py`), riaddestra partendo da `PREV`, mette
+  il nuovo `best_lora.pth` in `SAM model/rounds/round_NN/` e calcola le mappe delle foto da etichettare
+  e del Test set. Poi si riportano sul Mac le cartelle `rounds/round_NN` e `probability maps` (rsync)
+  e si preme il pulsante. Le **crepe incerte** vengono esportate come banda grigia (128) nella
+  maschera e `train.py --ignore-uncertain` le esclude dalla loss e dall'IoU: un dubbio non viene
+  insegnato né come crepa né come sfondo (anche il punteggio sul Test set le ignora). Servono i
+  `train.py`, `dataset.py`, `losses.py` aggiornati di cracksam_lora (che ora leggono anche le foto
+  ruotate dall'EXIF come le disegna il programma).
+- **🖥 Leonardo (train the next round)** (barra sinistra, sezione Dataset, e menu Tools; codice 154):
+  fa tutto questo dal programma. Una finestra mostra i campi (username, e-mail per `step ssh login`,
+  host di login e di copia, cartella dati locale di origine e remota di destinazione, cartelle
+  remote di CrackSegmentation e cracksam_lora, round, pesi di partenza `PREV`, epoche) e quattro
+  pulsanti: **Connect** (se il certificato SSH manca o è scaduto lancia `step ssh login` e si apre il
+  browser per il login CINECA a due fattori; vale 12 ore), **Send data + start round** (rsync delle
+  cartelle del dataset, ripreso se il nodo di login interrompe la copia; `git pull` e `sbatch` dello
+  script del round; il numero del job viene ricordato), **Job status**, **Fetch results** (riporta
+  `rounds` e `probability maps`; poi Active learning). Con la casella spuntata i campi restano in
+  `~/.crack_segmentation/leonardo.json` sul computer, fuori dalla cartella dei dati; nessuna password
+  viene chiesta o salvata. Servono `step` (`brew install step`), `ssh` e `rsync`.
+
 ## Novità 2.1.0: Delete image
 
 - **🗑 Delete image** (barra sinistra, sezione Dataset, e menu File; codice 149): toglie dal dataset una
