@@ -427,13 +427,14 @@
     <div class="intro">
       This application supports the manual and semi-automated annotation of cracks and material detachments on building facade photographs, turning raw inspection imagery into pixel-accurate, structured training data for automated defect-detection models. Developed within <b>Work Package 3 of the ECHO&#8209;TWIN project at INAF</b>, it underpins the construction of digital-twin models for structural health monitoring &mdash; producing the annotated datasets used to fine-tune deep-learning segmentation models on facade imagery acquired by drone.
     </div>
-    <div class="meta-line">Version 1.3.0</div>
+    <div class="meta-line">Version 2.2.0</div>
   </div>
 
   <div class="features">
     <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>A*-guided tracing</b> &mdash; assisted, pixel-accurate crack &amp; detachment outlining.</div></div>
     <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>SIFT-based projection</b> &mdash; imports and aligns cracks across photos of the same building.</div></div>
     <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>Automatic building grouping</b> &mdash; and batch shape-compatibility checks across a group.</div></div>
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>SAM crack model &amp; active learning</b> &mdash; click-to-accept labelling, rounds trained on HPC.</div></div>
   </div>
 
   <div class="badge-row">
@@ -534,9 +535,9 @@
   <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
   <div class="install-body">
     <p style="margin-top:0;">For Debian/Ubuntu-based distributions, install the provided package from a terminal:</p>
-    <div class="code-block">sudo apt install ./cracksegmentation_1.3.0_amd64.deb</div>
+    <div class="code-block">sudo apt install ./cracksegmentation_2.2.0_amd64.deb</div>
     <p>Alternatively:</p>
-    <div class="code-block">sudo dpkg -i ./cracksegmentation_1.3.0_amd64.deb
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_2.2.0_amd64.deb
 sudo apt-get install -f</div>
     <p>After installing, launch the tool by typing <span class="code">cracksegmentation</span> in a terminal, or find <b>Crack Segmentation</b> in your desktop&rsquo;s Applications menu.</p>
     <div class="note">The package is unsigned, so your system may warn about installing software from an unknown source &mdash; expected for a locally built package without a GPG-signed repository behind it.</div>
@@ -584,6 +585,8 @@ sudo apt-get install -f</div>
 <tr><td>Ignore Region</td><td><span class="key">I</span> / sidebar</td><td>Marks areas where the wall is only partly visible (nets, mesh fences, scaffolding, cables, sparse vegetation). A dialog chooses the shape (rectangle, square, free polygon) and the photo edges it extends to. Rectangle: two clicks on opposite corners; polygon: vertices, then <span class="key">Y</span>. With the tool on, drag a corner or side to reshape, click inside to delete. Saved as <span class="code">-ignore_mask.png</span> (255 = exclude from training loss and metrics); never imported by <span class="key">W</span>/<span class="key">L</span>.</td></tr>
 <tr><td>Edit Detachment Nodes</td><td><span class="key">E</span></td><td>Drag a detachment&rsquo;s clicked vertices; its outline is recomputed live. Press again to leave.</td></tr>
 <tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Two clicks; the same key again leaves the tool. <b>Cut</b>: start and end of the part to remove. <b>Join</b>: two points on one crack re-route the part between them along another edge, or the ends of two pieces reconnect them. <b>Link</b>: two different cracks, clicked at an end or anywhere on the line, become one (a leftover beyond the junction stays a separate crack); JSON and masks are saved at once.</td></tr>
+<tr><td>Edit Extremes</td><td><span class="key">4</span> / sidebar</td><td>Every crack end becomes a large red dot: click a dot, then the point the crack should reach to lengthen it along the edge, or a point on the crack to shorten it. Clicks away from the dots still trace. <span class="key">U</span> undoes; pressing <span class="key">4</span> again writes JSON and masks.</td></tr>
+<tr><td>Merge Crack Branches</td><td>Sidebar</td><td>Click the <b>main</b> crack, then each nearby crack to add as its branch; short gaps are bridged along the edge. The lines stay editable but form one crack (markers N, N.1, N.2&hellip;). <span class="key">Shift</span>+click on the button or <span class="key">Shift</span>+<span class="key">C</span> ends the mode.</td></tr>
 <tr><td>Eraser</td><td>Sidebar</td><td>Drag the red window over a crack to erase that part (a crack crossed in the middle is split in two); <span class="key">[</span> / <span class="key">]</span> resize it. JSON and masks are saved on release; <span class="key">U</span> undoes.</td></tr>
 <tr><td>Remove Uncertain [?]</td><td>Sidebar</td><td>After a confirmation, deletes every crack on screen marked <span class="code">[?]</span>; JSON and masks are saved at once, <span class="key">U</span> undoes.</td></tr>
 <tr><td>Alternative Route</td><td>Sidebar &#9654; / <span class="key">$</span></td><td>Each press shows another route for the crack traced last, in a new colour; when none is left the arrow turns to &#9664; and steps back. <span class="key">$</span> makes the route on screen the crack&rsquo;s path; a click on the photo closes the tool.</td></tr>
@@ -605,6 +608,11 @@ sudo apt-get install -f</div>
 <tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Removes cracks that don&rsquo;t match in shape and path between different photos of the same group (also run after each save).</td></tr>
 <tr><td>Validation</td><td>Sidebar</td><td>Once every photo in <span class="code">Images</span> has its JSON: moves the photos fit for training, with JSON and masks, to <span class="code">Suitable for training</span>, with a CSV report.</td></tr>
 <tr><td>Dataset Split</td><td>Sidebar</td><td><b>Auto split</b>: all photos into the sets by building; single buttons (Mode 2): the photo on screen. <b>Reset pipeline</b>: all back. <b>Dataset browser</b>: list, moves between sets. <b>CV folds</b>.</td></tr>
+<tr><td>XML Reference</td><td>Sidebar</td><td>Draws the damage regions of <span class="code">XML files/&lt;name&gt;.xml</span> (boxes and polygons) over the photo as a tracing guide. On screen only: never saved.</td></tr>
+<tr><td>To Be Reviewed</td><td>Sidebar</td><td>Marks the photo on screen as doubtful, with an optional note (again = removes the mark). Mode 2 can load only the marked photos; Validation and Auto split leave them in <span class="code">Images</span>. <b>To be reviewed by date</b> marks at once every photo saved up to a date.</td></tr>
+<tr><td>Delete Image</td><td>Sidebar</td><td>After confirmation moves an unsuitable photo, its JSON and masks to <span class="code">Deleted images</span> (never erased) and opens the next one.</td></tr>
+<tr><td>Active Learning</td><td>Sidebar / Tools menu</td><td><i>Since 2.2.0.</i> Takes the newest round&rsquo;s model (<span class="code">SAM model/rounds/round_NN/best_lora.pth</span>; none = the model in use, round&nbsp;0), ranks the photos still to label by how much the model hesitates (crack maps from Leonardo, or computed here after a confirmation) and loads the 50 most uncertain in Mode&nbsp;1 with <b>SAM click to accept</b> on. With a labelled Test set, IoU and F1 of each round go to <span class="code">SAM model/rounds/history.csv</span>.</td></tr>
+<tr><td>Leonardo</td><td>Sidebar / Tools menu</td><td><i>Since 2.2.0.</i> Runs a round on the Leonardo cluster (CINECA): <b>Connect</b> (<span class="code">step ssh login</span> in the browser when the certificate is missing or expired), <b>Send data + start round</b> (rsync of the dataset, <span class="code">sbatch</span> of the round script), <b>Job status</b>, <b>Fetch results</b> (new weights and crack maps). No password is asked or stored; needs <span class="code">step</span>, <span class="code">ssh</span> and <span class="code">rsync</span>.</td></tr>
 <tr><td>Switch Mode</td><td>Sidebar / Menu</td><td>Switches between new-images and reload-segmented data sources at any time, without restarting the application.</td></tr>
 <tr><td>Scale</td><td><span class="key">K</span></td><td>Enters the image scale (cm per pixel) by hand, used for lengths and areas.</td></tr>
 </table>
@@ -619,7 +627,17 @@ sudo apt-get install -f</div>
 <tr><td>Crack Report</td><td>Sidebar</td><td>Click a crack to read its reliability report (length, reliability, confidence, multi-view confirmation, verdict) in the <span class="key">J</span> panel.</td></tr>
 <tr><td>Crack Labels</td><td>Sidebar</td><td>While on, resting the cursor on a crack number or line shows a small window with its length, width, reliability, confidence, views and status; it disappears when the cursor moves away.</td></tr>
 <tr><td>Show Cracks by Number</td><td>Sidebar</td><td>Type numbers separated by <span class="code">;</span> (e.g. 3;7;12) to show only those cracks; empty = all. Display only: files keep every crack.</td></tr>
+<tr><td>Hide Uncertain / Normal Overlay</td><td>Sidebar</td><td>Hides only the red fill of the uncertain cracks, or only the blue fill of the normal ones (<span class="key">N</span> hides both). Display only.</td></tr>
 <tr><td>Fullscreen / HUD Size</td><td><span class="key">F</span> / <span class="key">H</span></td><td>Toggles fullscreen; toggles large on-screen text.</td></tr>
+</table>
+
+<h3 class="sub">AI Crack Model (SAM)</h3>
+<table class="shortcuts">
+<tr><th style="width:20%;">Action</th><th style="width:14%;">Shortcut</th><th>Description</th></tr>
+<tr><td>SAM Auto-segment</td><td>Sidebar</td><td>Runs the fine-tuned SAM crack model on the photo by overlapping tiles and turns its mask into editable cracks (centre line + model width), saved at once; low-confidence cracks become uncertain (red). The model (about 2.4&nbsp;GB) is downloaded the first time; <span class="key">Ctrl</span>/<span class="key">Cmd</span>+click opens <b>SAM model settings</b> to use your own weights. It needs a separate Python with PyTorch and segment-anything.</td></tr>
+<tr><td>SAM Click to Accept</td><td>Sidebar</td><td>Every crack the model sees is coloured by its confidence (<b style="color:#e07000;">orange</b> &ge;&nbsp;0.65, dark yellow &ge;&nbsp;0.45, light yellow below); <b>only the cracks you click are saved</b>. <span class="key">1</span>&ndash;<span class="key">4</span> accept every orange / dark-yellow / light-yellow / coloured crack; a dragged window accepts the coloured parts inside it; <span class="key">H</span> <span class="key">G</span> <span class="key">A</span> show or hide the colours, <span class="key">L</span> / <span class="key">D</span> discard the light / dark-yellow ones.</td></tr>
+<tr><td>Threshold Dial &amp; Width</td><td>Sidebar / <span class="key">[</span> <span class="key">]</span> / <span class="key">0</span></td><td>Re-cuts the crack map live at a lower or higher threshold (accepted cracks never change); parts wider than the width limit (40&nbsp;px) are shown as a centre line or hidden. The width under the mouse is shown next to the cursor.</td></tr>
+<tr><td>Exclude / Cut Map</td><td>Sidebar / <span class="key">X</span> / <span class="key">K</span></td><td><span class="key">X</span>: a click removes a crack (accepted ones too) from JSON and masks, a dragged window removes everything inside it. <span class="key">K</span>: a line dragged across the map splits it, so a crack joined to a cable or a branch is accepted alone.</td></tr>
 </table>
 
 <h3 class="sub">Visual Mask Management &amp; Other Keys</h3>
@@ -652,6 +670,11 @@ sudo apt-get install -f</div>
 <div class="flow-block">
   <div class="ftitle">Batch Crack Cleaning and Compatibility</div>
   <p>One of the most advanced features is handled by the <span class="code">compare_and_filter_cracks.py</span> module (runnable via <span class="key">G</span> from within the GUI, or as a standalone script). It scans the exported cracks across photos of the same building; if a crack differs too much from one photo to another &mdash; measured by the sinuosity index (how &ldquo;wavy&rdquo; the path is relative to a straight line between its endpoints, a metric invariant to the photo&rsquo;s scale/distance) &mdash; it is discarded and removed from the final JSONs to keep the data clean.</p>
+</div>
+
+<div class="flow-block">
+  <div class="ftitle">Active Learning Loop (SAM + Leonardo)</div>
+  <p>Since 2.2.0 the crack model can be improved round after round with the photos you label. <b>1.</b> Press <b>Active learning</b>: the newest model proposes the 50 photos it is least sure about and opens them in Mode&nbsp;1 with <b>SAM click to accept</b>, so you only click the real cracks and correct what is missing. <b>2.</b> Run <b>Auto split</b> (the Test set stays fixed, so the rounds can be compared). <b>3.</b> In the <b>Leonardo</b> window, <b>Send data + start round</b>: the cluster exports the labelled Training and Validation photos (uncertain cracks, ignore regions and detachments are left out of the loss), fine-tunes the model from the previous round and computes the new crack maps. <b>4.</b> <b>Fetch results</b> and press <b>Active learning</b> again for the next 50 photos; the Test set score of every round is kept in <span class="code">SAM model/rounds/history.csv</span>.</p>
 </div>
 
 <!-- ============ 6. AUTHORS & CREDITS ============ -->
