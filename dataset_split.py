@@ -8,7 +8,9 @@ Folders are created when missing and existing files are never overwritten. Photo
 group (__BLDGnnn) already in that set -- or in another set, which would put the building in two sets --
 are listed first and the move waits for a confirmation. The next photo of the queue is then shown. Folder names are set by DATASET_SPLIT_DIRS in config.py.
 """
+import hashlib
 import os
+import pickle
 import re
 
 from config import IMAGES_DIR_NAME, JSON_DIR_NAME, BINARY_DIR_NAME
@@ -101,11 +103,35 @@ class DatasetSplitMixin:
             return None
         return {"y": True, "s": True, "n": False}.get(answer)
 
-    def _settle_unsaved_changes(self, set_name):
-        """False when the operator cancelled. Unsaved changes are written first if asked to."""
+    def _annotation_signature(self):
+        """Fingerprint of the photo's cracks, detachments and ignore regions (None if they cannot be pickled)."""
+        try:
+            data = pickle.dumps((self.cfg.saved_cracks, self.cfg.saved_detachments, self.cfg.saved_ignores),
+                                protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            return None
+        return hashlib.sha1(data).hexdigest()
+
+    def mark_annotations_saved(self):
+        """v2.3.1: remembers what is on disk for the photo on screen (called after a load and after every save)."""
+        self.cfg.saved_annotation_signature = (self.cfg.CURRENT_IMAGE_PATH, self._annotation_signature())
+
+    def has_unsaved_changes(self):
+        """True when the photo on screen differs from its last save or load. The undo history alone is not enough:
+        it is not emptied by a save, so a photo saved several times would still look modified (v2.3.1 fix)."""
         if not self.cfg.action_history:
+            return False
+        signature = self._annotation_signature()
+        if signature is None:
             return True
-        choice = self._ask_save_before_split(set_name)
+        return getattr(self.cfg, "saved_annotation_signature", None) != (self.cfg.CURRENT_IMAGE_PATH, signature)
+
+    def _settle_unsaved_changes(self, set_name, ask=None):
+        """False when the operator cancelled. Unsaved changes are written first if asked to.
+        ask: question to use instead of the dataset-split one (e.g. [Filter by building], which moves nothing)."""
+        if not self.has_unsaved_changes():
+            return True
+        choice = (ask or self._ask_save_before_split)(set_name)
         if choice is None:
             return False
         if choice:

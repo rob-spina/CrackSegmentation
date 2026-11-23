@@ -205,3 +205,42 @@ class TestGui(_Data):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnsavedChangesAfterSave(unittest.TestCase):
+    """v2.3.1: a photo saved several times must not be reported as modified (the undo history survives a save)."""
+
+    def _app(self):
+        import types
+        from dataset_split import DatasetSplitMixin
+        app = DatasetSplitMixin.__new__(DatasetSplitMixin)
+        app.cfg = types.SimpleNamespace(action_history=[], saved_cracks=[], saved_detachments=[], saved_ignores=[],
+                                        CURRENT_IMAGE_PATH="/x/a__BLDG001.jpg")
+        return app
+
+    def test_clean_after_save_dirty_after_edit(self):
+        app = self._app()
+        self.assertFalse(app.has_unsaved_changes(), "nothing done yet")
+        app.cfg.action_history.append("crack_start")
+        app.cfg.saved_cracks.append({"path": [(1, 2), (3, 4)]})
+        self.assertTrue(app.has_unsaved_changes(), "never saved")
+        app.mark_annotations_saved()
+        self.assertFalse(app.has_unsaved_changes(), "just saved, history still full")
+        app.cfg.saved_cracks.append({"path": [(5, 6), (7, 8)]})
+        app.cfg.action_history.append("crack_start")
+        self.assertTrue(app.has_unsaved_changes(), "edited after the save")
+
+    def test_other_photo_with_same_shapes_is_not_clean(self):
+        app = self._app()
+        app.cfg.action_history.append("crack_start")
+        app.mark_annotations_saved()
+        app.cfg.CURRENT_IMAGE_PATH = "/x/b__BLDG001.jpg"
+        self.assertTrue(app.has_unsaved_changes())
+
+    def test_saved_photo_is_not_asked_again(self):
+        app = self._app()
+        app.cfg.action_history.append("crack_start")
+        app.mark_annotations_saved()
+        asked = []
+        self.assertTrue(app._settle_unsaved_changes("filter by building", ask=lambda n: asked.append(n)))
+        self.assertEqual(asked, [])

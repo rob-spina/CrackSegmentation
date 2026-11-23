@@ -2484,6 +2484,11 @@ class GuiCrackSegmentation(CrackSegmentation):
                    "Yes = save, then move\nNo = move it as last saved\nCancel = do nothing")
         return messagebox.askyesnocancel("Crack Detector - Unsaved changes", message, parent=self._tk_root)
 
+    def _ask_save_before_building_filter(self, _name=None):
+        message = ("This photo has changes not saved yet.\n\nSave them before loading another building?\n\n"
+                   "Yes = save, then load\nNo = don't save (the changes are lost)\nCancel = stay on this photo")
+        return messagebox.askyesnocancel("Crack Detector - Filter by building", message, parent=self._tk_root)
+
     def _confirm_warn_uncertain(self, number, reasons):
         message = (f"Crack {number} is below the limit:\n  " + "\n  ".join(reasons) + "\n\n"
                    "Save it as uncertain?\n\nYes = uncertain (red, JSON and masks updated now)\n"

@@ -1551,6 +1551,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             self._archive_saved_files(processed_folder)
 
             self.cfg.save_timestamp = time.time()
+            self.mark_annotations_saved()
         except Exception as e:
             print(f"[IO ERROR] Physical file transfer or serialization failed: {e}", file=sys.stderr)
 
@@ -1987,6 +1988,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             self.cfg.saved_detachments = loaded_detachments
             self.cfg.saved_ignores = loaded_ignores
             self.recalculate_masks()
+            self.mark_annotations_saved()
             print(f"[SUCCESS] Fast load restored: {len(self.cfg.saved_cracks)} cracks aligned.")
         except Exception as e:
             print(f"[IO ERROR] Rapid pre-load extraction aborted: {e}", file=sys.stderr)
@@ -2988,6 +2990,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             self._export_binary_masks()
             hint = f" [U] undoes {action} on screen; [S] saves again." if action else ""
             print(f" [{tag}] JSON and binary masks updated.{hint}")
+            self.mark_annotations_saved()
             return True
         except Exception as e:
             print(f" [{tag}] Could not update the files: {e}", file=sys.stderr)

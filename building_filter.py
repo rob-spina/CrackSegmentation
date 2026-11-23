@@ -87,13 +87,23 @@ class BuildingFilterMixin:
         which = {"1": BUILDING_FILTER_LABELLED, "2": BUILDING_FILTER_TO_LABEL}.get(kind, BUILDING_FILTER_ALL)
         return tags[int(answer) - 1], which
 
+    def _ask_save_before_building_filter(self, _name=None):
+        """True = save first, False = leave the photo as last saved, None = cancel. The GUI overrides this."""
+        try:
+            answer = input("This photo has unsaved changes. Save them before loading another building? "
+                           "[y = save / n = don't save / ENTER = cancel]: ").strip().lower()
+        except EOFError:
+            return None
+        return {"y": True, "s": True, "n": False}.get(answer)
+
     def _notify_building_filter(self, message):
         print(f" [FILTER BY BUILDING] {message}")
 
     def run_building_filter(self):
         """Code 163. True when a new queue with the photos of the chosen group was loaded."""
         cfg = self.cfg
-        if not cfg.queue_idle and cfg.CURRENT_IMAGE_PATH and not self._settle_unsaved_changes("filter by building"):
+        if not cfg.queue_idle and cfg.CURRENT_IMAGE_PATH and not self._settle_unsaved_changes(
+                "filter by building", ask=self._ask_save_before_building_filter):
             return False
         groups = building_groups_in(cfg.SCRIPT_DIR)
         if not groups:
