@@ -7,7 +7,7 @@ abstract: >-
   LabelMe-compatible annotations and training-ready binary masks. Developed
   within the ECHO-TWIN project.
 type: software
-version: 2.3.0
+version: 2.3.1
 date-released: "2026-11-23"
 doi: 10.5281/zenodo.22948008
 repository-code: "https://github.com/rob-spina/CrackSegmentation"

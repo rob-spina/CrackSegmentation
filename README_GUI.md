@@ -32,6 +32,13 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 2.3.1: correzione
+
+La finestra "This photo has changes not saved yet" non compare più per una foto appena salvata: l'app confronta fessure,
+distacchi e ignore region sullo schermo con l'ultimo salvataggio (prima guardava solo la cronologia di Undo, che il
+salvataggio non svuota). Vale per Filter by building e per Test / Validation / Training set. Filter by building ha ora
+una domanda sua ("Save them before loading another building?"): il filtro non sposta mai la foto.
+
 ## Novità 2.3.0: Filter by building
 
 Nuovo pulsante **Filter by building** nella barra sinistra (sezione Dataset) e nel menu Tools: carica solo le foto di un

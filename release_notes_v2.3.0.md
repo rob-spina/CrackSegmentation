@@ -13,11 +13,6 @@ While the filter is on the status bar shows `BUILDING BLDGnnn`; Switch Mode, Val
 
 ### Model weights
 
-### Fixed
-
-- The "changes not saved yet" window no longer appears for a photo that was already saved: the app now compares the cracks, detachments and ignore regions on screen with the last save (the undo history alone kept a saved photo looking modified). This also applies to Test/Validation/Training set.
-- [Filter by building] asks with its own wording ("Save them before loading another building?"): it never moves the photo.
-
 The crack weights are still `cracksam_vit_h_lora_r4.pth` from the v2.0.0 release (SAM ViT-H + LoRA rank 4, validation IoU 0.72 on Facade390), downloaded by the app the first time. See the [model card](https://github.com/rob-spina/CrackSegmentation/blob/main/docs/sam_model/MODEL_CARD.md).
 
 Authors: Roberto Spina, Fabio Vitello, Eva Sciacca, Leonardo Pelonero, Salvatore Scavo (INAF).
