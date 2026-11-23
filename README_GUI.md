@@ -32,6 +32,21 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 2.3.0: Filter by building
+
+Nuovo pulsante **Filter by building** nella barra sinistra (sezione Dataset) e nel menu Tools: carica solo le foto di un
+gruppo di edificio (il tag `__BLDGnnn` nel nome della foto). Si apre una finestra con un menu a tendina dei gruppi
+presenti in `Images`, ciascuno con il numero di foto annotate e da annotare, e tre opzioni:
+
+1. **Foto già annotate**: si aprono come in Mode 2, con il loro JSON;
+2. **Foto da annotare**: Mode 1;
+3. **Tutte** (predefinita): ogni foto si apre nella modalità che le serve (Mode 2 se ha già un JSON, Mode 1
+   altrimenti) e una foto annotata in Mode 1 resta nella coda, così si può scorrere tutto l'edificio avanti e indietro.
+
+Finché il filtro è attivo la barra di stato mostra `BUILDING BLDGnnn`; Switch Mode, Validation e gli altri comandi che
+ricostruiscono la coda lo disattivano. Le foto senza tag, o già spostate in Training / Validation / Test set, non
+compaiono.
+
 ## Novità 2.2.0: Active learning e Leonardo accesi
 
 I due pulsanti erano già nel codice della 2.1.0 ma spenti; dalla 2.2.0 compaiono nella barra sinistra (sezione Dataset) e nel menu Tools. Group similar photos e Auto ignore restano spenti (`CRACKSEG_ALL_FEATURES=1` li accende).

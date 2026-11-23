@@ -52,6 +52,7 @@ from review_flags import ReviewFlagsMixin, REVIEW_CODE, REVIEW_BY_DATE_CODE
 from building_groups import BuildingGroupsMixin, GROUP_PHOTOS_CODE
 from delete_image import DeleteImageMixin, DELETE_IMAGE_CODE
 from active_learning import ActiveLearningMixin, ACTIVE_LEARNING_CODE
+from building_filter import BuildingFilterMixin, BUILDING_FILTER_CODE
 from leonardo_link import LeonardoLinkMixin, LEONARDO_CODE
 
 
@@ -64,7 +65,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
                         CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin,
                         CrackBranchMergeMixin, SamAutoSegMixin, SamAcceptMixin,
                         ReviewFlagsMixin, BuildingGroupsMixin, DeleteImageMixin, ActiveLearningMixin,
-                        LeonardoLinkMixin):
+                        LeonardoLinkMixin, BuildingFilterMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -315,8 +316,10 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
         previous_queue = list(self.cfg.image_queue)
         previous_image_folder = self.cfg.IMAGE_FOLDER
         previous_output_folder = self.cfg.OUTPUT_FOLDER
+        previous_building_filter = dict(getattr(self.cfg, "building_filter", {}))
 
         self.cfg.modalita_scelta = new_mode
+        self._clear_building_filter()   # v2.3.0: a rebuilt queue holds every photo again
         valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
         self.cfg.image_queue = []
         if new_mode == "2":
@@ -332,6 +335,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             self.cfg.image_queue = previous_queue
             self.cfg.IMAGE_FOLDER = previous_image_folder
             self.cfg.OUTPUT_FOLDER = previous_output_folder
+            self.cfg.building_filter = previous_building_filter
             return False
 
         self.cfg.queue_items_done = 0
@@ -1504,6 +1508,8 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             dest_json_path = os.path.join(processed_folder, os.path.basename(self.cfg.JSON_OUTPUT_PATH))
             if os.path.abspath(self.cfg.JSON_OUTPUT_PATH) != os.path.abspath(dest_json_path):
                 shutil.copy2(self.cfg.JSON_OUTPUT_PATH, dest_json_path)
+            if self.building_filter_mixed():   # v2.3.0: a building's queue keeps the photo just labelled
+                return
             if self.cfg.CURRENT_IMAGE_PATH in self.cfg.image_queue:
                 self.cfg.image_queue.remove(self.cfg.CURRENT_IMAGE_PATH)
                 self.cfg.queue_item_consumed = True
@@ -5667,6 +5673,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
         self._draw_crack_branch_merge_label(win_out)
         self._draw_sam_accept_label(win_out)
         self._draw_review_label(win_out)   # v2.0.1: TO BE REVIEWED
+        self._draw_building_filter_label(win_out)   # v2.3.0: BUILDING BLDGnnn
         self._draw_crack_extremes(win_out)
         self._draw_building_portion(win_out)
 
@@ -6019,6 +6026,9 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
         elif key_clean == ACTIVE_LEARNING_CODE:   # v2.0.1: new Mode-1 queue of the most uncertain photos
             return self.run_active_learning()
 
+        elif key_clean == BUILDING_FILTER_CODE:   # v2.3.0: queue of the photos of one building group
+            return self.run_building_filter()
+
         elif key_clean == SAM_RECOMPUTE_MAP_CODE:   # v2.0.1: the crack map of this photo computed again, here
             self.recompute_sam_map_here()
 
@@ -6092,6 +6102,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
         """Loads one image into the working session and renders its first frame.
         """
         img_path = self.cfg.image_queue[queue_pos]
+        self._apply_building_filter_mode(img_path)   # v2.3.0: all the photos of a group, each in its own mode
         self.initialize_image_session(img_path)
         self._sync_queue_path_after_rename(queue_pos)
 
@@ -6328,6 +6339,9 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             self.run_group_similar_photos()
         elif code == ACTIVE_LEARNING_CODE:   # v2.0.1: loads the photos to label next
             if self.run_active_learning():
+                return True
+        elif code == BUILDING_FILTER_CODE:   # v2.3.0: loads the photos of one building group
+            if self.run_building_filter():
                 return True
         elif code == LEONARDO_CODE:   # v2.0.1: the Leonardo window
             self.run_leonardo()

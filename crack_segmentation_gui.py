@@ -23,6 +23,8 @@ from sam_accept import (SAM_ACCEPT_CODE, SAM_CANDIDATES_CODE, SAM_ACCEPT_ALL_COD
 from delete_image import DELETE_IMAGE_CODE
 from auto_ignore import AUTO_IGNORE_CODE
 from active_learning import ACTIVE_LEARNING_CODE
+from building_filter import (BUILDING_FILTER_CODE, BUILDING_FILTER_LABELLED, BUILDING_FILTER_TO_LABEL,
+                             BUILDING_FILTER_ALL)
 from leonardo_link import LEONARDO_CODE, FIELDS as LEONARDO_FIELDS, save_settings as save_leonardo_settings
 from building_groups import GROUP_PHOTOS_CODE, progress_text as group_progress_text
 from review_flags import review_key, REVIEW_CODE, REVIEW_BY_DATE_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
@@ -631,6 +633,8 @@ _LEFT_SIDEBAR_SECTIONS = [
     ]),
     ("Dataset", [
         ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
+        # v2.3.0: only the photos of one building group: labelled, to label or all (code 163, building_filter.py).
+        ("\U0001F3E2", "Filter by building", "", BUILDING_FILTER_CODE),
         # v2.0.1: mark the photo as doubtful; Mode 2 / Switch Mode can then load only these (code 140, review_flags.py).
         ("\U0001F6A9", "To be reviewed", "", REVIEW_CODE),
         # v2.0.1: every photo whose JSON was saved up to a date -> to be reviewed (code 160).
@@ -1773,6 +1777,65 @@ class _IgnoreOptionsDialog:
         self.top.destroy()
 
 
+class _BuildingFilterDialog:
+    """v2.3.0 [Filter by building]: the building group (drop-down list) and which of its photos to load."""
+
+    def __init__(self, master, groups):
+        self.result = None
+        self.tags = list(groups)
+        self.groups = groups
+        self.top = tk.Toplevel(master)
+        self.top.title("Filter by building")
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self.top.destroy)
+        body = tk.Frame(self.top, padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Load only the photos of one building group", font=("TkDefaultFont", 10, "bold")).pack(
+            anchor="w", pady=(0, 8))
+        tk.Label(body, text="Building group:").pack(anchor="w")
+        self.combo = ttk.Combobox(body, values=[self._entry(t) for t in self.tags], state="readonly", width=44)
+        self.combo.pack(anchor="w", pady=(2, 10))
+        self.combo.current(0)
+        self.combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_counts())
+        tk.Label(body, text="Photos to load:").pack(anchor="w")
+        self.which = tk.StringVar(master=self.top, value=BUILDING_FILTER_ALL)
+        self.radios = {}
+        for value in (BUILDING_FILTER_LABELLED, BUILDING_FILTER_TO_LABEL, BUILDING_FILTER_ALL):
+            rb = tk.Radiobutton(body, variable=self.which, value=value, anchor="w")
+            rb.pack(fill="x")
+            self.radios[value] = rb
+        self._refresh_counts()
+        buttons = tk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        tk.Button(buttons, text="Load", width=10, command=self._ok).pack(side="right")
+        tk.Button(buttons, text="Cancel", width=10, command=self.top.destroy).pack(side="right", padx=6)
+        self.top.bind("<Return>", lambda e: self._ok())
+        self.top.bind("<Escape>", lambda e: self.top.destroy())
+        self.top.grab_set()
+        self.top.focus_force()
+
+    def _entry(self, tag):
+        g = self.groups[tag]
+        return f"{tag}  ({len(g['labelled'])} labelled, {len(g['to_label'])} to label)"
+
+    def selected_tag(self):
+        i = self.combo.current()
+        return self.tags[i] if 0 <= i < len(self.tags) else self.tags[0]
+
+    def _refresh_counts(self):
+        g = self.groups[self.selected_tag()]
+        n_l, n_t = len(g["labelled"]), len(g["to_label"])
+        texts = {BUILDING_FILTER_LABELLED: f"1. Photos already labelled ({n_l})",
+                 BUILDING_FILTER_TO_LABEL: f"2. Photos to label ({n_t})",
+                 BUILDING_FILTER_ALL: f"3. All ({n_l + n_t})"}
+        for value, rb in self.radios.items():
+            rb.config(text=texts[value])
+
+    def _ok(self):
+        self.result = (self.selected_tag(), self.which.get() or BUILDING_FILTER_ALL)
+        self.top.destroy()
+
+
 class _GoToImageDialog:
     """v1.0.9 [Go to image]: First / Last, or an image picked from a list of 10 names at a time
     (paging as in go_to_image.PagedChooser). Go/Enter shows the picked image, Cancel/Esc does nothing."""
@@ -1931,6 +1994,8 @@ _TOOL_COMMANDS = [
     ("\U0001F4CB Crack report (click a crack)", 16),
     ("\U0001F4AC Crack labels: hover a crack to read its data / off", 11),
     ("\U0001F6A9 To be reviewed: mark / unmark this photo (Mode 2 can load only these)", REVIEW_CODE),
+    ("\U0001F3E2 Filter by building: only the photos of one building group (labelled / to label / all)",
+     BUILDING_FILTER_CODE),
     ("\U0001F4C5 To be reviewed by date: every photo saved up to a date (e.g. today)", REVIEW_BY_DATE_CODE),
 ]
 
@@ -2390,6 +2455,14 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _notify_auto_split(self, message):
         messagebox.showinfo("Crack Detector - Auto split", message, parent=self._tk_root)
+
+    def _prompt_building_filter(self, groups):
+        dialog = _BuildingFilterDialog(self._tk_root, groups)
+        self._tk_root.wait_window(dialog.top)
+        return dialog.result
+
+    def _notify_building_filter(self, message):
+        messagebox.showinfo("Crack Detector - Filter by building", message, parent=self._tk_root)
 
     def _choose_image_index(self, names, current):
         dialog = _GoToImageDialog(self._tk_root, names, current)
