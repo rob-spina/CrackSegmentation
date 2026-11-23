@@ -593,6 +593,8 @@ class Config:
         """v2.0.1 [To be reviewed] (code 140, review_flags.py): cache of '<data>/to_be_reviewed.json' and the Mode-2
         filter chosen at start-up / Switch Mode ("review", "reviewed" or "all")."""
         self.review_state = {"index": {}, "stamp": "unset", "path": None, "filter": "all"}
+        # v2.3.0 [Filter by building]: {"tag", "which", "mixed"} while the queue holds one building group only.
+        self.building_filter = {}
 
     def _init_sam_accept_settings(self):
         """v2.0.0 [SAM click to accept] (code 138, sam_accept.py): a click near a crack accepts the connected part of
