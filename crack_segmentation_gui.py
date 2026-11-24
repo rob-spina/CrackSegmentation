@@ -2257,7 +2257,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._pdf_panel_visible = False
         self._dataset_panel = DatasetBrowserPanel(self._tk_root, self)
         self._dataset_panel_visible = False
-        self._issue_panel = IssueLogPanel(self._tk_root, self)
+        # v2.4.0: in the middle row, so it takes the place of the photo between the two sidebars.
+        self._issue_panel = IssueLogPanel(self._middle_row, self)
         self._issue_panel_visible = False
         self._status_bar = StatusBar(self._tk_root)
         placeholder = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
@@ -2396,6 +2397,8 @@ class GuiCrackSegmentation(CrackSegmentation):
             ("\U0001F5D1 Clear", ord('x')),
             ("\u2139 Info", ord('j')),
             ("\u2753 Manual", ord('?')),
+            # v2.4.0: the issue table between the two sidebars (code 165, issue_log.py).
+            ("\U0001F4CB Issues", ISSUE_LOG_VIEW_CODE),
         ]
 
     def _create_one_toolbar_button(self, bar, label, code):
@@ -2639,6 +2642,12 @@ class GuiCrackSegmentation(CrackSegmentation):
 
     def _notify_building_filter(self, message):
         messagebox.showinfo("Crack Detector - Filter by building", message, parent=self._tk_root)
+
+    def toggle_issue_log(self):
+        on = super().toggle_issue_log()
+        if getattr(self, "_issue_panel_visible", False):
+            self._issue_panel.refresh()
+        return on
 
     def _ask_segmentation_issues(self, photo, current_rows):
         suggested, hint = self.suggested_destination(photo, current_rows)
@@ -2937,15 +2946,17 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._dataset_panel_visible = True
 
     def _hide_issue_panel(self):
+        """The photo comes back between the two sidebars."""
         if getattr(self, "_issue_panel_visible", False):
             self._issue_panel.hide()
+            self._canvas.container.pack(fill="both", expand=True)
             self._issue_panel_visible = False
 
     def _toggle_issue_log_view(self):
-        """GUI override (code 165): shows/hides the issue table over the whole image, like the manual."""
+        """GUI override (code 165, Issues button / menu): shows/hides the issue table in place of the photo, between
+        the two sidebars (they stay usable, e.g. the Issue log button)."""
         if self._issue_panel_visible:
             self._hide_issue_panel()
-            self._middle_row.pack(fill="both", expand=True)
             return
         if self._pdf_panel_visible:
             self._pdf_panel.hide()
@@ -2953,7 +2964,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         if getattr(self, "_dataset_panel_visible", False):
             self._dataset_panel.hide()
             self._dataset_panel_visible = False
-        self._middle_row.pack_forget()
+        self._middle_row.pack(fill="both", expand=True)
+        self._canvas.container.pack_forget()
         self._issue_panel.show()
         self._issue_panel_visible = True
 

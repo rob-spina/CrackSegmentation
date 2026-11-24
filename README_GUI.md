@@ -44,7 +44,8 @@ destinazione (Training, Validation, Test set o *Not decided yet* = `nessuna`): v
 spostata; è proposto il set già scelto per la foto, altrimenti quello che contiene già foto dello stesso edificio. Risalvando la foto le sue categorie sono già spuntate e le sue
 righe vengono sostituite; senza spunte la foto esce dall'elenco; *Skip* lascia l'elenco com'è.
 
-Nel menu in alto **Issues > Show segmentation issues** mostra la tabella al posto dell'immagine, come il manuale;
+Il pulsante **Issues** nella barra in alto, accanto a Manual (o il menu **Issues > Show segmentation issues**), mostra la
+tabella al posto dell'immagine, tra le due sidebar;
 le righe selezionate si possono cancellare.
 
 ## Novità 2.3.1: correzione

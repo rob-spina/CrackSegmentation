@@ -20,7 +20,7 @@ The same window asks the **destination set** of the photo: Training set, Validat
 Saving the photo again shows its categories already ticked and replaces its rows; with nothing ticked the photo leaves the list; **Skip** leaves the list as it is.
 
 #### Show segmentation issues
-**Issues > Show segmentation issues** (menu bar, code 165) shows the list as a table over the image, like the user manual. The selected rows can be deleted, e.g. once a photo has been fixed.
+The **Issues** button (toolbar, next to Manual; also **Issues > Show segmentation issues** in the menu bar, code 165) shows the list as a table in place of the photo, between the two sidebars. The selected rows can be deleted, e.g. once a photo has been fixed.
 
 ### Model weights
 

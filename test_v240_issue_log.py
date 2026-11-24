@@ -147,6 +147,8 @@ class TestGui(unittest.TestCase):
         menu_codes = [c for _, commands in gm._ALL_MENU_GROUPS for _, c in commands]
         self.assertIn(il.ISSUE_LOG_VIEW_CODE, menu_codes)
         self.assertIn(il.ISSUE_LOG_CODE, menu_codes)
+        toolbar = [c for _, c in gm.GuiCrackSegmentation._toolbar_shortcuts(None)]
+        self.assertIn(il.ISSUE_LOG_VIEW_CODE, toolbar, "Issues button next to Manual")
         cfg = make_app().cfg
         self.assertFalse(gm._SIDEBAR_TOGGLE_STATES[il.ISSUE_LOG_CODE](cfg))
         cfg.issue_log_on = True
