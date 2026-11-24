@@ -463,7 +463,7 @@ class DatasetBrowserPanel:
         style = ttk.Style()
         style.configure("Dataset.Treeview", background="white", fieldbackground="white", foreground=self.INK,
                         rowheight=24, font=("TkDefaultFont", 10))
-        style.configure("Dataset.Treeview.Heading", background=self.NAVY, foreground="white",
+        style.configure("Dataset.Treeview.Heading", background="#d1d5db", foreground="#111827",
                         font=("TkDefaultFont", 10, "bold"))
         style.map("Dataset.Treeview", background=[("selected", self.TEAL)], foreground=[("selected", "white")])
         self.tree = ttk.Treeview(body, columns=("building", "kind"), style="Dataset.Treeview",
@@ -584,7 +584,7 @@ class InfoPanel:
         style = ttk.Style()
         style.configure("Info.Treeview", background="white", fieldbackground="white", foreground=self.INK,
                         rowheight=22, font=("TkDefaultFont", 10))
-        style.configure("Info.Treeview.Heading", background=self.NAVY, foreground="white",
+        style.configure("Info.Treeview.Heading", background="#d1d5db", foreground="#111827",
                         font=("TkDefaultFont", 10, "bold"))
         self.tree = ttk.Treeview(body, columns=self.CRACK_COLUMNS, show="headings", style="Info.Treeview",
                                  selectmode="none")
@@ -677,7 +677,7 @@ class IssueLogPanel:
         style = ttk.Style()
         style.configure("Issues.Treeview", background="white", fieldbackground="white", foreground=self.INK,
                         rowheight=24, font=("TkDefaultFont", 10))
-        style.configure("Issues.Treeview.Heading", background=self.NAVY, foreground="white",
+        style.configure("Issues.Treeview.Heading", background="#d1d5db", foreground="#111827",
                         font=("TkDefaultFont", 10, "bold"))
         style.map("Issues.Treeview", background=[("selected", self.TEAL)], foreground=[("selected", "white")])
         self.tree = ttk.Treeview(body, columns=ISSUE_FIELDS, show="headings", style="Issues.Treeview",
