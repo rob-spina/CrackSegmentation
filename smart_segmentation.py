@@ -54,6 +54,7 @@ from delete_image import DeleteImageMixin, DELETE_IMAGE_CODE
 from active_learning import ActiveLearningMixin, ACTIVE_LEARNING_CODE
 from building_filter import BuildingFilterMixin, BUILDING_FILTER_CODE
 from leonardo_link import LeonardoLinkMixin, LEONARDO_CODE
+from issue_log import IssueLogMixin, ISSUE_LOG_CODE, ISSUE_LOG_VIEW_CODE
 
 
 class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixin, AlternativeRoutesMixin, CrackFilterMixin, BuildingPortionMixin,
@@ -65,7 +66,7 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
                         CrackExtremesMixin, CrackClassViewMixin, XmlReferenceMixin,
                         CrackBranchMergeMixin, SamAutoSegMixin, SamAcceptMixin,
                         ReviewFlagsMixin, BuildingGroupsMixin, DeleteImageMixin, ActiveLearningMixin,
-                        LeonardoLinkMixin, BuildingFilterMixin):
+                        LeonardoLinkMixin, BuildingFilterMixin, IssueLogMixin):
     """Wraps the entire interactive segmentation pipeline. All state lives on self.cfg (see config.py), so it can be constructed fresh, shared, or tested independently.
     """
 
@@ -1554,6 +1555,11 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
             self.mark_annotations_saved()
         except Exception as e:
             print(f"[IO ERROR] Physical file transfer or serialization failed: {e}", file=sys.stderr)
+            return
+        try:
+            self.log_segmentation_issues()   # v2.4.0: asks the problems of the segmentation when the issue log is on
+        except Exception as e:
+            print(f"[ISSUE LOG] Skipped: {e}", file=sys.stderr)
 
     def _run_multiview_check_safely(self):
         """Multi-view crack check before the shapes are built; a failure there must never block the save."""
@@ -6032,6 +6038,12 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
         elif key_clean == BUILDING_FILTER_CODE:   # v2.3.0: queue of the photos of one building group
             return self.run_building_filter()
 
+        elif key_clean == ISSUE_LOG_CODE:   # v2.4.0: every save asks the problems of the segmentation (on / off)
+            self.toggle_issue_log()
+
+        elif key_clean == ISSUE_LOG_VIEW_CODE:   # v2.4.0: the issue table over the image, like the manual
+            self._toggle_issue_log_view()
+
         elif key_clean == SAM_RECOMPUTE_MAP_CODE:   # v2.0.1: the crack map of this photo computed again, here
             self.recompute_sam_map_here()
 
@@ -6346,6 +6358,10 @@ class CrackSegmentation(IgnoreRegionsMixin, AutoIgnoreMixin, InspectionToolsMixi
         elif code == BUILDING_FILTER_CODE:   # v2.3.0: loads the photos of one building group
             if self.run_building_filter():
                 return True
+        elif code == ISSUE_LOG_CODE:   # v2.4.0: on / off, nothing to reload
+            self.toggle_issue_log()
+        elif code == ISSUE_LOG_VIEW_CODE:   # v2.4.0: the issue table
+            self._toggle_issue_log_view()
         elif code == LEONARDO_CODE:   # v2.0.1: the Leonardo window
             self.run_leonardo()
         elif code == REVIEW_BY_DATE_CODE:   # v2.0.1: marks only, nothing to reload

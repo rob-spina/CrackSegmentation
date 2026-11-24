@@ -32,6 +32,19 @@ packaging/
 
 **149 test in totale**, tutti verdi.
 
+## Novità 2.4.0: Issue log
+
+Nuovo pulsante **Issue log** nella barra sinistra (sezione Dataset). Quando è attivo (pulsante premuto), ogni
+salvataggio in Mode 1 o Mode 2 apre una finestra con le criticità della segmentazione da spuntare: A fughe di
+muratura tracciate come fessure, B bordi/spigoli/cornici/strade/striature tracciati, C macerie o crollo, D
+cavillatura, E fessure vere non tracciate, F fessure tracciate male, X altro (testo libero), più una nota (zona, cosa
+è stato fatto). Le righe vanno in `segmentation_issues.csv` nella cartella dei dati, una per foto e categoria, con i
+campi `n, immagine, categoria, problema, modalità`. Risalvando la foto le sue categorie sono già spuntate e le sue
+righe vengono sostituite; senza spunte la foto esce dall'elenco; *Skip* lascia l'elenco com'è.
+
+Nel menu in alto **Issues > Show segmentation issues** mostra la tabella al posto dell'immagine, come il manuale;
+le righe selezionate si possono cancellare.
+
 ## Novità 2.3.1: correzione
 
 La finestra "This photo has changes not saved yet" non compare più per una foto appena salvata: l'app confronta fessure,

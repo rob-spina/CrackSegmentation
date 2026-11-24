@@ -25,6 +25,8 @@ from auto_ignore import AUTO_IGNORE_CODE
 from active_learning import ACTIVE_LEARNING_CODE
 from building_filter import (BUILDING_FILTER_CODE, BUILDING_FILTER_LABELLED, BUILDING_FILTER_TO_LABEL,
                              BUILDING_FILTER_ALL)
+from issue_log import (ISSUE_LOG_CODE, ISSUE_LOG_VIEW_CODE, ISSUE_CATEGORIES, OTHER_CATEGORY, ISSUE_FIELDS,
+                       problem_text, read_issues, delete_issue_rows)
 from leonardo_link import LEONARDO_CODE, FIELDS as LEONARDO_FIELDS, save_settings as save_leonardo_settings
 from building_groups import GROUP_PHOTOS_CODE, progress_text as group_progress_text
 from review_flags import review_key, REVIEW_CODE, REVIEW_BY_DATE_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
@@ -543,6 +545,89 @@ class DatasetBrowserPanel:
         self.frame.pack_forget()
 
 
+class IssueLogPanel:
+    """v2.4.0 [Show segmentation issues] (code 165): covers the window like the manual and shows
+    'segmentation_issues.csv' (n, immagine, categoria, problema, modalita); the selected rows can be deleted."""
+
+    NAVY, TEAL, INK, ZEBRA = "#0f3460", "#1f8a9e", "#1f2937", "#f3f7f9"
+
+    def __init__(self, master, app):
+        self.app = app
+        self.frame = tk.Frame(master, bg="white")
+        header = tk.Frame(self.frame, bg=self.NAVY)
+        header.pack(fill="x")
+        tk.Label(header, text="Segmentation issues", bg=self.NAVY, fg="white",
+                 font=("TkDefaultFont", 15, "bold")).pack(side="left", padx=14, pady=8)
+        self.summary = tk.Label(header, text="", bg=self.NAVY, fg="#cfe3ea", font=("TkDefaultFont", 10))
+        self.summary.pack(side="left", padx=10)
+        tk.Button(header, text="\u2715 Close", command=self.app._toggle_issue_log_view,
+                  cursor="hand2").pack(side="right", padx=12, pady=6)
+        actions = tk.Frame(self.frame, bg="#e8f1f4")
+        actions.pack(fill="x")
+        tk.Button(actions, text="Delete selected rows", command=self.delete_selected,
+                  cursor="hand2").pack(side="left", padx=14, pady=6)
+        tk.Button(actions, text="\u21BB Refresh", command=self.refresh, cursor="hand2").pack(side="right", padx=12)
+        body = tk.Frame(self.frame, bg="white")
+        body.pack(fill="both", expand=True)
+        style = ttk.Style()
+        style.configure("Issues.Treeview", background="white", fieldbackground="white", foreground=self.INK,
+                        rowheight=24, font=("TkDefaultFont", 10))
+        style.configure("Issues.Treeview.Heading", background=self.NAVY, foreground="white",
+                        font=("TkDefaultFont", 10, "bold"))
+        style.map("Issues.Treeview", background=[("selected", self.TEAL)], foreground=[("selected", "white")])
+        self.tree = ttk.Treeview(body, columns=ISSUE_FIELDS, show="headings", style="Issues.Treeview",
+                                 selectmode="extended")
+        widths = {"n": 50, "immagine": 330, "categoria": 80, "problema": 560, "modalità": 80}
+        for col in ISSUE_FIELDS:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=widths[col], anchor="w" if col in ("immagine", "problema") else "center")
+        self.tree.tag_configure("odd", background=self.ZEBRA)
+        scroll = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        self.status = tk.Label(self.frame, text="", bg="white", fg=self.INK, anchor="w")
+        self.status.pack(fill="x", padx=14, pady=4)
+        self._number_of = {}   # tree item -> n
+
+    def refresh(self):
+        """Reads the CSV again."""
+        children = self.tree.get_children()
+        if children:
+            self.tree.delete(*children)
+        self._number_of = {}
+        path = self.app.issue_log_file()
+        rows = read_issues(path)
+        for i, r in enumerate(rows):
+            item = self.tree.insert("", "end", values=tuple(r[k] for k in ISSUE_FIELDS),
+                                    tags=("odd",) if i % 2 else ())
+            self._number_of[item] = r["n"]
+        photos = len({r["immagine"] for r in rows})
+        state = "on" if self.app.issue_log_on() else "off (Issue log button, left sidebar)"
+        self.summary.configure(text=f"{len(rows)} problem(s) on {photos} photo(s)   |   issue log {state}")
+        self.status.configure(text=path if rows else f"No problem logged yet: {path}")
+
+    def delete_selected(self):
+        numbers = [self._number_of[i] for i in self.tree.selection() if i in self._number_of]
+        if not numbers:
+            self.status.configure(text="Select one or more rows first (Ctrl/Shift + click for several).")
+            return 0
+        if not messagebox.askyesno("Crack Detector - Segmentation issues",
+                                   f"Delete {len(numbers)} row(s) from the issue log?", parent=self.frame):
+            return 0
+        deleted = delete_issue_rows(self.app.issue_log_file(), numbers)
+        self.refresh()
+        self.status.configure(text=f"{deleted} row(s) deleted.")
+        return deleted
+
+    def show(self):
+        self.frame.pack(fill="both", expand=True)
+        self.refresh()
+
+    def hide(self):
+        self.frame.pack_forget()
+
+
 # Status strip: fixed panel at the bottom showing console output continuously
 # (a double-clicked .app/.exe otherwise has no visible console).
 
@@ -635,6 +720,8 @@ _LEFT_SIDEBAR_SECTIONS = [
         ("\U0001F500", "Switch Mode", "", 6),  # no physical key -- button-only action
         # v2.3.0: only the photos of one building group: labelled, to label or all (code 163, building_filter.py).
         ("\U0001F3E2", "Filter by building", "", BUILDING_FILTER_CODE),
+        # v2.4.0: while on, every save asks the problems of the segmentation -> segmentation_issues.csv (code 164).
+        ("\U0001F4DD", "Issue log", "", ISSUE_LOG_CODE),
         # v2.0.1: mark the photo as doubtful; Mode 2 / Switch Mode can then load only these (code 140, review_flags.py).
         ("\U0001F6A9", "To be reviewed", "", REVIEW_CODE),
         # v2.0.1: every photo whose JSON was saved up to a date -> to be reviewed (code 160).
@@ -704,6 +791,7 @@ _SIDEBAR_TOGGLE_STATES = {
     SAM_EXCLUDE_CODE: lambda cfg: bool(cfg.sam_accept_state.get("exclude")) and cfg.sam_accept_state["active"],
     SAM_CUT_CODE: lambda cfg: bool(cfg.sam_accept_state.get("cut")) and cfg.sam_accept_state["active"],
     # v2.0.1: the photo on screen is marked (index cache refreshed by the HUD every frame).
+    ISSUE_LOG_CODE: lambda cfg: bool(getattr(cfg, "issue_log_on", False)),
     REVIEW_CODE: lambda cfg: (not cfg.queue_idle and bool(cfg.CURRENT_IMAGE_PATH)
                               and review_key(cfg.CURRENT_IMAGE_PATH) in cfg.review_state["index"]),
 }
@@ -1836,6 +1924,66 @@ class _BuildingFilterDialog:
         self.top.destroy()
 
 
+class _IssueDialog:
+    """v2.4.0 [Issue log]: the problems of the segmentation of the photo just saved (categories + note)."""
+
+    def __init__(self, master, photo, current_rows):
+        self.result = None
+        self.top = tk.Toplevel(master)
+        self.top.title("Issue log")
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self._skip)
+        body = tk.Frame(self.top, padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text="Problems of the segmentation", font=("TkDefaultFont", 11, "bold")).pack(anchor="w")
+        tk.Label(body, text=photo, fg="#555555").pack(anchor="w", pady=(0, 8))
+        ticked = {r["categoria"] for r in current_rows}
+        old_other = next((r["problema"] for r in current_rows if r["categoria"] == OTHER_CATEGORY), "")
+        self.vars = {}
+        for letter, text in ISSUE_CATEGORIES:
+            var = tk.BooleanVar(master=self.top, value=letter in ticked)
+            tk.Checkbutton(body, text=f"{letter}.  {text}", variable=var, anchor="w").pack(fill="x")
+            self.vars[letter] = var
+        other_row = tk.Frame(body)
+        other_row.pack(fill="x", pady=(2, 0))
+        self.vars[OTHER_CATEGORY] = tk.BooleanVar(master=self.top, value=OTHER_CATEGORY in ticked)
+        tk.Checkbutton(other_row, text=f"{OTHER_CATEGORY}.  other:", variable=self.vars[OTHER_CATEGORY]).pack(side="left")
+        self.other = tk.Entry(other_row, width=46)
+        self.other.pack(side="left", padx=(4, 0))
+        if old_other:
+            self.other.insert(0, old_other)
+        tk.Label(body, text="Note (zone, what was done) -- added to each problem:").pack(anchor="w", pady=(10, 0))
+        self.note = tk.Entry(body, width=64)
+        self.note.pack(anchor="w", pady=(2, 0))
+        tk.Label(body, text="Nothing ticked = no problem: the photo leaves the list.", fg="#555555").pack(
+            anchor="w", pady=(8, 0))
+        buttons = tk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        tk.Button(buttons, text="Save to log", width=12, command=self._ok).pack(side="right")
+        tk.Button(buttons, text="Skip", width=10, command=self._skip).pack(side="right", padx=6)
+        self.top.bind("<Escape>", lambda e: self._skip())
+        self.top.grab_set()
+        self.top.focus_force()
+
+    def picks(self):
+        note, other = self.note.get(), self.other.get()
+        out = []
+        for letter in [c for c, _ in ISSUE_CATEGORIES] + [OTHER_CATEGORY]:
+            if self.vars[letter].get():
+                text = problem_text(letter, note, other)
+                if text:
+                    out.append((letter, text))
+        return out
+
+    def _ok(self):
+        self.result = self.picks()
+        self.top.destroy()
+
+    def _skip(self):
+        self.result = None
+        self.top.destroy()
+
+
 class _GoToImageDialog:
     """v1.0.9 [Go to image]: First / Last, or an image picked from a list of 10 names at a time
     (paging as in go_to_image.PagedChooser). Go/Enter shows the picked image, Cancel/Esc does nothing."""
@@ -2038,6 +2186,12 @@ _CALIBRATION_COMMANDS = [
     ("\U0001F4D0 Set scale manually\tK", ord('k')),
 ]
 
+# v2.4.0: the issue log (issue_log.py): the table over the image, like the manual, and the on / off switch.
+_ISSUE_COMMANDS = [
+    ("\U0001F4CB Show segmentation issues (table over the image)", ISSUE_LOG_VIEW_CODE),
+    ("\U0001F4DD Issue log: ask the problems at every save (on / off)", ISSUE_LOG_CODE),
+]
+
 _ALL_MENU_GROUPS = [
     ("\U0001F4C1 File", _FILE_COMMANDS),
     ("\u270F\uFE0F Edit", _EDIT_COMMANDS),
@@ -2046,6 +2200,7 @@ _ALL_MENU_GROUPS = [
     ("\U0001F441 View", _VIEW_COMMANDS),
     ("\U0001F9ED Navigate", _NAV_COMMANDS),
     ("\U0001F4CF Calibration", _CALIBRATION_COMMANDS),
+    ("\U0001F4CB Issues", _ISSUE_COMMANDS),
 ]
 
 
@@ -2083,6 +2238,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._pdf_panel_visible = False
         self._dataset_panel = DatasetBrowserPanel(self._tk_root, self)
         self._dataset_panel_visible = False
+        self._issue_panel = IssueLogPanel(self._tk_root, self)
+        self._issue_panel_visible = False
         self._status_bar = StatusBar(self._tk_root)
         placeholder = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
         self._canvas.update_frame(placeholder)
@@ -2464,6 +2621,13 @@ class GuiCrackSegmentation(CrackSegmentation):
     def _notify_building_filter(self, message):
         messagebox.showinfo("Crack Detector - Filter by building", message, parent=self._tk_root)
 
+    def _ask_segmentation_issues(self, photo, current_rows):
+        dialog = _IssueDialog(self._tk_root, photo, current_rows)
+        self._tk_root.wait_window(dialog.top)
+        if dialog.result is not None and getattr(self, "_issue_panel_visible", False):
+            self._issue_panel.refresh()
+        return dialog.result
+
     def _choose_image_index(self, names, current):
         dialog = _GoToImageDialog(self._tk_root, names, current)
         self._tk_root.wait_window(dialog.top)
@@ -2731,6 +2895,7 @@ class GuiCrackSegmentation(CrackSegmentation):
             if getattr(self, "_dataset_panel_visible", False):
                 self._dataset_panel.hide()
                 self._dataset_panel_visible = False
+            self._hide_issue_panel()
             self._middle_row.pack_forget()
             # Set before show(): if the manual fails, the next [?] still brings the photo back (v1.4.0).
             self._pdf_panel_visible = True
@@ -2746,9 +2911,31 @@ class GuiCrackSegmentation(CrackSegmentation):
         if self._pdf_panel_visible:
             self._pdf_panel.hide()
             self._pdf_panel_visible = False
+        self._hide_issue_panel()
         self._middle_row.pack_forget()
         self._dataset_panel.show()
         self._dataset_panel_visible = True
+
+    def _hide_issue_panel(self):
+        if getattr(self, "_issue_panel_visible", False):
+            self._issue_panel.hide()
+            self._issue_panel_visible = False
+
+    def _toggle_issue_log_view(self):
+        """GUI override (code 165): shows/hides the issue table over the whole image, like the manual."""
+        if self._issue_panel_visible:
+            self._hide_issue_panel()
+            self._middle_row.pack(fill="both", expand=True)
+            return
+        if self._pdf_panel_visible:
+            self._pdf_panel.hide()
+            self._pdf_panel_visible = False
+        if getattr(self, "_dataset_panel_visible", False):
+            self._dataset_panel.hide()
+            self._dataset_panel_visible = False
+        self._middle_row.pack_forget()
+        self._issue_panel.show()
+        self._issue_panel_visible = True
 
     def _toggle_fullscreen(self):
         """GUI override: toggles the real Tk window between filling the

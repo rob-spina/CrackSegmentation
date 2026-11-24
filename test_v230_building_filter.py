@@ -203,10 +203,6 @@ class TestGui(_Data):
         self.assertEqual(d.result, ("BLDG024", bf.BUILDING_FILTER_TO_LABEL))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestUnsavedChangesAfterSave(unittest.TestCase):
     """v2.3.1: a photo saved several times must not be reported as modified (the undo history survives a save)."""
 
@@ -244,3 +240,7 @@ class TestUnsavedChangesAfterSave(unittest.TestCase):
         asked = []
         self.assertTrue(app._settle_unsaved_changes("filter by building", ask=lambda n: asked.append(n)))
         self.assertEqual(asked, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
