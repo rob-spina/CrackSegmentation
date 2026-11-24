@@ -341,12 +341,24 @@ class PdfManualPanel:
         max_w = 0
         page_gap = 16
         for page in doc:
-            w, h = self._render_one_page(page, dpi, y, viewport_width)
+            w, h = self._render_one_page(page, self._fit_dpi(page, dpi, viewport_width), y, viewport_width)
             y += h + page_gap
             max_w = max(max_w, w)
         # Never narrower than the viewport -- keeps a narrow page centered.
         scrollregion_w = max(viewport_width, max_w)
         self.canvas.configure(scrollregion=(0, 0, scrollregion_w, max(y, 1)))
+
+    @staticmethod
+    def _fit_dpi(page, dpi, viewport_width):
+        """v2.4.0: the manual sits between the two sidebars -- a page wider than the space is drawn smaller
+        (never below 60 dpi) instead of needing the horizontal scrollbar."""
+        try:
+            points = float(page.rect.width)
+        except (AttributeError, TypeError, ValueError):
+            return dpi
+        if points <= 0 or viewport_width <= 1:
+            return dpi
+        return max(60, min(dpi, int((viewport_width - 24) * 72 / points)))
 
     def _show_fallback_message(self, message):
         """Shows an error message instead of crashing when the manual can't be displayed (PyMuPDF missing, file missing/corrupt)."""
@@ -2253,7 +2265,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._sidebar = ShortcutsSidebar(self._middle_row, self)
         self._canvas = EmbeddedCanvas(self._middle_row, self)
         self._canvas.canvas.focus_set()
-        self._pdf_panel = PdfManualPanel(self._tk_root, self._resolve_manual_pdf_path())
+        # v2.4.0: in the middle row, so the manual takes the place of the photo between the two sidebars.
+        self._pdf_panel = PdfManualPanel(self._middle_row, self._resolve_manual_pdf_path())
         self._pdf_panel_visible = False
         self._dataset_panel = DatasetBrowserPanel(self._tk_root, self)
         self._dataset_panel_visible = False
@@ -2914,18 +2927,25 @@ class GuiCrackSegmentation(CrackSegmentation):
         # The GUI's menu bar, toolbar and status bar already show these commands.
         return None
 
-    def _toggle_help_menu(self):
-        """GUI override: shows/hides the real PDF user manual instead of the text overlay render_scene() draws in headless mode."""
-        if self._pdf_panel_visible:
+    def _hide_pdf_panel(self):
+        """The photo comes back between the two sidebars."""
+        if getattr(self, "_pdf_panel_visible", False):
             self._pdf_panel.hide()
-            self._middle_row.pack(fill="both", expand=True)
+            self._canvas.container.pack(fill="both", expand=True)
             self._pdf_panel_visible = False
+
+    def _toggle_help_menu(self):
+        """GUI override: shows/hides the real PDF user manual instead of the text overlay render_scene() draws in
+        headless mode. Since 2.4.0 it takes the place of the photo between the two sidebars, which stay usable."""
+        if self._pdf_panel_visible:
+            self._hide_pdf_panel()
         else:
             if getattr(self, "_dataset_panel_visible", False):
                 self._dataset_panel.hide()
                 self._dataset_panel_visible = False
             self._hide_issue_panel()
-            self._middle_row.pack_forget()
+            self._middle_row.pack(fill="both", expand=True)
+            self._canvas.container.pack_forget()
             # Set before show(): if the manual fails, the next [?] still brings the photo back (v1.4.0).
             self._pdf_panel_visible = True
             self._pdf_panel.show()
@@ -2937,9 +2957,7 @@ class GuiCrackSegmentation(CrackSegmentation):
             self._middle_row.pack(fill="both", expand=True)
             self._dataset_panel_visible = False
             return
-        if self._pdf_panel_visible:
-            self._pdf_panel.hide()
-            self._pdf_panel_visible = False
+        self._hide_pdf_panel()
         self._hide_issue_panel()
         self._middle_row.pack_forget()
         self._dataset_panel.show()
@@ -2958,9 +2976,7 @@ class GuiCrackSegmentation(CrackSegmentation):
         if self._issue_panel_visible:
             self._hide_issue_panel()
             return
-        if self._pdf_panel_visible:
-            self._pdf_panel.hide()
-            self._pdf_panel_visible = False
+        self._hide_pdf_panel()
         if getattr(self, "_dataset_panel_visible", False):
             self._dataset_panel.hide()
             self._dataset_panel_visible = False

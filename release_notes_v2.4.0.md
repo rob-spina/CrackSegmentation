@@ -21,6 +21,8 @@ Saving the photo again shows its categories already ticked and replaces its rows
 
 #### Show segmentation issues
 The **Issues** button (toolbar, next to Manual; also **Issues > Show segmentation issues** in the menu bar, code 165) shows the list as a table in place of the photo, between the two sidebars. The selected rows can be deleted, e.g. once a photo has been fixed.
+#### User manual between the sidebars
+The **Manual** button now shows the user manual in place of the photo, between the two sidebars, which stay usable; before it covered the whole window.
 
 ### Model weights
 

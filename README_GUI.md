@@ -48,6 +48,8 @@ Il pulsante **Issues** nella barra in alto, accanto a Manual (o il menu **Issues
 tabella al posto dell'immagine, tra le due sidebar;
 le righe selezionate si possono cancellare.
 
+Anche il **manuale** (pulsante Manual) ora compare al posto della foto, tra le due sidebar, invece di coprire tutta la finestra.
+
 ## Novità 2.3.1: correzione
 
 La finestra "This photo has changes not saved yet" non compare più per una foto appena salvata: l'app confronta fessure,

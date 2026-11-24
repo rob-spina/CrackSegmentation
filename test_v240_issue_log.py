@@ -190,5 +190,27 @@ class TestGui(unittest.TestCase):
         self.assertEqual(len(panel.tree.get_children()), 1)
 
 
+class TestPanelsBetweenSidebars(unittest.TestCase):
+    """v2.4.0: the manual and the issue table take the place of the photo; the sidebars stay."""
+
+    def setUp(self):
+        import test_gui_panel_wiring as wiring
+        self.app = wiring.make_app(self)
+
+    def test_manual_and_issues_live_in_the_middle_row(self):
+        self.assertIn(self.app._pdf_panel.frame, self.app._middle_row.children)
+        self.assertIn(self.app._issue_panel.frame, self.app._middle_row.children)
+
+    def test_switching_panels_brings_the_photo_back(self):
+        with mock.patch.object(self.app._pdf_panel, "show"), mock.patch.object(self.app._issue_panel, "refresh"):
+            self.app._toggle_help_menu()
+            self.assertTrue(self.app._pdf_panel_visible)
+            self.app._toggle_issue_log_view()
+            self.assertFalse(self.app._pdf_panel_visible)
+            self.assertTrue(self.app._issue_panel_visible)
+            self.app._toggle_issue_log_view()
+        self.assertFalse(self.app._issue_panel_visible)
+
+
 if __name__ == "__main__":
     unittest.main()
