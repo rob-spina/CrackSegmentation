@@ -557,6 +557,98 @@ class DatasetBrowserPanel:
         self.frame.pack_forget()
 
 
+class InfoPanel:
+    """v2.4.0 [Info] (J): the data of the photo on screen -- file, tool, zoom, crack length, detachment area,
+    building, elements and the reliability of every crack -- on a white panel in place of the photo, between the
+    two sidebars (before 2.4.0 a dark glass drawn over the photo). The crack report keeps its glass on the photo."""
+
+    NAVY, TEAL, INK, ZEBRA, MUTED = "#0f3460", "#1f8a9e", "#1f2937", "#f3f7f9", "#6b7280"
+    CRACK_COLUMNS = ("crack", "reliability", "confidence", "views", "uncertain")
+
+    def __init__(self, master, app):
+        self.app = app
+        self.frame = tk.Frame(master, bg="white")
+        header = tk.Frame(self.frame, bg=self.NAVY)
+        header.pack(fill="x")
+        tk.Label(header, text="Photo info", bg=self.NAVY, fg="white",
+                 font=("TkDefaultFont", 15, "bold")).pack(side="left", padx=14, pady=8)
+        tk.Button(header, text="\u2715 Close", command=self.app._toggle_info_overlay,
+                  cursor="hand2").pack(side="right", padx=12, pady=6)
+        self.fields_box = tk.Frame(self.frame, bg="white")
+        self.fields_box.pack(fill="x", padx=18, pady=(12, 6))
+        self.field_labels = {}
+        tk.Label(self.frame, text="Crack reliability  (% reliability, c confidence, v views confirmed / checked)",
+                 bg="white", fg=self.NAVY, font=("TkDefaultFont", 11, "bold")).pack(anchor="w", padx=18, pady=(8, 2))
+        body = tk.Frame(self.frame, bg="white")
+        body.pack(fill="both", expand=True, padx=18, pady=(0, 10))
+        style = ttk.Style()
+        style.configure("Info.Treeview", background="white", fieldbackground="white", foreground=self.INK,
+                        rowheight=22, font=("TkDefaultFont", 10))
+        style.configure("Info.Treeview.Heading", background=self.NAVY, foreground="white",
+                        font=("TkDefaultFont", 10, "bold"))
+        self.tree = ttk.Treeview(body, columns=self.CRACK_COLUMNS, show="headings", style="Info.Treeview",
+                                 selectmode="none")
+        titles = {"crack": "Crack", "reliability": "Reliability %", "confidence": "Confidence",
+                  "views": "Views", "uncertain": "Uncertain"}
+        for col in self.CRACK_COLUMNS:
+            self.tree.heading(col, text=titles[col])
+            self.tree.column(col, width=110, anchor="center")
+        self.tree.tag_configure("odd", background=self.ZEBRA)
+        self.tree.tag_configure("uncertain", foreground="#b91c1c")
+        scroll = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        self._last = None
+
+    @staticmethod
+    def split_fields(*lines):
+        """[(name, value)] from 'NAME: value | NAME: value' lines (the texts of the old glass)."""
+        out = []
+        for line in lines:
+            for part in str(line or "").split(" | "):
+                name, sep, value = part.partition(": ")
+                if sep:
+                    out.append((name.strip().capitalize(), value.strip()))
+                elif part.strip():
+                    out.append(("", part.strip()))
+        return out
+
+    def _set_fields(self, fields):
+        for child in list(getattr(self.fields_box, "winfo_children", lambda: [])()):
+            child.destroy()
+        self.field_labels = {}
+        for row, (name, value) in enumerate(fields):
+            tk.Label(self.fields_box, text=name, bg="white", fg=self.MUTED, anchor="w",
+                     font=("TkDefaultFont", 10, "bold")).grid(row=row, column=0, sticky="w", padx=(0, 18), pady=2)
+            lab = tk.Label(self.fields_box, text=value, bg="white", fg=self.INK, anchor="w",
+                           font=("TkDefaultFont", 11))
+            lab.grid(row=row, column=1, sticky="w", pady=2)
+            self.field_labels[name] = lab
+
+    def refresh(self, force=False):
+        data = self.app.info_panel_data()
+        if not force and data == self._last:
+            return False
+        self._last = data
+        fields, cracks = data
+        self._set_fields(fields)
+        children = self.tree.get_children()
+        if children:
+            self.tree.delete(*children)
+        for i, row in enumerate(cracks):
+            tags = (("odd",) if i % 2 else ()) + (("uncertain",) if row[4] else ())
+            self.tree.insert("", "end", values=row, tags=tags)
+        return True
+
+    def show(self):
+        self.frame.pack(fill="both", expand=True)
+        self.refresh(force=True)
+
+    def hide(self):
+        self.frame.pack_forget()
+
+
 class IssueLogPanel:
     """v2.4.0 [Show segmentation issues] (code 165): covers the window like the manual and shows
     'segmentation_issues.csv' (n, immagine, categoria, problema, modalita, destinazione); the selected rows can
@@ -2272,6 +2364,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._dataset_panel_visible = False
         # v2.4.0: in the middle row, so it takes the place of the photo between the two sidebars.
         self._issue_panel = IssueLogPanel(self._middle_row, self)
+        self._info_panel = InfoPanel(self._middle_row, self)
+        self._info_panel_visible = False
         self._issue_panel_visible = False
         self._status_bar = StatusBar(self._tk_root)
         placeholder = np.zeros((CANVAS_H, CANVAS_W, 3), dtype=np.uint8)
@@ -2944,6 +3038,7 @@ class GuiCrackSegmentation(CrackSegmentation):
                 self._dataset_panel.hide()
                 self._dataset_panel_visible = False
             self._hide_issue_panel()
+            self._hide_info_panel()
             self._middle_row.pack(fill="both", expand=True)
             self._canvas.container.pack_forget()
             # Set before show(): if the manual fails, the next [?] still brings the photo back (v1.4.0).
@@ -2959,6 +3054,7 @@ class GuiCrackSegmentation(CrackSegmentation):
             return
         self._hide_pdf_panel()
         self._hide_issue_panel()
+        self._hide_info_panel()
         self._middle_row.pack_forget()
         self._dataset_panel.show()
         self._dataset_panel_visible = True
@@ -2977,6 +3073,7 @@ class GuiCrackSegmentation(CrackSegmentation):
             self._hide_issue_panel()
             return
         self._hide_pdf_panel()
+        self._hide_info_panel()
         if getattr(self, "_dataset_panel_visible", False):
             self._dataset_panel.hide()
             self._dataset_panel_visible = False
@@ -2984,6 +3081,66 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._canvas.container.pack_forget()
         self._issue_panel.show()
         self._issue_panel_visible = True
+
+    def _hide_info_panel(self):
+        """The photo comes back between the two sidebars."""
+        if getattr(self, "_info_panel_visible", False):
+            self._info_panel.hide()
+            self._canvas.container.pack(fill="both", expand=True)
+            self._info_panel_visible = False
+
+    def _toggle_info_overlay(self):
+        """GUI override ([J] / Info button): the photo data on a white panel in place of the photo, between the two
+        sidebars, instead of the dark glass over the photo. cfg.show_info_overlay is left to the crack report."""
+        if self._info_panel_visible:
+            self._hide_info_panel()
+            print(" [INFO] Photo info closed.")
+            return
+        self._hide_pdf_panel()
+        self._hide_issue_panel()
+        if getattr(self, "_dataset_panel_visible", False):
+            self._dataset_panel.hide()
+            self._dataset_panel_visible = False
+        self._middle_row.pack(fill="both", expand=True)
+        self._canvas.container.pack_forget()
+        self._info_panel.show()
+        self._info_panel_visible = True
+        print(" [INFO] Photo info shown (Info again or Close brings the photo back).")
+
+    def info_panel_data(self):
+        """((name, value) fields, [(crack, reliability, confidence, views, uncertain)]) of the photo on screen."""
+        status, metrics = getattr(self, "_info_texts", (None, None))
+        if not self.cfg.CURRENT_IMAGE_PATH or getattr(self.cfg, "queue_idle", False) or status is None:
+            return ((("", "No photo on screen."),), ())
+        filename = os.path.basename(self.cfg.CURRENT_IMAGE_PATH)
+        building, _ = self._resolve_building_hud_text(filename, self._compute_total_hud_elements())
+        fields = tuple(InfoPanel.split_fields(status, metrics, building))
+        cracks = []
+        for i, f in enumerate(self.cfg.saved_cracks, start=1):
+            if not f.get("active", True) or not self._crack_shown(f):
+                continue
+            pct, conf, uncertain = self._crack_quality(f.get("path"))
+            uncertain = bool(uncertain or self._is_manual_uncertain(f))
+            mv = self._crack_multiview(f.get("path"))
+            views = f"{mv['views_confirmed']}/{mv['views_checked']}" if mv and mv.get("views_checked") else ""
+            cracks.append((str(i), "" if pct is None else f"{pct:.0f}", "" if conf is None else f"{conf:.2f}",
+                           views, "yes" if uncertain else ""))
+        return fields, tuple(cracks)
+
+    def _draw_info_overlay(self, win_out, status, metrics_str, hm):
+        """GUI override: no glass for the photo data (they are on the Info panel); the crack report keeps its glass."""
+        self._info_texts = (status, metrics_str)
+        if getattr(self, "_info_panel_visible", False):
+            now = time.time()
+            if now - getattr(self, "_info_refreshed_at", 0.0) >= 0.5:   # the reliability scores are not free
+                self._info_refreshed_at = now
+                self._info_panel.refresh()
+        if self._is_crack_report_shown():
+            super()._draw_info_overlay(win_out, status, metrics_str, hm)
+
+    def draw_building_hud_overlay(self, win_out_canvas, y_pos=None):
+        """GUI override: the building line is on the Info panel, not drawn over the photo."""
+        return None
 
     def _toggle_fullscreen(self):
         """GUI override: toggles the real Tk window between filling the

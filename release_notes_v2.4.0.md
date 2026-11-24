@@ -21,8 +21,10 @@ Saving the photo again shows its categories already ticked and replaces its rows
 
 #### Show segmentation issues
 The **Issues** button (toolbar, next to Manual; also **Issues > Show segmentation issues** in the menu bar, code 165) shows the list as a table in place of the photo, between the two sidebars. The selected rows can be deleted, e.g. once a photo has been fixed.
-#### User manual between the sidebars
+#### User manual and Photo info between the sidebars
 The **Manual** button now shows the user manual in place of the photo, between the two sidebars, which stay usable; before it covered the whole window.
+
+The **Info** button (J) now shows the data of the photo -- file, tool, zoom, crack length, detachment area, building, elements and a table with the reliability, confidence and views of every crack, uncertain ones in red -- on a white **Photo info** panel in the same place, instead of the dark glass drawn over the photo. The Crack report still shows its report on the photo.
 
 ### Model weights
 

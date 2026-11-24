@@ -212,5 +212,45 @@ class TestPanelsBetweenSidebars(unittest.TestCase):
         self.assertFalse(self.app._issue_panel_visible)
 
 
+class TestInfoPanel(unittest.TestCase):
+    """v2.4.0: [J] / Info shows the photo data on a white panel between the sidebars, not a glass on the photo."""
+
+    def setUp(self):
+        import test_gui_panel_wiring as wiring
+        self.app = wiring.make_app(self)
+
+    def test_split_fields(self):
+        self.assertEqual(gm.InfoPanel.split_fields("FILE: 3/10 (a.jpg) | Tool: CRACK", "BUILDING: BLDG005 | ELEMENTS: 4"),
+                         [("File", "3/10 (a.jpg)"), ("Tool", "CRACK"), ("Building", "BLDG005"), ("Elements", "4")])
+
+    def test_toggle_shows_the_panel_and_leaves_the_glass_flag(self):
+        self.assertIn(self.app._info_panel.frame, self.app._middle_row.children)
+        self.app._toggle_info_overlay()
+        self.assertTrue(self.app._info_panel_visible)
+        self.assertFalse(self.app.cfg.show_info_overlay, "the glass flag stays for the crack report")
+        with mock.patch.object(self.app._pdf_panel, "show"):
+            self.app._toggle_help_menu()
+        self.assertFalse(self.app._info_panel_visible, "the manual replaces the info panel")
+        self.app._toggle_help_menu()
+        self.app._toggle_info_overlay()
+        self.app._toggle_info_overlay()
+        self.assertFalse(self.app._info_panel_visible)
+
+    def test_data_of_the_photo(self):
+        self.app.cfg.CURRENT_IMAGE_PATH = "/x/a__BLDG005.jpg"
+        self.app.cfg.queue_idle = False
+        self.app.cfg.saved_cracks = [{"path": [(0, 0), (5, 5)], "active": True}]
+        self.app._info_texts = ("FILE: 1/2 (a__BLDG005.jpg) | Tool: CRACK | Zoom: 1.0x", "Cracks Length: 1.00 cm")
+        with mock.patch.object(self.app, "_crack_quality", return_value=(87.4, 0.61, False)), \
+                mock.patch.object(self.app, "_crack_multiview", return_value=None):
+            fields, cracks = self.app.info_panel_data()
+        names = dict(fields)
+        self.assertEqual(names["File"], "1/2 (a__BLDG005.jpg)")
+        self.assertEqual(names["Building"], "BLDG005")
+        self.assertEqual(cracks, (("1", "87", "0.61", "", ""),))
+        self.app.cfg.CURRENT_IMAGE_PATH = None
+        self.assertEqual(self.app.info_panel_data()[1], ())
+
+
 if __name__ == "__main__":
     unittest.main()

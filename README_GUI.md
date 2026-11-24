@@ -49,6 +49,9 @@ tabella al posto dell'immagine, tra le due sidebar;
 le righe selezionate si possono cancellare.
 
 Anche il **manuale** (pulsante Manual) ora compare al posto della foto, tra le due sidebar, invece di coprire tutta la finestra.
+Il pulsante **Info** (J) mostra i dati della foto (file, strumento, zoom, lunghezza fessure, area distacchi, edificio,
+elementi e la tabella con affidabilità, confidenza e viste di ogni fessura, le incerte in rosso) su un pannello bianco
+**Photo info** nello stesso spazio, invece del riquadro scuro trasparente sopra la foto. Il Crack report resta sulla foto.
 
 ## Novità 2.3.1: correzione
 
