@@ -6,13 +6,17 @@ While the issue log is on, every save ([S], Save+next) in Mode 1 or Mode 2 asks 
 of the photo had -- masonry joints traced as cracks, edges / cornices / roads traced, rubble, crazing, missing
 cracks ... -- and writes them to '<data folder>/segmentation_issues.csv', one row per photo and category:
 
-    n, immagine, categoria, problema, modalità
+    n, immagine, categoria, problema, modalità, destinazione
 
   - n: progressive number of the row (kept when the row is updated);
   - immagine: the photo file name;
   - categoria / problema: a category of ISSUE_CATEGORIES with its standard description, plus the note typed in
     the window (zone, what was done), or "X" (other) with a free description;
-  - modalità: 1 or 2, the mode the photo was saved in.
+  - modalità: 1 or 2, the mode the photo was saved in;
+  - destinazione: the set the photo is meant for -- Training set, Validation set, Test set -- or "nessuna" when
+    the split is not decided yet (v2.4.0). It is only written down: the photo is not moved. The window proposes
+    the set already chosen for the photo, else the set that already holds photos of the same building
+    (__BLDGnnn), so a building does not end up in two sets.
 
 Saving the same photo again shows its categories already ticked: the photo's rows are replaced by the new choice
 (untick everything to take the photo off the list). "Skip" leaves the list as it is. The table can be shown over
@@ -20,11 +24,15 @@ the image from the menu bar (Issues > Show segmentation issues), like the user m
 """
 import csv
 import os
+import re
 
 ISSUE_LOG_CODE = 164
 ISSUE_LOG_VIEW_CODE = 165
 ISSUE_LOG_FILE = "segmentation_issues.csv"
-ISSUE_FIELDS = ("n", "immagine", "categoria", "problema", "modalità")
+ISSUE_FIELDS = ("n", "immagine", "categoria", "problema", "modalità", "destinazione")
+NO_DESTINATION = "nessuna"
+# Destination keys (as in cfg.DATASET_SPLIT_DIRS) in the order shown in the window; None = split not decided yet.
+DESTINATION_KEYS = ("training", "validation", "test", None)
 OTHER_CATEGORY = "X"
 # Category letter -> standard description (the same wording as the triage of the labelled masks).
 ISSUE_CATEGORIES = (
@@ -81,13 +89,40 @@ def problem_text(category, note="", other=""):
     return base or note
 
 
+def destination_label(key, split_dirs):
+    """'Test set' for 'test' (names from cfg.DATASET_SPLIT_DIRS), 'nessuna' for None."""
+    return split_dirs.get(key, NO_DESTINATION) if key else NO_DESTINATION
+
+
+def destination_key(label, split_dirs):
+    """The inverse of destination_label: None for 'nessuna' / empty / unknown."""
+    for key, name in split_dirs.items():
+        if label == name:
+            return key
+    return None
+
+
+def building_sets(data_dir, split_dirs, tag):
+    """The set keys whose 'Images' already holds a photo of the building tag (e.g. 'BLDG024')."""
+    if not tag:
+        return []
+    pattern = re.compile(rf"__{re.escape(tag)}(?!\d)", re.IGNORECASE)
+    found = []
+    for key, name in split_dirs.items():
+        folder = os.path.join(str(data_dir), name, "Images")
+        if os.path.isdir(folder) and any(pattern.search(f) for f in os.listdir(folder)):
+            found.append(key)
+    return found
+
+
 def photo_issues(rows, photo):
     return [r for r in rows if r["immagine"] == photo]
 
 
-def set_photo_issues(path, photo, mode, picks):
-    """Replaces the rows of one photo with picks = [(category, problem)]. A category already logged for the photo
-    keeps its n; new ones get the next numbers. Returns the photo's new rows."""
+def set_photo_issues(path, photo, mode, picks, destination=NO_DESTINATION):
+    """Replaces the rows of one photo with picks = [(category, problem)], all with the same destination (set name
+    or 'nessuna'). A category already logged for the photo keeps its n; new ones get the next numbers.
+    Returns the photo's new rows."""
     rows = read_issues(path)
     old = {r["categoria"]: r for r in photo_issues(rows, photo)}
     kept = [r for r in rows if r["immagine"] != photo]
@@ -99,7 +134,7 @@ def set_photo_issues(path, photo, mode, picks):
         else:
             n, next_n = str(next_n), next_n + 1
         new_rows.append({"n": n, "immagine": photo, "categoria": category, "problema": problem,
-                         "modalità": str(mode)})
+                         "modalità": str(mode), "destinazione": destination or NO_DESTINATION})
     write_issues(path, kept + new_rows)
     return new_rows
 
@@ -132,9 +167,25 @@ class IssueLogMixin:
             print(" [ISSUE LOG] Off: saves no longer ask anything.")
         return self.cfg.issue_log_on
 
+    def suggested_destination(self, photo, current_rows):
+        """(key or None, hint): the set already written for the photo, else the set holding its building."""
+        split_dirs = self.cfg.DATASET_SPLIT_DIRS
+        for r in current_rows:
+            if r.get("destinazione"):
+                return destination_key(r["destinazione"], split_dirs), ""
+        from building_filter import building_tag
+        tag = building_tag(photo)
+        found = building_sets(self.cfg.SCRIPT_DIR, split_dirs, tag)
+        if not found:
+            return None, ""
+        names = ", ".join(split_dirs[k] for k in found)
+        hint = f"{tag} already has photos in {names}" + (": choose the same set." if len(found) == 1 else
+                                                          " -- the building is already split, check it.")
+        return found[0], hint
+
     def _ask_segmentation_issues(self, photo, current_rows):
-        """[(category, problem)], [] = no problem (the photo leaves the list), None = skip.
-        A GUI wrapper overrides this with a window; this terminal version asks the letters."""
+        """([(category, problem)], destination key or None) -- [] = no problem (the photo leaves the list) --
+        or None = skip. A GUI wrapper overrides this with a window; this terminal version asks the letters."""
         for letter, text in ISSUE_CATEGORIES:
             print(f"   {letter}  {text}")
         print(f"   {OTHER_CATEGORY}  other (describe it)")
@@ -165,7 +216,17 @@ class IssueLogMixin:
             text = problem_text(a, note, other)
             if text:
                 picks.append((a, text))
-        return picks
+        suggested, hint = self.suggested_destination(photo, current_rows)
+        if hint:
+            print(f" [ISSUE LOG] {hint}")
+        names = self.cfg.DATASET_SPLIT_DIRS
+        try:
+            answer = input(" [ISSUE LOG] Destination: t = training, v = validation, s = test, n = not decided"
+                           f" (ENTER = {destination_label(suggested, names)}): ").strip().lower()
+        except EOFError:
+            answer = ""
+        destination = {"t": "training", "v": "validation", "s": "test", "n": None}.get(answer, suggested)
+        return picks, destination
 
     def log_segmentation_issues(self):
         """Called after every successful save: asks and writes the problems when the issue log is on."""
@@ -176,16 +237,19 @@ class IssueLogMixin:
         path = self.issue_log_file()
         try:
             current = photo_issues(read_issues(path), photo)
-            picks = self._ask_segmentation_issues(photo, current)
-            if picks is None:
+            answer = self._ask_segmentation_issues(photo, current)
+            if answer is None:
                 print(f" [ISSUE LOG] {photo}: skipped, list unchanged.")
                 return None
-            rows = set_photo_issues(path, photo, getattr(self.cfg, "modalita_scelta", "") or "", picks)
+            picks, destination = answer
+            rows = set_photo_issues(path, photo, getattr(self.cfg, "modalita_scelta", "") or "", picks,
+                                    destination_label(destination, self.cfg.DATASET_SPLIT_DIRS))
         except (OSError, csv.Error) as e:
             print(f" [ISSUE LOG] Could not update {path}: {e}")
             return None
         if rows:
-            print(f" [ISSUE LOG] {photo}: " + ", ".join(r["categoria"] for r in rows) + f" -> {path}")
+            print(f" [ISSUE LOG] {photo}: " + ", ".join(r["categoria"] for r in rows)
+                  + f", destination {rows[0]['destinazione']} -> {path}")
         else:
             print(f" [ISSUE LOG] {photo}: no problem, not in the list.")
         return rows
@@ -197,6 +261,7 @@ class IssueLogMixin:
         if not rows:
             print(f" [ISSUE LOG] No problem logged yet ({path}).")
             return
-        print(f"\n{'n':>4}  {'mod.':<4} cat  immagine / problema   ({path})")
+        print(f"\n{'n':>4}  {'mod.':<4} cat  immagine  [destinazione] / problema   ({path})")
         for r in rows:
-            print(f"{r['n']:>4}  {r['modalità']:<4} {r['categoria']:<4} {r['immagine']}\n{'':>15}{r['problema']}")
+            print(f"{r['n']:>4}  {r['modalità']:<4} {r['categoria']:<4} {r['immagine']}  [{r['destinazione']}]\n"
+                  f"{'':>15}{r['problema']}")

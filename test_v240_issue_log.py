@@ -1,7 +1,8 @@
 """test_v240_issue_log.py
 
 Headless tests for the 2.4.0 issue log (issue_log.py, codes 164 / 165):
-  - segmentation_issues.csv with the columns n, immagine, categoria, problema, modalità;
+  - segmentation_issues.csv with the columns n, immagine, categoria, problema, modalità, destinazione;
+  - the destination set proposed from the photo's rows or from the set holding its building;
   - one row per photo and category, n kept when the photo is saved again, rows replaced by the new choice;
   - nothing is asked while the log is off; Skip leaves the list as it is;
   - the button is in the left sidebar (shown pressed while on), the table in the "Issues" menu.
@@ -33,10 +34,11 @@ class TestCsv(unittest.TestCase):
         self.path = il.issue_log_path(self.dir)
 
     def test_columns_and_numbers(self):
-        il.set_photo_issues(self.path, "a__BLDG001.jpg", "2", [("A", "fughe"), ("C", "macerie")])
+        il.set_photo_issues(self.path, "a__BLDG001.jpg", "2", [("A", "fughe"), ("C", "macerie")], "Test set")
         il.set_photo_issues(self.path, "b__BLDG002.jpg", "1", [("B", "cornice")])
+        self.assertEqual([r["destinazione"] for r in il.read_issues(self.path)], ["Test set", "Test set", "nessuna"])
         with open(self.path, encoding="utf-8-sig") as fh:
-            self.assertEqual(fh.readline().strip(), "n,immagine,categoria,problema,modalità")
+            self.assertEqual(fh.readline().strip(), "n,immagine,categoria,problema,modalità,destinazione")
         rows = il.read_issues(self.path)
         self.assertEqual([(r["n"], r["immagine"], r["categoria"], r["modalità"]) for r in rows],
                          [("1", "a__BLDG001.jpg", "A", "2"), ("2", "a__BLDG001.jpg", "C", "2"),
@@ -75,6 +77,19 @@ class TestApp(unittest.TestCase):
         self.app.cfg.CURRENT_IMAGE_PATH = os.path.join(self.dir, "Images", "a__BLDG005.jpg")
         self.app.cfg.modalita_scelta = "2"
 
+    def test_destination_suggestion(self):
+        names = self.app.cfg.DATASET_SPLIT_DIRS
+        self.assertEqual(self.app.suggested_destination("a__BLDG005.jpg", []), (None, ""))
+        os.makedirs(os.path.join(self.dir, "Test set", "Images"))
+        open(os.path.join(self.dir, "Test set", "Images", "z__BLDG005.jpg"), "w").close()
+        open(os.path.join(self.dir, "Test set", "Images", "y__BLDG0050.jpg"), "w").close()
+        key, hint = self.app.suggested_destination("a__BLDG005.jpg", [])
+        self.assertEqual(key, "test")
+        self.assertIn("BLDG005 already has photos in Test set", hint)
+        self.assertEqual(self.app.suggested_destination("a__BLDG005.jpg", [{"destinazione": names["training"]}]),
+                         ("training", ""))
+        self.assertEqual(self.app.suggested_destination("b__BLDG050.jpg", []), (None, ""))
+
     def test_off_asks_nothing(self):
         with mock.patch.object(self.app, "_ask_segmentation_issues") as ask:
             self.assertIsNone(self.app.log_segmentation_issues())
@@ -85,12 +100,14 @@ class TestApp(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.app.process_keypress(il.ISSUE_LOG_CODE)
         self.assertTrue(self.app.issue_log_on())
-        with mock.patch.object(self.app, "_ask_segmentation_issues", return_value=[("A", "fughe")]) as ask, \
+        with mock.patch.object(self.app, "_ask_segmentation_issues", return_value=([("A", "fughe")], "training")) \
+                as ask, \
                 redirect_stdout(io.StringIO()):
             self.app.log_segmentation_issues()
         ask.assert_called_once_with("a__BLDG005.jpg", [])
         rows = il.read_issues(self.app.issue_log_file())
-        self.assertEqual((rows[0]["immagine"], rows[0]["categoria"], rows[0]["modalità"]), ("a__BLDG005.jpg", "A", "2"))
+        self.assertEqual((rows[0]["immagine"], rows[0]["categoria"], rows[0]["modalità"], rows[0]["destinazione"]),
+                         ("a__BLDG005.jpg", "A", "2", "Training set"))
         with mock.patch.object(self.app, "_ask_segmentation_issues", return_value=None), \
                 redirect_stdout(io.StringIO()):
             self.app.log_segmentation_issues()
@@ -136,16 +153,20 @@ class TestGui(unittest.TestCase):
         self.assertTrue(gm._SIDEBAR_TOGGLE_STATES[il.ISSUE_LOG_CODE](cfg))
 
     def test_dialog_ticks_the_current_categories(self):
-        rows = [{"n": "1", "immagine": "a.jpg", "categoria": "C", "problema": "macerie", "modalità": "2"}]
-        d = gm._IssueDialog(fake_tkinter.Tk(), "a.jpg", rows)
+        rows = [{"n": "1", "immagine": "a.jpg", "categoria": "C", "problema": "macerie", "modalità": "2",
+                 "destinazione": "Test set"}]
+        d = gm._IssueDialog(fake_tkinter.Tk(), "a.jpg", rows, None, "test", "")
+        self.assertEqual(d.destination.get(), "test")
         self.assertTrue(d.vars["C"].get())
         self.assertFalse(d.vars["A"].get())
         d.vars["A"].set(True)
         d.note.insert(0, "in basso")
         d._ok()
-        self.assertEqual(d.result, [("A", "fughe di muratura tracciate come fessure -- in basso"),
-                                    ("C", "macerie o crollo tracciati: zona da ignorare -- in basso")])
+        self.assertEqual(d.result, ([("A", "fughe di muratura tracciate come fessure -- in basso"),
+                                     ("C", "macerie o crollo tracciati: zona da ignorare -- in basso")], "test"))
         d2 = gm._IssueDialog(fake_tkinter.Tk(), "a.jpg", [])
+        self.assertEqual(d2.destination.get(), "none")
+        self.assertIsNone(d2.destination_key())
         d2._skip()
         self.assertIsNone(d2.result)
 
@@ -160,7 +181,7 @@ class TestGui(unittest.TestCase):
         panel.refresh()
         items = panel.tree.get_children()
         self.assertEqual(len(items), 2)
-        self.assertEqual(panel.tree.item(items[0])["values"], ("1", "a.jpg", "A", "x", "2"))
+        self.assertEqual(panel.tree.item(items[0])["values"], ("1", "a.jpg", "A", "x", "2", "nessuna"))
         panel.tree.selection_set(items[0])
         with mock.patch.object(gm.messagebox, "askyesno", return_value=True):
             self.assertEqual(panel.delete_selected(), 1)

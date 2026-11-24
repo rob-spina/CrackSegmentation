@@ -26,7 +26,7 @@ from active_learning import ACTIVE_LEARNING_CODE
 from building_filter import (BUILDING_FILTER_CODE, BUILDING_FILTER_LABELLED, BUILDING_FILTER_TO_LABEL,
                              BUILDING_FILTER_ALL)
 from issue_log import (ISSUE_LOG_CODE, ISSUE_LOG_VIEW_CODE, ISSUE_CATEGORIES, OTHER_CATEGORY, ISSUE_FIELDS,
-                       problem_text, read_issues, delete_issue_rows)
+                       DESTINATION_KEYS, problem_text, read_issues, delete_issue_rows)
 from leonardo_link import LEONARDO_CODE, FIELDS as LEONARDO_FIELDS, save_settings as save_leonardo_settings
 from building_groups import GROUP_PHOTOS_CODE, progress_text as group_progress_text
 from review_flags import review_key, REVIEW_CODE, REVIEW_BY_DATE_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
@@ -547,7 +547,8 @@ class DatasetBrowserPanel:
 
 class IssueLogPanel:
     """v2.4.0 [Show segmentation issues] (code 165): covers the window like the manual and shows
-    'segmentation_issues.csv' (n, immagine, categoria, problema, modalita); the selected rows can be deleted."""
+    'segmentation_issues.csv' (n, immagine, categoria, problema, modalita, destinazione); the selected rows can
+    be deleted."""
 
     NAVY, TEAL, INK, ZEBRA = "#0f3460", "#1f8a9e", "#1f2937", "#f3f7f9"
 
@@ -577,7 +578,7 @@ class IssueLogPanel:
         style.map("Issues.Treeview", background=[("selected", self.TEAL)], foreground=[("selected", "white")])
         self.tree = ttk.Treeview(body, columns=ISSUE_FIELDS, show="headings", style="Issues.Treeview",
                                  selectmode="extended")
-        widths = {"n": 50, "immagine": 330, "categoria": 80, "problema": 560, "modalità": 80}
+        widths = {"n": 50, "immagine": 320, "categoria": 80, "problema": 520, "modalità": 80, "destinazione": 130}
         for col in ISSUE_FIELDS:
             self.tree.heading(col, text=col)
             self.tree.column(col, width=widths[col], anchor="w" if col in ("immagine", "problema") else "center")
@@ -1927,8 +1928,11 @@ class _BuildingFilterDialog:
 class _IssueDialog:
     """v2.4.0 [Issue log]: the problems of the segmentation of the photo just saved (categories + note)."""
 
-    def __init__(self, master, photo, current_rows):
+    _NO_SET = "none"   # radio value of "not decided yet"
+
+    def __init__(self, master, photo, current_rows, split_dirs=None, suggested=None, hint=""):
         self.result = None
+        self.split_dirs = split_dirs or {"training": "Training set", "validation": "Validation set", "test": "Test set"}
         self.top = tk.Toplevel(master)
         self.top.title("Issue log")
         self.top.resizable(False, False)
@@ -1957,6 +1961,17 @@ class _IssueDialog:
         self.note.pack(anchor="w", pady=(2, 0))
         tk.Label(body, text="Nothing ticked = no problem: the photo leaves the list.", fg="#555555").pack(
             anchor="w", pady=(8, 0))
+        tk.Label(body, text="Destination set (written in the list, the photo is not moved):",
+                 font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(12, 0))
+        self.destination = tk.StringVar(master=self.top, value=suggested or self._NO_SET)
+        radios = tk.Frame(body)
+        radios.pack(anchor="w")
+        for key in DESTINATION_KEYS:
+            text = self.split_dirs.get(key, key) if key else "Not decided yet"
+            tk.Radiobutton(radios, text=text, variable=self.destination, value=key or self._NO_SET).pack(
+                side="left", padx=(0, 10))
+        if hint:
+            tk.Label(body, text=hint, fg="#b45309").pack(anchor="w", pady=(2, 0))
         buttons = tk.Frame(body)
         buttons.pack(fill="x", pady=(12, 0))
         tk.Button(buttons, text="Save to log", width=12, command=self._ok).pack(side="right")
@@ -1975,8 +1990,12 @@ class _IssueDialog:
                     out.append((letter, text))
         return out
 
+    def destination_key(self):
+        value = self.destination.get()
+        return None if value in ("", self._NO_SET) else value
+
     def _ok(self):
-        self.result = self.picks()
+        self.result = (self.picks(), self.destination_key())
         self.top.destroy()
 
     def _skip(self):
@@ -2622,7 +2641,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         messagebox.showinfo("Crack Detector - Filter by building", message, parent=self._tk_root)
 
     def _ask_segmentation_issues(self, photo, current_rows):
-        dialog = _IssueDialog(self._tk_root, photo, current_rows)
+        suggested, hint = self.suggested_destination(photo, current_rows)
+        dialog = _IssueDialog(self._tk_root, photo, current_rows, self.cfg.DATASET_SPLIT_DIRS, suggested, hint)
         self._tk_root.wait_window(dialog.top)
         if dialog.result is not None and getattr(self, "_issue_panel_visible", False):
             self._issue_panel.refresh()
