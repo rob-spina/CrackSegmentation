@@ -326,6 +326,8 @@ This software was developed within the framework of the **ECHO-TWIN** project by
 
 <sup>1</sup> INAF – Catania Astrophysical Observatory &nbsp;&nbsp; <sup>2</sup> Order of Geologists of Sicily (National Register)
 
+**AI Disclosure.** This application utilizes artificial intelligence models for certain stages of the workflow, specifically for analysis, technical content generation, and development support. The AI components do not replace scientific validation nor do they influence results in a deterministic manner: they are used as assistance tools, not as sources of truth.
+
 ## License
 
 Released under the [MIT License](LICENSE).
