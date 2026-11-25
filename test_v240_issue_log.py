@@ -59,18 +59,20 @@ class TestCsv(unittest.TestCase):
 
     def test_old_italian_columns_are_read(self):
         with open(self.path, "w", encoding="utf-8") as fh:
-            fh.write("n,immagine,categoria,problema,modalità,destinazione\n7,a.jpg,A,fughe,2,Test set\n")
+            fh.write("n,immagine,categoria,problema,modalità,destinazione\n"
+                     "7,a.jpg,A,fughe di muratura tracciate come fessure -- in alto,2,nessuna\n")
         rows = il.read_issues(self.path)
-        self.assertEqual((rows[0]["N"], rows[0]["image"], rows[0]["destination"]), ("7", "a.jpg", "Test set"))
+        self.assertEqual((rows[0]["N"], rows[0]["image"], rows[0]["destination"]), ("7", "a.jpg", "none"))
+        self.assertEqual(rows[0]["problem"], "masonry joints traced as cracks -- in alto")
         il.set_photo_issues(self.path, "b.jpg", "1", [("B", "x")])
         with open(self.path, encoding="utf-8-sig") as fh:
             self.assertEqual(fh.readline().strip(), "N,image,category,problem,mode,destination")
         self.assertEqual([r["N"] for r in il.read_issues(self.path)], ["7", "8"])
 
     def test_problem_text_and_delete(self):
-        self.assertEqual(il.problem_text("A"), "fughe di muratura tracciate come fessure")
+        self.assertEqual(il.problem_text("A"), "masonry joints traced as cracks")
         self.assertEqual(il.problem_text("B", "zona in alto"),
-                         "bordi, spigoli, cornici, strade o striature tracciati -- zona in alto")
+                         "edges, corners, cornices, roads or streaks traced -- zona in alto")
         self.assertEqual(il.problem_text("X", "", "ombra tracciata"), "ombra tracciata")
         il.set_photo_issues(self.path, "a.jpg", "2", [("A", "x"), ("B", "y")])
         self.assertEqual(il.delete_issue_rows(self.path, ["1"]), 1)
@@ -174,8 +176,8 @@ class TestGui(unittest.TestCase):
         d.vars["A"].set(True)
         d.note.insert(0, "in basso")
         d._ok()
-        self.assertEqual(d.result, ([("A", "fughe di muratura tracciate come fessure -- in basso"),
-                                     ("C", "macerie o crollo tracciati: zona da ignorare -- in basso")], "test"))
+        self.assertEqual(d.result, ([("A", "masonry joints traced as cracks -- in basso"),
+                                     ("C", "rubble or collapse traced: area to ignore -- in basso")], "test"))
         d2 = gm._IssueDialog(fake_tkinter.Tk(), "a.jpg", [])
         self.assertEqual(d2.destination.get(), "none")
         self.assertIsNone(d2.destination_key())

@@ -37,16 +37,25 @@ NO_DESTINATION = "none"
 # Destination keys (as in cfg.DATASET_SPLIT_DIRS) in the order shown in the window; None = split not decided yet.
 DESTINATION_KEYS = ("training", "validation", "test", None)
 OTHER_CATEGORY = "X"
-# Category letter -> standard description (the same wording as the triage of the labelled masks).
+# Category letter -> standard description (English since 2.4.0; the Italian wording of the first builds is translated when read).
 ISSUE_CATEGORIES = (
-    ("A", "fughe di muratura tracciate come fessure"),
-    ("B", "bordi, spigoli, cornici, strade o striature tracciati"),
-    ("C", "macerie o crollo tracciati: zona da ignorare"),
-    ("D", "cavillatura tracciata come fessure"),
-    ("E", "fessure vere non tracciate"),
-    ("F", "fessure tracciate male (percorso, larghezza o interruzioni)"),
+    ("A", "masonry joints traced as cracks"),
+    ("B", "edges, corners, cornices, roads or streaks traced"),
+    ("C", "rubble or collapse traced: area to ignore"),
+    ("D", "crazing traced as cracks"),
+    ("E", "real cracks not traced"),
+    ("F", "cracks traced badly (path, width or gaps)"),
 )
 CATEGORY_TEXT = dict(ISSUE_CATEGORIES)
+# Standard descriptions of the first 2.4.0 builds (Italian) -> English, applied when a file is read.
+LEGACY_TEXTS = (
+    ("fughe di muratura tracciate come fessure", "masonry joints traced as cracks"),
+    ("bordi, spigoli, cornici, strade o striature tracciati", "edges, corners, cornices, roads or streaks traced"),
+    ("macerie o crollo tracciati: zona da ignorare", "rubble or collapse traced: area to ignore"),
+    ("cavillatura tracciata come fessure", "crazing traced as cracks"),
+    ("fessure vere non tracciate", "real cracks not traced"),
+    ("fessure tracciate male (percorso, larghezza o interruzioni)", "cracks traced badly (path, width or gaps)"),
+)
 
 
 def issue_log_path(data_dir):
@@ -63,6 +72,11 @@ def read_issues(path):
             r = {LEGACY_FIELDS.get(k, k): v for k, v in r.items() if k is not None}
             if (r.get("destination") or "").strip() == "nessuna":   # first 2.4.0 builds
                 r["destination"] = NO_DESTINATION
+            problem = (r.get("problem") or "").strip()
+            for old, new in LEGACY_TEXTS:
+                if problem.startswith(old):
+                    r["problem"] = new + problem[len(old):]
+                    break
             rows.append({k: (r.get(k) or "").strip() for k in ISSUE_FIELDS})
         return rows
 

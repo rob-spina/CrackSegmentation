@@ -35,9 +35,10 @@ packaging/
 ## Novità 2.4.0: Issue log
 
 Nuovo pulsante **Issue log** nella barra sinistra (sezione Dataset). Quando è attivo (pulsante premuto), ogni
-salvataggio in Mode 1 o Mode 2 apre una finestra con le criticità della segmentazione da spuntare: A fughe di
-muratura tracciate come fessure, B bordi/spigoli/cornici/strade/striature tracciati, C macerie o crollo, D
-cavillatura, E fessure vere non tracciate, F fessure tracciate male, X altro (testo libero), più una nota (zona, cosa
+salvataggio in Mode 1 o Mode 2 apre una finestra con le criticità della segmentazione da spuntare (testi in inglese): A
+masonry joints traced as cracks (fughe), B edges, corners, cornices, roads or streaks traced (bordi, cornici, strade),
+C rubble or collapse (macerie, crollo), D crazing (cavillatura), E real cracks not traced, F cracks traced badly, X
+other (testo libero), più una nota (zona, cosa
 è stato fatto). Le righe vanno in `segmentation_issues.csv` nella cartella dei dati, una per foto e categoria, con i
 campi `N, image, category, problem, mode, destination`. Nella stessa finestra si sceglie il set di
 destinazione (Training, Validation, Test set o *Not decided yet* = `none`): viene solo annotato, la foto non viene
