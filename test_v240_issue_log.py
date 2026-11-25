@@ -69,6 +69,14 @@ class TestCsv(unittest.TestCase):
             self.assertEqual(fh.readline().strip(), "N,image,category,problem,mode,destination")
         self.assertEqual([r["N"] for r in il.read_issues(self.path)], ["7", "8"])
 
+    def test_a_linked_list_stays_linked(self):
+        real = os.path.join(self.dir, "real.csv")
+        il.set_photo_issues(real, "a.jpg", "2", [("A", "x")])
+        os.symlink(real, self.path)
+        il.set_photo_issues(self.path, "b.jpg", "2", [("B", "y")])
+        self.assertTrue(os.path.islink(self.path))
+        self.assertEqual(len(il.read_issues(real)), 2)
+
     def test_problem_text_and_delete(self):
         self.assertEqual(il.problem_text("A"), "masonry joints traced as cracks")
         self.assertEqual(il.problem_text("B", "zona in alto"),

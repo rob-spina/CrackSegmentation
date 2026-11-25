@@ -84,6 +84,7 @@ def read_issues(path):
 def write_issues(path, rows):
     """Writes the rows sorted by n (UTF-8 with BOM, so Excel shows the accents)."""
     rows = sorted(rows, key=lambda r: _as_int(r["N"]))
+    path = os.path.realpath(path)   # a link to the list elsewhere (e.g. the Documents data folder) stays a link
     tmp = path + ".tmp"
     with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.DictWriter(fh, fieldnames=ISSUE_FIELDS)
