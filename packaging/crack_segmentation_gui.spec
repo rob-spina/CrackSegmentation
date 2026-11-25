@@ -62,6 +62,7 @@ a = Analysis(
     # way they are when run from source.
     datas=[
         (str(Path(SRC_DIR) / "Crack_Segmentation_User_Manual.pdf"), "."),
+        (str(Path(SRC_DIR) / "Crack_Segmentation_User_Manual_IT.pdf"), "."),   # v2.4.0: Italian manual (flags)
         (str(Path(SRC_DIR) / "echo_twin_logo.png"), "."),
         # v2.0.0 [SAM auto-segment]: plain scripts run by the operator's own Python with PyTorch (never imported
         # by the app, which does not bundle torch); sam_autoseg._sam_script_path() finds them in this folder.

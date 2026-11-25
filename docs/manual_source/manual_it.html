@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Crack &amp; Detachment Segmentation -- User Manual</title>
+<style>
+  @page { margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'DejaVu Sans', Helvetica, Arial, sans-serif;
+    color: #1f2937;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0;
+  }
+  .page-margin { padding: 0 42px; }
+
+  /* ---------- Cover page ---------- */
+  .coverpage {
+    position: relative;
+    height: 364mm;
+    background-image: url('logos/cover_gradient.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    color: #ffffff;
+    overflow: hidden;
+    page-break-after: always;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  }
+  .coverpage .top-rule {
+    position: absolute; top: 0; left: 0; right: 0; height: 7px;
+    background-image: url('logos/top_rule.png');
+    background-size: 100% 100%;
+  }
+  .coverpage .logo-row { position: relative; padding: 36px 64px 0 64px; }
+  .logo-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 84px;
+    background: rgba(255,255,255,0.96);
+    border-radius: 6px;
+    padding: 0 22px;
+    margin-right: 14px;
+    vertical-align: middle;
+  }
+  .logo-chip img { display: block; max-height: 62px; }
+  .coverpage .content {
+    position: relative;
+    padding: 34px 64px 0 64px;
+  }
+  .coverpage .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 3.5px;
+    font-size: 11.5px;
+    color: #ffe08a;
+    margin-bottom: 18px;
+    font-weight: bold;
+  }
+  .coverpage h1 {
+    font-size: 40px;
+    margin: 0 0 16px 0;
+    font-weight: bold;
+    line-height: 1.16;
+    max-width: 640px;
+  }
+  .coverpage h1 .l1 { color: #ffc700; }
+  .coverpage h1 .l2 { color: #ffffff; }
+  .coverpage .subtitle {
+    font-size: 14.5px;
+    color: #f1e9ff;
+    max-width: 480px;
+    line-height: 1.6;
+    margin-bottom: 22px;
+  }
+  .coverpage .intro {
+    max-width: 520px;
+    font-size: 12.3px;
+    color: #ede7fb;
+    line-height: 1.68;
+    background: rgba(255,255,255,0.09);
+    border-left: 3px solid #ffc700;
+    border-radius: 3px;
+    padding: 14px 18px;
+  }
+  .coverpage .intro b { color: #ffffff; }
+  .coverpage .meta-line {
+    margin-top: 22px;
+    font-size: 11px;
+    color: #e4d9ff;
+    letter-spacing: 0.4px;
+  }
+  .coverpage .illustration {
+    position: absolute;
+    right: -30px;
+    top: 470px;
+    width: 400px;
+  }
+  .coverpage .features {
+    position: absolute;
+    left: 64px;
+    top: 760px;
+    width: 460px;
+  }
+  .coverpage .features .frow {
+    display: table;
+    width: 100%;
+    margin-bottom: 13px;
+  }
+  .coverpage .features .fdot {
+    display: table-cell;
+    width: 26px;
+    vertical-align: top;
+    padding-top: 2px;
+  }
+  .coverpage .features .fdot span {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22d3ee;
+  }
+  .coverpage .features .ftext {
+    display: table-cell;
+    font-size: 11.5px;
+    color: #ede7fb;
+    line-height: 1.5;
+  }
+  .coverpage .features .ftext b { color: #ffffff; }
+  .coverpage .badge-row { position: absolute; left: 64px; bottom: 104px; }
+  .coverpage .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.38);
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    margin-right: 9px;
+  }
+  .coverpage .cover-footer {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: #ffffff;
+    padding: 16px 64px;
+    display: table;
+    width: 100%;
+    text-shadow: none;
+  }
+  .coverpage .cover-footer .cf-logos { display: table-cell; vertical-align: middle; }
+  .coverpage .cover-footer .cf-logos img { height: 34px; display: block; }
+  .coverpage .cover-footer .cf-caption {
+    display: table-cell; vertical-align: middle; text-align: right;
+    font-size: 10px; color: #5b6472; line-height: 1.5;
+  }
+
+  /* ---------- Section headings ---------- */
+  .section-head {
+    page-break-inside: avoid;
+  }
+  h2.section {
+    font-size: 19px;
+    color: #0f3460;
+    border-bottom: 2.5px solid #1f8a9e;
+    padding-bottom: 7px;
+    margin: 34px 0 16px 0;
+    page-break-before: auto;
+    page-break-after: avoid;
+    padding-top: 6px;
+  }
+  h2.section .num {
+    display: inline-block;
+    background: #0f3460;
+    color: #fff;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    border-radius: 50%;
+    font-size: 12px;
+    margin-right: 9px;
+    vertical-align: middle;
+  }
+  h3.sub {
+    font-size: 14.5px;
+    color: #16537e;
+    margin: 22px 0 8px 0;
+  }
+  p { margin: 8px 0; }
+  .lead {
+    font-size: 13.5px;
+    color: #374151;
+    background: #f3f8fa;
+    border-left: 4px solid #1f8a9e;
+    padding: 12px 16px;
+    margin: 0 0 18px 0;
+  }
+
+  /* ---------- Four-panel interface overview ---------- */
+  .panels { display: table; width: 100%; border-spacing: 10px 0; margin: 14px 0 6px 0; }
+  .panel-row { display: table-row; }
+  .panel {
+    display: table-cell;
+    width: 25%;
+    background: #f7fafb;
+    border: 1px solid #d7e5ea;
+    border-top: 3px solid #1f8a9e;
+    border-radius: 3px;
+    padding: 12px 13px;
+    vertical-align: top;
+  }
+  .panel .ptitle {
+    font-weight: bold;
+    color: #0f3460;
+    font-size: 12.5px;
+    margin-bottom: 5px;
+  }
+  .panel .ptext { font-size: 11.5px; color: #445; }
+
+  /* ---------- Install cards ---------- */
+  .install-card {
+    border: 1px solid #dbe3e7;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .install-head {
+    padding: 9px 14px;
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: bold;
+  }
+  .install-head .tag {
+    float: right;
+    font-weight: normal;
+    font-size: 10px;
+    background: rgba(255,255,255,0.22);
+    border-radius: 3px;
+    padding: 2px 7px;
+  }
+  .install-mac    { background: #3b4a5a; }
+  .install-win    { background: #2f6fb5; }
+  .install-linux  { background: #c1731a; }
+  .install-body { padding: 12px 16px 14px 16px; background: #fff; }
+  .install-body ol { margin: 6px 0 6px 18px; padding: 0; }
+  .install-body li { margin-bottom: 5px; }
+  .note {
+    font-size: 11px;
+    color: #5b4400;
+    background: #fff6de;
+    border: 1px solid #f0dfa0;
+    border-radius: 3px;
+    padding: 7px 10px;
+    margin-top: 8px;
+  }
+  .build-block {
+    font-size: 11.3px;
+    background: #f3f8fa;
+    border: 1px solid #cfe0e6;
+    border-radius: 3px;
+    padding: 10px 12px;
+    margin-top: 10px;
+  }
+  .build-block .bt {
+    font-weight: bold;
+    color: #0f3460;
+    margin-bottom: 5px;
+  }
+  .build-block ol { margin: 4px 0 4px 18px; padding: 0; }
+  .build-block li { margin-bottom: 3px; }
+  code, .code {
+    font-family: 'DejaVu Sans Mono', monospace;
+    background: #eef2f4;
+    border: 1px solid #dbe3e7;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11.5px;
+    color: #0f3460;
+  }
+  .code-block {
+    font-family: 'DejaVu Sans Mono', monospace;
+    background: #10233a;
+    color: #d9f0f5;
+    border-radius: 4px;
+    padding: 9px 12px;
+    font-size: 11.3px;
+    margin: 7px 0;
+    white-space: pre-wrap;
+  }
+
+  /* ---------- Shortcuts / data tables ---------- */
+  table.shortcuts {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 20px 0;
+    font-size: 11.8px;
+  }
+  table.shortcuts th {
+    background: #0f3460;
+    color: #fff;
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+  }
+  table.shortcuts tr { page-break-inside: avoid; }
+  table.shortcuts td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e3e9eb;
+    vertical-align: top;
+  }
+  table.shortcuts tr:nth-child(even) td { background: #f6fafb; }
+  .key {
+    display: inline-block;
+    background: #eef2f4;
+    border: 1px solid #c9d4d8;
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-family: 'DejaVu Sans Mono', monospace;
+    font-size: 11px;
+    color: #0f3460;
+    white-space: nowrap;
+  }
+
+  /* ---------- Workflow blocks ---------- */
+  .flow-block { margin-bottom: 16px; page-break-inside: avoid; }
+  .flow-block .ftitle {
+    font-weight: bold;
+    color: #0f3460;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  ul.tight { margin: 6px 0; padding-left: 20px; }
+  ul.tight li { margin-bottom: 4px; }
+
+  /* ---------- Authors & credits ---------- */
+  .credits-box {
+    border: 1px solid #dbe3e7;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 6px 0 6px 0;
+    page-break-inside: avoid;
+  }
+  .credits-head {
+    background: #0f3460;
+    color: #fff;
+    padding: 5px 16px;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  table.people { width: 100%; border-collapse: collapse; }
+  table.people td {
+    padding: 3px 16px;
+    border-bottom: 1px solid #eef2f4;
+    font-size: 12px;
+  }
+  table.people tr:last-child td { border-bottom: none; }
+  table.people .pname { font-weight: bold; color: #16537e; width: 34%; }
+  table.people .prole { color: #444; }
+  table.people .pname sup { color: #16537e; font-weight: bold; margin-left: 1px; }
+
+  .affiliations {
+    padding: 3px 16px 4px 16px;
+    font-size: 10.5px;
+    color: #5b6472;
+    border-top: 1px solid #eef2f4;
+    background: #fafbfc;
+  }
+  .affiliations sup { color: #16537e; font-weight: bold; }
+  .affiliations .aff-sep { display: inline-block; width: 18px; }
+
+  .ai-box {
+    border: 1px solid #cfe0e6;
+    background: #f3f9fb;
+    border-radius: 4px;
+    padding: 5px 16px;
+    font-size: 11.8px;
+    color: #26424c;
+    margin-top: 2px;
+  }
+  .ai-box .aihead {
+    font-weight: bold;
+    color: #0f3460;
+    margin-bottom: 5px;
+    font-size: 12.5px;
+  }
+
+  .footer-note {
+    margin-top: 2px;
+    font-size: 10px;
+    color: #8a97a0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="coverpage">
+  <div class="top-rule"></div>
+
+  <svg class="illustration" viewBox="0 0 460 460" xmlns="http://www.w3.org/2000/svg">
+    <rect x="30" y="30" width="380" height="380" rx="14" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.4" stroke-width="2"/>
+    <polygon points="300,90 372,120 360,190 288,178" fill="#ffffff" fill-opacity="0.06" stroke="#22d3ee" stroke-width="2.5" stroke-dasharray="6,5"/>
+    <polyline points="70,360 118,300 100,255 150,230 138,175 190,150 178,100 235,70"
+      fill="none" stroke="#ffc700" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="70" cy="360" r="7" fill="#ec4899"/>
+    <circle cx="100" cy="255" r="6" fill="#ffffff"/>
+    <circle cx="138" cy="175" r="6" fill="#ffffff"/>
+    <circle cx="178" cy="100" r="6" fill="#ffffff"/>
+    <circle cx="235" cy="70" r="7" fill="#ec4899"/>
+  </svg>
+
+  <div class="logo-row">
+    <span class="logo-chip"><img src="logos/inaf.png"></span>
+    <span class="logo-chip"><img src="logos/echotwin_full.png"></span>
+  </div>
+
+  <div class="content">
+    <div class="eyebrow">Progetto ECHO&#8209;TWIN &nbsp;&middot;&nbsp; INAF</div>
+    <h1><span class="l1">Crack &amp; Detachment</span><br><span class="l2">Segmentation</span></h1>
+    <div class="subtitle">Manuale utente &mdash; guida all&rsquo;interfaccia, istruzioni di installazione, scorciatoie da tastiera e flusso di lavoro dell&rsquo;applicazione.</div>
+    <div class="intro">
+      L&rsquo;applicazione supporta l&rsquo;annotazione manuale e semi-automatica di fessure e distacchi di materiale su fotografie di facciate di edifici, trasformando le immagini di sopralluogo in dati di addestramento strutturati e precisi al pixel per modelli di riconoscimento automatico dei danni. Sviluppata nell&rsquo;ambito del <b>Work Package 3 del progetto ECHO&#8209;TWIN presso l&rsquo;INAF</b>, sostiene la costruzione di modelli digital twin per il monitoraggio strutturale &mdash; producendo i dataset annotati con cui si adattano modelli di segmentazione deep learning alle immagini di facciata acquisite da drone.
+    </div>
+    <div class="meta-line">Versione 2.4.0</div>
+  </div>
+
+  <div class="features">
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>Tracciamento guidato A*</b> &mdash; contorni di fessure e distacchi assistiti e precisi al pixel.</div></div>
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>Proiezione con SIFT</b> &mdash; importa e allinea le fessure tra foto dello stesso edificio.</div></div>
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>Raggruppamento automatico per edificio</b> &mdash; e controllo di compatibilit&agrave; delle forme in tutto il gruppo.</div></div>
+    <div class="frow"><div class="fdot"><span></span></div><div class="ftext"><b>Modello SAM per le fessure e active learning</b> &mdash; etichettatura con un clic, round addestrati su HPC.</div></div>
+  </div>
+
+  <div class="badge-row">
+    <span class="badge">macOS</span>
+    <span class="badge">Windows</span>
+    <span class="badge">Linux</span>
+  </div>
+
+  <div class="cover-footer">
+    <div class="cf-logos"><img src="logos/funding_strip.png"></div>
+    <div class="cf-caption">Istituto Nazionale di Astrofisica &mdash; Progetto ECHO&#8209;TWIN<br>Manuale utente</div>
+  </div>
+</div>
+
+<div class="page-margin">
+
+<p>Benvenuti nella guida dell&rsquo;applicazione Crack &amp; Detachment Segmentation. Il documento descrive la struttura dell&rsquo;interfaccia grafica (GUI), come installare il software, i comandi principali e il funzionamento generale dello strumento.</p>
+
+<div class="section-head">
+<h2 class="section"><span class="num">1</span>L&rsquo;interfaccia</h2>
+
+<p>L&rsquo;interfaccia &egrave; formata da tre parti principali che permettono di lavorare in un&rsquo;unica finestra:</p>
+</div>
+
+<div class="panels">
+  <div class="panel-row">
+    <div class="panel">
+      <div class="ptitle">Barra strumenti e menu</div>
+      <div class="ptext">In alto. Contiene i menu a tendina (File, Edit, Tools, ecc.) e i pulsanti rapidi per le operazioni frequenti &mdash; navigazione tra le immagini, salvataggio, importazione. Scorre in orizzontale (rotella/trackpad) se la finestra &egrave; troppo stretta per mostrare tutti i pulsanti.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">Area di lavoro (canvas)</div>
+      <div class="ptext">L&rsquo;area centrale in cui si vede la fotografia dell&rsquo;edificio e in cui si tracciano i contorni di fessure e distacchi.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">Barre laterali</div>
+      <div class="ptext">Una per lato del canvas, con i pulsanti raggruppati per funzione. A destra, <b>More Features</b>: strumenti, modifica e ispezione delle fessure. A sinistra, <b>View &amp; Dataset</b>: vista, edificio e scala, dataset. Ognuna scorre se la finestra &egrave; bassa. L&rsquo;icona in cima la nasconde (la foto si allarga da quel lato); un altro clic la rimostra.</div>
+    </div>
+    <div class="panel">
+      <div class="ptitle">Barra di stato</div>
+      <div class="ptext">In basso, con barra di scorrimento. Mostra in tempo reale i messaggi della console, gli avvisi e l&rsquo;esito delle operazioni (es. maschere PNG o JSON esportati). Le modalit&agrave; attive (Uncertain, Warn uncertain, Make uncertain, Eraser ...) sono elencate nel riquadro giallo a destra.</div>
+    </div>
+  </div>
+</div>
+
+<div class="section-head">
+<h2 class="section"><span class="num">2</span>Installazione</h2>
+
+<p>Per macOS, Windows e Linux sono disponibili pacchetti gi&agrave; pronti e autonomi &mdash; sul computer di destinazione non serve installare Python. In alternativa, ogni piattaforma si pu&ograve; costruire dal codice sorgente con gli script della cartella <span class="code">packaging</span> (<span class="code">build_mac.sh</span>, <span class="code">build_linux.sh</span>, <span class="code">build_windows.bat</span>) &mdash; vedi il riquadro &ldquo;Costruire dal sorgente&rdquo; di ogni piattaforma.</p>
+</div>
+
+<div class="install-card">
+  <div class="install-head install-mac">macOS <span class="tag">.dmg</span></div>
+  <div class="install-body">
+    <ol>
+      <li>Fare doppio clic su <span class="code">CrackSegmentation.dmg</span> nel Finder per aprirlo (o, da terminale, <span class="code">open CrackSegmentation.dmg</span>).</li>
+      <li>Si apre una finestra del Finder con l&rsquo;app e un collegamento alla cartella Applicazioni. Trascinare <b>CrackSegmentation</b> sul collegamento Applicazioni.</li>
+      <li>Espellere l&rsquo;immagine disco e avviare l&rsquo;app da Applicazioni o dal Launchpad come al solito.</li>
+    </ol>
+    <div class="note"><b>Non</b> eseguire il .dmg con <span class="code">./CrackSegmentation.dmg</span> da terminale &mdash; un .dmg &egrave; un&rsquo;immagine disco, non uno script.<br>
+    Al primo avvio Gatekeeper di macOS pu&ograve; bloccare l&rsquo;app perch&eacute; non &egrave; firmata con un certificato Apple Developer a pagamento. Consentirla una volta da <b>Impostazioni di Sistema &rsaquo; Privacy e sicurezza &rsaquo; &ldquo;Apri comunque&rdquo;</b>, oppure clic destro sull&rsquo;app e <b>Apri</b>.</div>
+    <div class="build-block">
+      <div class="bt">Costruire dal sorgente</div>
+      <ol>
+        <li>Installare Python 3 (l&rsquo;installer di python.org include gi&agrave; Tkinter; con Homebrew eseguire anche <span class="code">brew install python-tk</span>).</li>
+        <li>Aprire il Terminale nella cartella <span class="code">packaging</span> del sorgente estratto.</li>
+        <li>Eseguire <span class="code">./build_mac.sh</span> (la prima volta: <span class="code">chmod +x build_mac.sh</span>).</li>
+        <li>Risultato: <span class="code">packaging/dist/CrackSegmentation.app</span> e <span class="code">packaging/dist/CrackSegmentation.dmg</span>.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div class="install-card">
+  <div class="install-head install-win">Windows <span class="tag">.exe</span></div>
+  <div class="install-body">
+    <ol>
+      <li>Eseguire <span class="code">CrackSegmentation-Setup.exe</span>.</li>
+      <li>Seguire la procedura guidata (scegliere la cartella di installazione, creare il collegamento nel menu Start).</li>
+      <li>A installazione finita, avviare <b>Crack Segmentation</b> dal menu Start.</li>
+    </ol>
+    <div class="note">Windows SmartScreen pu&ograve; segnalare l&rsquo;installer come non riconosciuto, perch&eacute; non &egrave; firmato con un certificato a pagamento. &Egrave; un avviso normale per il software sviluppato in modo indipendente, non un problema &mdash; fare clic su <b>Ulteriori informazioni &rsaquo; Esegui comunque</b>.</div>
+    <div class="build-block">
+      <div class="bt">Costruire dal sorgente</div>
+      <ol>
+        <li>Installare Python 3 spuntando &ldquo;Add python.exe to PATH&rdquo; nell&rsquo;installer (oppure <span class="code">winget install Python.Python.3.12 --source winget</span>), poi chiudere e riaprire il terminale.</li>
+        <li>Facoltativo, per un vero Setup.exe: installare prima <a href="https://jrsoftware.org/isdl.php">Inno Setup</a>.</li>
+        <li>Aprire il Prompt dei comandi/PowerShell nella cartella <span class="code">packaging</span> del sorgente estratto ed eseguire <span class="code">build_windows.bat</span>.</li>
+        <li>Risultato: <span class="code">packaging\dist\CrackSegmentation-Setup.exe</span> (con Inno Setup) oppure <span class="code">packaging\dist\CrackSegmentation\CrackSegmentation.exe</span> autonomo (senza).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div class="install-card">
+  <div class="install-head install-linux">Linux <span class="tag">.deb</span></div>
+  <div class="install-body">
+    <p style="margin-top:0;">Sulle distribuzioni basate su Debian/Ubuntu, installare il pacchetto da terminale:</p>
+    <div class="code-block">sudo apt install ./cracksegmentation_2.4.0_amd64.deb</div>
+    <p>In alternativa:</p>
+    <div class="code-block">sudo dpkg -i ./cracksegmentation_2.4.0_amd64.deb
+sudo apt-get install -f</div>
+    <p>Dopo l&rsquo;installazione, avviare lo strumento scrivendo <span class="code">cracksegmentation</span> in un terminale, oppure cercare <b>Crack Segmentation</b> nel menu Applicazioni del desktop.</p>
+    <div class="note">Il pacchetto non &egrave; firmato, quindi il sistema pu&ograve; avvisare che si installa software da una fonte sconosciuta &mdash; &egrave; normale per un pacchetto costruito in proprio, senza un repository firmato GPG.</div>
+    <div class="build-block">
+      <div class="bt">Costruire dal sorgente</div>
+      <ol>
+        <li>Installare Tkinter e venv: <span class="code">sudo apt install python3-tk python3-venv</span>.</li>
+        <li>Aprire un terminale nella cartella <span class="code">packaging</span> del sorgente estratto.</li>
+        <li>Eseguire <span class="code">chmod +x build_linux.sh &amp;&amp; ./build_linux.sh</span> &mdash; costruisce dentro una <span class="code">.venv</span> isolata creata in automatico, senza toccare i pacchetti Python di sistema.</li>
+        <li>Risultato: <span class="code">packaging/dist/cracksegmentation_&lt;versione&gt;_amd64.deb</span> &mdash; si installa come sopra.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<div class="section-head">
+<h2 class="section"><span class="num">3</span>Configurazioni provate</h2>
+
+<p>L&rsquo;applicazione &egrave; stata verificata, all&rsquo;avvio e nell&rsquo;uso, sui seguenti computer reali:</p>
+</div>
+
+<table class="shortcuts">
+<tr><th style="width:16%;">Sistema</th><th style="width:30%;">Dispositivo</th><th style="width:28%;">Processore</th><th style="width:12%;">RAM</th><th>Note</th></tr>
+<tr><td>macOS Tahoe</td><td>MacBook Pro (MacBookPro17,1)</td><td>Apple M1 (8 core: 4P+4E)</td><td>8 GB</td><td>Modello MYD92T/A</td></tr>
+<tr><td>Windows 11 Home</td><td>HP Laptop 15s-fq5xxx</td><td>Intel Core i7-1255U @ 1.70&nbsp;GHz</td><td>16 GB</td><td>64 bit, x64</td></tr>
+<tr><td>Ubuntu 24.04.4 LTS</td><td>Victus by HP Gaming Laptop 16-r1xxx</td><td>Intel Core i7-14700HX</td><td>16 GB</td><td>NVIDIA GeForce RTX 4050 Max-Q (AD107M)</td></tr>
+</table>
+
+<div class="section-head">
+<h2 class="section"><span class="num">4</span>Comandi principali e<br>scorciatoie da tastiera</h2>
+
+<p>Il software &egrave; pensato per un uso rapido da tastiera: si passa da uno strumento all&rsquo;altro senza interrompere il lavoro.</p>
+</div>
+
+<table class="shortcuts">
+<tr><th style="width:20%;">Azione</th><th style="width:14%;">Scorciatoia</th><th>Descrizione</th></tr>
+<tr><td>Crack Tool</td><td><span class="key">C</span></td><td>Cliccare l&rsquo;inizio e poi la fine di una fessura: il percorso viene tracciato lungo il bordo. <span class="key">Shift</span>+clic tra i due aggiunge tutti i punti di passaggio necessari (il percorso segue la linea scura sottile della fessura e non torna mai indietro su un punto); <span class="key">U</span> toglie l&rsquo;ultimo punto. Senza un tracciato in corso, un clic sul marcatore di estremit&agrave; di una fessura la cancella; con il cursore su un&rsquo;estremit&agrave;, le frecce la spostano di 1&nbsp;px.</td></tr>
+<tr><td>Interrupted Crack</td><td>Automatico</td><td>Se una fessura tracciata attraversa un tratto senza fessura, compare il messaggio arancione <b>INTERRUPTED CRACK</b> e viene salvata come <b>fessure separate</b>, senza il tratto vuoto. <span class="key">S</span> le salva come forme JSON e maschere PNG separate; <span class="key">U</span> annulla l&rsquo;intero tracciato.</td></tr>
+<tr><td>Uncertain Crack</td><td>Barra laterale</td><td>Va premuto <b>prima</b> di tracciare: ogni fessura tracciata mentre &egrave; attivo viene salvata come incerta (<span class="code">[?]</span>) e disegnata in <b style="color:#d00000;">rosso</b>. JSON (etichetta <span class="code">crack_incerta</span>, flag <span class="code">uncertain_manual</span>) e maschere, compresa <span class="code">-crack_uncertain_mask.png</span>, si salvano appena finito ogni tracciato. Ripremerlo per tornare al tracciamento normale.</td></tr>
+<tr><td>Make Uncertain / Make Normal</td><td><span class="key">Ctrl</span>+<span class="key">C</span> / <span class="key">Ctrl</span>+<span class="key">U</span> (<span class="key">Cmd</span> su macOS)</td><td>Poi cliccare una fessura (la linea o il numero): <span class="key">C</span> rende incerta (<b style="color:#d00000;">rossa</b>) una fessura blu, <span class="key">U</span> rende di nuovo normale (blu) una rossa. Anche Ctrl/Cmd+clic sui pulsanti <b>Crack tool</b> / <b>Uncertain crack</b> della barra laterale. Una fessura per pressione (poi i clic tornano normali); gli stessi tasti di nuovo annullano. JSON e maschere si salvano dopo la modifica, <span class="key">U</span> annulla.</td></tr>
+<tr><td>Warn Uncertain</td><td>Barra laterale</td><td>Va premuto prima di tracciare: una nuova fessura sotto i limiti di affidabilit&agrave;/confidenza apre una finestra che propone di salvarla come incerta (S&igrave;/No). Le fessure non vengono mai segnate incerte in automatico.</td></tr>
+<tr><td>Detachment Tool</td><td><span class="key">D</span></td><td>Cliccare i vertici di un distacco di intonaco/materiale: ogni lato segue il contorno; <span class="key">Y</span> chiude il poligono. Un clic sul marcatore di un distacco lo cancella.</td></tr>
+<tr><td>Ignore Region</td><td><span class="key">I</span> / barra laterale</td><td>Segna le zone in cui il muro si vede solo in parte (reti, recinzioni, ponteggi, cavi, vegetazione rada). Una finestra fa scegliere la forma (rettangolo, quadrato, poligono libero) e i bordi della foto fino a cui si estende. Rettangolo: due clic su angoli opposti; poligono: i vertici, poi <span class="key">Y</span>. Con lo strumento attivo si trascina un angolo o un lato per modificarla e si clicca dentro per cancellarla. Salvata come <span class="code">-ignore_mask.png</span> (255 = esclusa dalla loss e dalle metriche di addestramento); mai importata da <span class="key">W</span>/<span class="key">L</span>.</td></tr>
+<tr><td>Edit Detachment Nodes</td><td><span class="key">E</span></td><td>Trascinare i vertici cliccati di un distacco; il contorno si ricalcola dal vivo. Ripremere per uscire.</td></tr>
+<tr><td>Cut / Join / Link</td><td><span class="key">1</span> / <span class="key">2</span> / <span class="key">3</span></td><td>Due clic; lo stesso tasto di nuovo esce dallo strumento. <b>Cut</b>: inizio e fine del tratto da togliere. <b>Join</b>: due punti su una fessura rifanno il tratto intermedio lungo un altro bordo, oppure le estremit&agrave; di due pezzi li ricongiungono. <b>Link</b>: due fessure diverse, cliccate a un&rsquo;estremit&agrave; o in un punto qualsiasi, diventano una sola (l&rsquo;avanzo oltre il punto di unione resta una fessura a parte); JSON e maschere si salvano subito.</td></tr>
+<tr><td>Edit Extremes</td><td><span class="key">4</span> / barra laterale</td><td>Ogni estremit&agrave; di fessura diventa un grosso punto rosso: cliccare un punto, poi il punto che la fessura deve raggiungere per allungarla lungo il bordo, o un punto sulla fessura per accorciarla. I clic lontano dai punti tracciano come sempre. <span class="key">U</span> annulla; ripremendo <span class="key">4</span> si scrivono JSON e maschere.</td></tr>
+<tr><td>Merge Crack Branches</td><td>Barra laterale</td><td>Cliccare la fessura <b>principale</b>, poi ogni fessura vicina da aggiungere come ramo; i piccoli vuoti vengono colmati lungo il bordo. Le linee restano modificabili ma formano un&rsquo;unica fessura (marcatori N, N.1, N.2&hellip;). <span class="key">Shift</span>+clic sul pulsante o <span class="key">Shift</span>+<span class="key">C</span> chiude la modalit&agrave;.</td></tr>
+<tr><td>Eraser</td><td>Barra laterale</td><td>Trascinare la finestra rossa su una fessura per cancellarne quel tratto (una fessura attraversata a met&agrave; si divide in due); <span class="key">[</span> / <span class="key">]</span> ridimensionano la finestra. JSON e maschere si salvano al rilascio; <span class="key">U</span> annulla.</td></tr>
+<tr><td>Remove Uncertain [?]</td><td>Barra laterale</td><td>Dopo una conferma cancella tutte le fessure sullo schermo segnate <span class="code">[?]</span>; JSON e maschere si salvano subito, <span class="key">U</span> annulla.</td></tr>
+<tr><td>Alternative Route</td><td>Barra laterale &#9654; / <span class="key">$</span></td><td>Ogni pressione mostra un altro percorso per l&rsquo;ultima fessura tracciata, in un nuovo colore; quando non ce ne sono altri la freccia diventa &#9664; e torna indietro. <span class="key">$</span> adotta il percorso sullo schermo; un clic sulla foto chiude lo strumento.</td></tr>
+<tr><td>Retrace Imported Cracks</td><td><span class="key">V</span></td><td>Ritraccia (A*) tutte le fessure importate sui bordi reali della nuova foto, scartando i risultati non plausibili.</td></tr>
+<tr><td>Manual Snap / Translate</td><td><span class="key">T</span></td><td>Riposizionamento elastico di una fessura importata non allineata bene, con aggancio automatico al bordo reale.</td></tr>
+<tr><td>Modify Crack Thickness</td><td><span class="key">A</span></td><td>Cliccare un tratto di fessura, poi <span class="key">+</span> / <span class="key">-</span> allargano o restringono la sua maschera di addestramento; <span class="key">[</span> <span class="key">]</span> allargano solo il lato sinistro / destro, <span class="key">{</span> <span class="key">}</span> lo restringono; <span class="key">Backspace</span> toglie l&rsquo;impostazione di quel tratto.</td></tr>
+<tr><td>Undo / Redo</td><td><span class="key">U</span> / <span class="key">R</span></td><td>Annulla / ripete l&rsquo;ultima azione: tracciato, punto, cancellazione, Cut/Join/Link, ignore region, Clear all.</td></tr>
+<tr><td>Clear All</td><td><span class="key">X</span></td><td>Toglie tutte le fessure, i distacchi e le ignore region della foto, anche dal suo JSON; <span class="key">U</span> li ripristina.</td></tr>
+</table>
+
+<h3 class="sub">Importazione, gruppi e salvataggio</h3>
+<table class="shortcuts">
+<tr><th style="width:20%;">Azione</th><th style="width:14%;">Scorciatoia</th><th>Descrizione</th></tr>
+<tr><td>Save / Save &amp; Next</td><td><span class="key">S</span> / <span class="key">Invio</span></td><td>Esporta JSON e maschere; <span class="key">S</span> resta sulla foto, <span class="key">Invio</span> (o <span class="key">Q</span>) passa alla successiva.</td></tr>
+<tr><td>Prev / Next / Go to</td><td>Barra strumenti</td><td>Si sposta senza salvare; <b>Go to image</b>: prima, ultima o da un elenco di 10.</td></tr>
+<tr><td>Import &amp; Align</td><td><span class="key">W</span> / <span class="key">L</span></td><td>Proietta le fessure di un&rsquo;altra foto dello stesso edificio (<span class="key">W</span>: l&rsquo;ultima salvata; <span class="key">L</span>: la foto del gruppo con pi&ugrave; forme). Se i punti di vista sono molto diversi, la foto viene ri-vista in memoria dal punto di vista della sorgente e confrontata di nuovo; le fessure che escono dall&rsquo;inquadratura vengono tagliate al bordo. Un confronto poco affidabile non importa nulla.</td></tr>
+<tr><td>Building Portion</td><td><span class="key">5</span> / barra laterale</td><td>Colora di <b>arancione</b> la parte della foto mostrata dalle altre foto del gruppo e prepara una finestra intorno; trascinare dentro per spostarla, altrove per una nuova, cliccare fuori per toglierla, <span class="key">5</span> di nuovo per finire. <span class="key">W</span>/<span class="key">L</span> poi allineano sulla finestra e importano solo al suo interno.</td></tr>
+<tr><td>Assign Building Group</td><td><span class="key">B</span></td><td>Si scrive a mano il numero del gruppo; <span class="key">Invio</span> conferma, <span class="key">Backspace</span> cancella una cifra, <span class="key">B</span> annulla.</td></tr>
+<tr><td>Check Compatibility (Filter)</td><td><span class="key">G</span></td><td>Toglie le fessure che non corrispondono per forma e percorso tra foto diverse dello stesso gruppo (eseguito anche dopo ogni salvataggio).</td></tr>
+<tr><td>Validation</td><td>Barra laterale</td><td>Quando ogni foto di <span class="code">Images</span> ha il suo JSON: sposta le foto adatte all&rsquo;addestramento, con JSON e maschere, in <span class="code">Suitable for training</span>, con un report CSV.</td></tr>
+<tr><td>Dataset Split</td><td>Barra laterale</td><td><b>Auto split</b>: tutte le foto nei set, per edificio; pulsanti singoli (Mode 2): la foto sullo schermo (chiede di salvare prima solo se ha modifiche non salvate, <i>corretto nella 2.3.1</i>). <b>Reset pipeline</b>: riporta tutto indietro. <b>Dataset browser</b>: elenco e spostamenti tra i set. <b>CV folds</b>.</td></tr>
+<tr><td>XML Reference</td><td>Barra laterale</td><td>Disegna sulla foto le regioni di danno di <span class="code">XML files/&lt;nome&gt;.xml</span> (riquadri e poligoni) come guida al tracciamento. Solo a schermo: mai salvate.</td></tr>
+<tr><td>To Be Reviewed</td><td>Barra laterale</td><td>Segna la foto sullo schermo come dubbia, con una nota facoltativa (di nuovo = toglie il segno). Mode 2 pu&ograve; caricare solo le foto segnate; Validation e Auto split le lasciano in <span class="code">Images</span>. <b>To be reviewed by date</b> segna in un colpo tutte le foto salvate fino a una data.</td></tr>
+<tr><td>Delete Image</td><td>Barra laterale</td><td>Dopo una conferma sposta una foto non adatta, con JSON e maschere, in <span class="code">Deleted images</span> (mai cancellata) e apre la successiva.</td></tr>
+<tr><td>Active Learning</td><td>Barra laterale / menu Tools</td><td><i>Dalla 2.2.0.</i> Prende il modello dell&rsquo;ultimo round (<span class="code">SAM model/rounds/round_NN/best_lora.pth</span>; nessuno = il modello in uso, round&nbsp;0), ordina le foto ancora da annotare in base a quanto il modello &egrave; incerto (mappe delle fessure da Leonardo, o calcolate qui dopo una conferma) e carica le 50 pi&ugrave; incerte in Mode&nbsp;1 con <b>SAM click to accept</b> attivo. Con un Test set annotato, IoU e F1 di ogni round finiscono in <span class="code">SAM model/rounds/history.csv</span>.</td></tr>
+<tr><td>Leonardo</td><td>Barra laterale / menu Tools</td><td><i>Dalla 2.2.0.</i> Esegue un round sul cluster Leonardo (CINECA): <b>Connect</b> (<span class="code">step ssh login</span> nel browser quando il certificato manca o &egrave; scaduto), <b>Send data + start round</b> (rsync del dataset, <span class="code">sbatch</span> dello script del round), <b>Job status</b>, <b>Fetch results</b> (nuovi pesi e mappe delle fessure). Non chiede n&eacute; salva password; servono <span class="code">step</span>, <span class="code">ssh</span> e <span class="code">rsync</span>.</td></tr>
+<tr><td>Filter by Building</td><td>Barra laterale / menu Tools</td><td><i>Dalla 2.3.0.</i> Carica solo le foto di un gruppo di edificio (tag <span class="code">__BLDGnnn</span>): un menu a tendina dei gruppi trovati in <span class="code">Images</span>, con i conteggi, e tre scelte &mdash; foto gi&agrave; annotate (aperte come in Mode&nbsp;2), foto da annotare (Mode&nbsp;1) o tutte (predefinito: ogni foto si apre nella modalit&agrave; che le serve e resta in coda una volta annotata). La barra di stato mostra <span class="code">BUILDING BLDGnnn</span>; Switch Mode o Validation spengono il filtro. Il filtro non sposta mai le foto: restano in <span class="code">Images</span>, e [S] scrive come sempre il JSON in <span class="code">JSON files</span>, le maschere e l&rsquo;anteprima <span class="code">-seg.jpg</span> in <span class="code">Binary files</span> e una riga in <span class="code">segmentation_summary_report.csv</span>. <i>Dalla 2.3.1</i>, scegliendo un altro edificio compare &ldquo;Save them before loading another building?&rdquo; solo se la foto sullo schermo ha modifiche non salvate (Yes = salva e carica; No = le modifiche si perdono; Cancel = resta sulla foto); una foto appena salvata non lo chiede pi&ugrave;.</td></tr>
+<tr><td>Issue Log</td><td>Barra laterale / menu Issues</td><td><i>Dalla 2.4.0.</i> Quando &egrave; attivo (pulsante premuto), ogni salvataggio in Mode&nbsp;1 o Mode&nbsp;2 chiede le criticit&agrave; della segmentazione: spuntare <b>A</b> fughe di muratura tracciate come fessure, <b>B</b> bordi / cornici / strade / striature, <b>C</b> macerie o crollo, <b>D</b> cavillatura, <b>E</b> fessure vere non tracciate, <b>F</b> fessure tracciate male o <b>X</b> altro (testo libero), e aggiungere una nota (zona, cosa &egrave; stato fatto). Le righe vanno in <span class="code">segmentation_issues.csv</span> nella cartella dei dati (<span class="code">N, image, category, problem, mode, destination</span>), una per foto e categoria. La finestra chiede anche il <b>set di destinazione</b> (Training, Validation, Test set o Not decided yet = <span class="code">none</span>): viene solo annotato, la foto non si sposta; &egrave; proposto il set gi&agrave; scelto per la foto, altrimenti quello che contiene gi&agrave; foto dello stesso edificio. Risalvando, le spunte sono gi&agrave; messe e le righe vengono sostituite; senza spunte la foto esce dall&rsquo;elenco, <b>Skip</b> non cambia nulla.</td></tr>
+<tr><td>Show Segmentation Issues</td><td>Barra strumenti (Issues) / menu Issues</td><td><i>Dalla 2.4.0.</i> Mostra <span class="code">segmentation_issues.csv</span> come tabella al posto della foto, tra le due barre laterali; <b>Delete selected rows</b> toglie i problemi gi&agrave; corretti. <b>Close</b> o di nuovo <b>Issues</b> riporta la foto. Le bandierine in alto mostrano la tabella in inglese o in italiano.</td></tr>
+<tr><td>Switch Mode</td><td>Barra laterale / menu</td><td>Passa in qualsiasi momento tra immagini nuove e immagini gi&agrave; segmentate, senza riavviare l&rsquo;applicazione.</td></tr>
+<tr><td>Scale</td><td><span class="key">K</span></td><td>Si inserisce a mano la scala dell&rsquo;immagine (cm per pixel), usata per lunghezze e aree.</td></tr>
+</table>
+
+<h3 class="sub">Vista e navigazione</h3>
+<table class="shortcuts">
+<tr><th style="width:20%;">Azione</th><th style="width:14%;">Scorciatoia</th><th>Descrizione</th></tr>
+<tr><td>Zoom</td><td><span class="key">+</span> <span class="key">=</span> / <span class="key">-</span> <span class="key">O</span> / <span class="key">0</span> <span class="key">Z</span></td><td>Ingrandisce / riduce / azzera lo zoom. Lo zoom non &egrave; pi&ugrave; sul tasto <span class="key">I</span> (ora Ignore Region).</td></tr>
+<tr><td>Pan</td><td><span class="key">&#8592;</span> <span class="key">&#8593;</span> <span class="key">&#8594;</span> <span class="key">&#8595;</span> / rotella</td><td>Sposta la vista ingrandita (rotella o trackpad a due dita; Shift = di lato).</td></tr>
+<tr><td>Zoom Window</td><td>Barra laterale</td><td>Trascinare un rettangolo per ingrandire direttamente su di esso (fino a 40&times;); un clic semplice traccia come sempre. Ripremere per azzerare lo zoom.</td></tr>
+<tr><td>Highlight Viewed (HWAV)</td><td>Barra laterale</td><td>Colora di verde le zone gi&agrave; mostrate scorrendo una foto ingrandita, con la quota ispezionata; ripremuto inizia un nuovo passaggio.</td></tr>
+<tr><td>Crack Report</td><td>Barra laterale</td><td>Cliccare una fessura per leggerne il resoconto di affidabilit&agrave; (lunghezza, affidabilit&agrave;, confidenza, conferma multi-vista, giudizio) nel riquadro sulla foto.</td></tr>
+<tr><td>Crack Labels</td><td>Barra laterale</td><td>Quando &egrave; attivo, fermando il cursore sul numero o sulla linea di una fessura compare una finestrella con lunghezza, larghezza, affidabilit&agrave;, confidenza, viste e stato; sparisce quando il cursore si allontana.</td></tr>
+<tr><td>Show Cracks by Number</td><td>Barra laterale</td><td>Scrivere i numeri separati da <span class="code">;</span> (es. 3;7;12) per mostrare solo quelle fessure; vuoto = tutte. Solo a schermo: i file conservano tutte le fessure.</td></tr>
+<tr><td>Hide Uncertain / Normal Overlay</td><td>Barra laterale</td><td>Nasconde solo il riempimento rosso delle fessure incerte, o solo quello blu delle normali (<span class="key">N</span> li nasconde entrambi). Solo a schermo.</td></tr>
+<tr><td>Fullscreen / HUD Size</td><td><span class="key">F</span> / <span class="key">H</span></td><td>Schermo intero s&igrave;/no; testo a schermo grande s&igrave;/no.</td></tr>
+</table>
+
+<h3 class="sub">Modello AI per le fessure (SAM)</h3>
+<table class="shortcuts">
+<tr><th style="width:20%;">Azione</th><th style="width:14%;">Scorciatoia</th><th>Descrizione</th></tr>
+<tr><td>SAM Auto-segment</td><td>Barra laterale</td><td>Esegue sulla foto, a tasselli sovrapposti, il modello SAM adattato alle fessure e trasforma la sua maschera in fessure modificabili (linea centrale + larghezza del modello), salvate subito; le fessure poco sicure diventano incerte (rosse). Il modello (circa 2,4&nbsp;GB) si scarica la prima volta; <span class="key">Ctrl</span>/<span class="key">Cmd</span>+clic apre <b>SAM model settings</b> per usare pesi propri. Serve un Python separato con PyTorch e segment-anything.</td></tr>
+<tr><td>SAM Click to Accept</td><td>Barra laterale</td><td>Ogni fessura vista dal modello &egrave; colorata in base alla confidenza (<b style="color:#e07000;">arancione</b> &ge;&nbsp;0,65, giallo scuro &ge;&nbsp;0,45, giallo chiaro sotto); <b>si salvano solo le fessure cliccate</b>. <span class="key">1</span>&ndash;<span class="key">4</span> accettano tutte le fessure arancioni / giallo scuro / giallo chiaro / colorate; una finestra trascinata accetta le parti colorate al suo interno; <span class="key">H</span> <span class="key">G</span> <span class="key">A</span> mostrano o nascondono i colori, <span class="key">L</span> / <span class="key">D</span> scartano quelle giallo chiaro / scuro.</td></tr>
+<tr><td>Threshold Dial &amp; Width</td><td>Barra laterale / <span class="key">[</span> <span class="key">]</span> / <span class="key">0</span></td><td>Ritaglia dal vivo la mappa delle fessure a una soglia pi&ugrave; bassa o pi&ugrave; alta (le fessure accettate non cambiano); le parti pi&ugrave; larghe del limite (40&nbsp;px) sono mostrate come linea centrale o nascoste. La larghezza sotto il mouse compare accanto al cursore.</td></tr>
+<tr><td>Exclude / Cut Map</td><td>Barra laterale / <span class="key">X</span> / <span class="key">K</span></td><td><span class="key">X</span>: un clic toglie una fessura (anche accettata) da JSON e maschere, una finestra trascinata toglie tutto ci&ograve; che contiene. <span class="key">K</span>: una linea trascinata sulla mappa la divide, cos&igrave; una fessura unita a un cavo o a un ramo si accetta da sola.</td></tr>
+</table>
+
+<h3 class="sub">Gestione delle maschere a schermo e altri tasti</h3>
+<p>Mentre si tracciano fessure e difetti, la visibilit&agrave; delle sovrapposizioni si pu&ograve; regolare per non coprire la vista:</p>
+<ul class="tight">
+  <li><span class="key">N</span> &nbsp;Mostra o nasconde la fascia blu delle fessure.</li>
+  <li><span class="key">Spazio</span> &nbsp;Nasconde i marcatori (ogni marcatore iniziale mostra il numero della fessura); <span class="key">.</span> nasconde i messaggi (da soli dopo 15&nbsp;s).</li>
+  <li><span class="key">J</span> &nbsp;Apre/chiude il pannello <b>Photo info</b> (anche il pulsante <b>Info</b>): file, strumento, zoom, lunghezza delle fessure, area dei distacchi, edificio ed elementi, e una tabella con l&rsquo;affidabilit&agrave; di ogni fessura (tessitura lungo la linea), la confidenza (0&ndash;1, nitidezza rispetto al muro), le viste e se &egrave; incerta. <i>Dalla 2.4.0</i> &egrave; un pannello bianco al posto della foto, tra le due barre laterali, invece di un riquadro scuro sopra la foto; il Crack report resta sulla foto.</li>
+  <li><span class="key">M</span> &nbsp;Attiva/disattiva l&rsquo;esportazione dell&rsquo;anteprima colorata (immagine <span class="code">-seg</span>) a ogni salvataggio.</li>
+  <li><span class="key">P</span> &nbsp;Mette in pausa / riavvia il cronometro della sessione.</li>
+  <li><span class="key">Backspace</span> / <span class="key">Canc</span> &nbsp;Sblocca uno strumento &ldquo;bloccato&rdquo;, annullando ogni operazione in corso.</li>
+  <li><span class="key">?</span> &nbsp;Mostra il manuale al posto della foto, tra le due barre laterali (dalla 2.4.0); le bandierine in alto lo mostrano in inglese o in italiano. <span class="key">Esc</span> chiude l&rsquo;applicazione.</li>
+</ul>
+
+<div class="section-head">
+<h2 class="section"><span class="num">5</span>Flusso di lavoro e logica dell&rsquo;applicazione</h2>
+
+<div class="flow-block">
+  <div class="ftitle">Inizio della sessione</div>
+  <p>All&rsquo;avvio una finestra fa scegliere se lavorare su immagini nuove (foto in <span class="code">Images</span> senza JSON) o ricaricare quelle gi&agrave; elaborate (con un JSON in <span class="code">JSON files</span>) per correggerle. Le foto restano in <span class="code">Images</span>; le maschere vanno in <span class="code">Binary files</span>. La scelta non &egrave; definitiva: il pulsante/voce di menu <b>Switch Mode</b> passa dall&rsquo;una all&rsquo;altra sorgente in qualsiasi momento, senza riavviare l&rsquo;applicazione. Quando l&rsquo;ultima immagine della coda &egrave; stata salvata o saltata, una finestra avvisa che le immagini sono finite (e quante immagini saltate sono ancora in <span class="code">Images</span>) e chiede se passare all&rsquo;altra modalit&agrave; o uscire.</p>
+</div>
+</div>
+
+<div class="flow-block">
+  <div class="ftitle">Importazione e tracciamento automatici (A* Retrace)</div>
+  <p>Quando un edificio &egrave; ripreso in pi&ugrave; foto, l&rsquo;applicazione le associa per somiglianza SIFT. Le fessure tracciate in una vista si possono importare in un&rsquo;altra (<span class="key">W</span> / <span class="key">L</span>). Poich&eacute; la prospettiva cambia, <span class="key">V</span> fa riadattare automaticamente le linee importate dall&rsquo;algoritmo A* e le &ldquo;incolla&rdquo; sui bordi fisici trovati nella foto corrente, scartando le deformazioni grossolane.</p>
+</div>
+
+<div class="flow-block">
+  <div class="ftitle">Pulizia e compatibilit&agrave; delle fessure in blocco</div>
+  <p>Una delle funzioni pi&ugrave; avanzate &egrave; nel modulo <span class="code">compare_and_filter_cracks.py</span> (avviabile con <span class="key">G</span> dalla GUI o come script autonomo). Confronta le fessure esportate tra le foto dello stesso edificio; se una fessura cambia troppo da una foto all&rsquo;altra &mdash; misurato con l&rsquo;indice di sinuosit&agrave; (quanto il percorso &egrave; &ldquo;ondulato&rdquo; rispetto alla retta tra le estremit&agrave;, una misura che non dipende dalla scala/distanza della foto) &mdash; viene scartata e tolta dai JSON finali per mantenere puliti i dati.</p>
+</div>
+
+<div class="flow-block">
+  <div class="ftitle">Ciclo di active learning (SAM + Leonardo)</div>
+  <p>Dalla 2.2.0 il modello delle fessure migliora round dopo round con le foto che annoti. <b>1.</b> Premere <b>Active learning</b>: il modello pi&ugrave; recente propone le 50 foto su cui &egrave; meno sicuro e le apre in Mode&nbsp;1 con <b>SAM click to accept</b>, cos&igrave; basta cliccare le fessure vere e correggere ci&ograve; che manca. <b>2.</b> Eseguire <b>Auto split</b> (il Test set resta fisso, cos&igrave; i round sono confrontabili). <b>3.</b> Nella finestra <b>Leonardo</b>, <b>Send data + start round</b>: il cluster esporta le foto annotate di Training e Validation (fessure incerte, ignore region e distacchi sono esclusi dalla loss), adatta il modello partendo dal round precedente e calcola le nuove mappe delle fessure. <b>4.</b> <b>Fetch results</b> e di nuovo <b>Active learning</b> per le 50 foto successive; il punteggio sul Test set di ogni round resta in <span class="code">SAM model/rounds/history.csv</span>.</p>
+</div>
+
+<div class="section-head">
+<h2 class="section" style="margin-top: 22px; page-break-before: always;"><span class="num">6</span>Autori e riconoscimenti</h2>
+
+<p>Il software &egrave; stato sviluppato nell&rsquo;ambito del progetto <b>ECHO&#8209;TWIN</b> dal gruppo di ricerca dell&rsquo;INAF (Istituto Nazionale di Astrofisica).</p>
+</div>
+
+<div class="credits-box">
+  <div class="credits-head">Gruppo di ricerca</div>
+  <table class="people">
+    <tr><td class="pname">Roberto Spina<sup>1,2</sup></td><td class="prole">Architettura del codice, progettazione del software e sviluppo principale</td></tr>
+    <tr><td class="pname">Fabio Vitello<sup>1</sup></td><td class="prole">Coordinamento e supervisione del progetto</td></tr>
+    <tr><td class="pname">Eva Sciacca<sup>1</sup></td><td class="prole">Coordinamento e supervisione del progetto</td></tr>
+    <tr><td class="pname">Leonardo Pelonero<sup>1</sup></td><td class="prole">Supporto generale</td></tr>
+    <tr><td class="pname">Salvatore Scavo<sup>1</sup></td><td class="prole">Supporto generale</td></tr>
+  </table>
+  <div class="affiliations"><sup>1</sup>&nbsp;INAF &ndash; Osservatorio Astrofisico di Catania<span class="aff-sep"></span><sup>2</sup>&nbsp;Ordine dei Geologi di Sicilia (Albo Nazionale)</div>
+</div>
+
+<div class="ai-box">
+  <div class="aihead">Uso dell&rsquo;intelligenza artificiale</div>
+  L&rsquo;applicazione utilizza modelli di intelligenza artificiale in alcune fasi del lavoro, in particolare per l&rsquo;analisi, la generazione di contenuti tecnici e il supporto allo sviluppo. Le componenti di intelligenza artificiale non sostituiscono la validazione scientifica n&eacute; influenzano i risultati in modo deterministico: sono strumenti di assistenza, non fonti di verit&agrave;.
+</div>
+
+<div class="footer-note">Crack &amp; Detachment Segmentation &mdash; Manuale utente &mdash; Progetto ECHO&#8209;TWIN, INAF</div>
+
+</div>
+</body>
+</html>

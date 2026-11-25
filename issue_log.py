@@ -58,6 +58,31 @@ LEGACY_TEXTS = (
 )
 
 
+# v2.4.0: the issue table can be shown in Italian (the file always stays in English).
+HEADINGS = {
+    "en": {"N": "N", "image": "image", "category": "category", "problem": "problem", "mode": "mode",
+           "destination": "destination"},
+    "it": {"N": "N", "image": "immagine", "category": "categoria", "problem": "problema", "mode": "modalità",
+           "destination": "destinazione"},
+}
+DESTINATION_IT = {NO_DESTINATION: "nessuna", "Training set": "Training set", "Validation set": "Validation set",
+                  "Test set": "Test set"}
+
+
+def display_row(row, lang="en"):
+    """The values of a row as shown in the table: in Italian the standard problem text and 'none' are translated
+    (the note typed by the user stays as it was written)."""
+    values = {k: row.get(k, "") for k in ISSUE_FIELDS}
+    if lang == "it":
+        problem = values["problem"]
+        for it_text, en_text in LEGACY_TEXTS:
+            if problem.startswith(en_text):
+                values["problem"] = it_text + problem[len(en_text):]
+                break
+        values["destination"] = DESTINATION_IT.get(values["destination"], values["destination"])
+    return values
+
+
 def issue_log_path(data_dir):
     return os.path.join(str(data_dir), ISSUE_LOG_FILE)
 

@@ -25,6 +25,8 @@ The **Issues** button (toolbar, next to Manual; also **Issues > Show segmentatio
 The **Manual** button now shows the user manual in place of the photo, between the two sidebars, which stay usable; before it covered the whole window.
 
 The **Info** button (J) now shows the data of the photo -- file, tool, zoom, crack length, detachment area, building, elements and a table with the reliability, confidence and views of every crack, uncertain ones in red -- on a white **Photo info** panel in the same place, instead of the dark glass drawn over the photo. The Crack report still shows its report on the photo.
+#### English / Italian
+Two small flags (English, Italian) at the top of the user manual and of the issue table switch both to the chosen language. The manual now also comes in Italian (`Crack_Segmentation_User_Manual_IT.pdf`); in the issue table the column names, the standard problem descriptions and `none` are shown in Italian, while the file stays in English.
 
 ### Model weights
 

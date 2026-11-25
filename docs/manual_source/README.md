@@ -1,6 +1,8 @@
 # Manual source
 
-`manual.html` is the source of truth for `Crack_Segmentation_User_Manual.pdf`
+`manual.html` is the source of truth for `Crack_Segmentation_User_Manual.pdf`, and `manual_it.html`
+(Italian, since 2.4.0; same styles, translated text) for `Crack_Segmentation_User_Manual_IT.pdf` -- render it
+the same way, changing the two file names. Keep both in step when a command changes
 (the PDF shipped in the repo root and embedded in the app's PDF manual panel).
 The PDF is rendered from this HTML via headless Chromium (Playwright) — it is
 not written or exported from a word processor.

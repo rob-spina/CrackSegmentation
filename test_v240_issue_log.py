@@ -272,5 +272,55 @@ class TestInfoPanel(unittest.TestCase):
         self.assertEqual(self.app.info_panel_data()[1], ())
 
 
+class TestLanguages(unittest.TestCase):
+    """v2.4.0: English / Italian flags on the manual and on the issue table."""
+
+    def test_flag_images(self):
+        en, it = gm.flag_image("en"), gm.flag_image("it")
+        self.assertEqual(en.size, (26, 17))
+        self.assertEqual(it.getpixel((2, 8))[1] > 100 and it.getpixel((2, 8))[0] < 60, True, "green band on the left")
+        self.assertEqual(it.getpixel((23, 8))[0] > 150, True, "red band on the right")
+        self.assertTrue(en.getpixel((13, 8))[0] > 150, "red cross in the middle")
+
+    def test_display_row_in_italian(self):
+        row = {"N": "1", "image": "a.jpg", "category": "A", "problem": "masonry joints traced as cracks -- in alto",
+               "mode": "2", "destination": "none"}
+        it = il.display_row(row, "it")
+        self.assertEqual(it["problem"], "fughe di muratura tracciate come fessure -- in alto")
+        self.assertEqual(it["destination"], "nessuna")
+        self.assertEqual(il.display_row(row, "en")["problem"], row["problem"])
+        self.assertEqual(il.HEADINGS["it"]["problem"], "problema")
+
+    def test_issue_table_follows_the_flags(self):
+        import test_gui_panel_wiring as wiring
+        app = wiring.make_app(self)
+        tmp = tempfile.mkdtemp(prefix="crackseg_il_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        app.cfg.SCRIPT_DIR = tmp
+        il.set_photo_issues(app.issue_log_file(), "a.jpg", "2", [("B", il.problem_text("B"))])
+        with redirect_stdout(io.StringIO()):
+            app._issue_panel.flags.pick("it")
+        self.assertEqual(app.cfg.doc_language, "it")
+        self.assertEqual(app._issue_panel.tree.headings["problem"]["text"], "problema")
+        item = app._issue_panel.tree.get_children()[0]
+        self.assertEqual(app._issue_panel.tree.item(item)["values"][3],
+                         "bordi, spigoli, cornici, strade o striature tracciati")
+        self.assertEqual(app._pdf_panel.flags.labels["it"].kw["relief"], "solid", "the manual follows")
+        with open(app.issue_log_file(), encoding="utf-8-sig") as fh:
+            self.assertIn("edges, corners", fh.read(), "the file stays in English")
+
+    def test_manual_switches_pdf(self):
+        panel = gm.PdfManualPanel(fake_tkinter.Tk(), "/x/en.pdf", {"en": "/x/en.pdf", "it": "/x/it.pdf"})
+        with mock.patch.object(panel, "_load_and_render") as render:
+            panel.show()
+            self.assertTrue(panel.set_language("it"))
+        self.assertEqual(panel._pdf_path, "/x/it.pdf")
+        self.assertEqual(render.call_count, 2, "rendered again at once while on screen")
+        self.assertFalse(panel.set_language("it"))
+        only_en = gm.PdfManualPanel(fake_tkinter.Tk(), "/x/en.pdf")
+        self.assertFalse(only_en.set_language("it"), "no Italian manual: stays in English")
+        self.assertEqual(only_en._pdf_path, "/x/en.pdf")
+
+
 if __name__ == "__main__":
     unittest.main()

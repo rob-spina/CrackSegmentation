@@ -26,7 +26,8 @@ from active_learning import ACTIVE_LEARNING_CODE
 from building_filter import (BUILDING_FILTER_CODE, BUILDING_FILTER_LABELLED, BUILDING_FILTER_TO_LABEL,
                              BUILDING_FILTER_ALL)
 from issue_log import (ISSUE_LOG_CODE, ISSUE_LOG_VIEW_CODE, ISSUE_CATEGORIES, OTHER_CATEGORY, ISSUE_FIELDS,
-                       DESTINATION_KEYS, problem_text, read_issues, delete_issue_rows)
+                       DESTINATION_KEYS, HEADINGS as ISSUE_HEADINGS, display_row as issue_display_row,
+                       problem_text, read_issues, delete_issue_rows)
 from leonardo_link import LEONARDO_CODE, FIELDS as LEONARDO_FIELDS, save_settings as save_leonardo_settings
 from building_groups import GROUP_PHOTOS_CODE, progress_text as group_progress_text
 from review_flags import review_key, REVIEW_CODE, REVIEW_BY_DATE_CODE, REVIEW_FILTER_ONLY, REVIEW_FILTER_OTHERS, REVIEW_FILTER_ALL
@@ -270,16 +271,110 @@ class EmbeddedCanvas:
 
 # PDF user manual panel: shows the real PDF inside the main window ([?] key).
 
+# v2.4.0: small English / Italian flags that switch the language of the manual and of the issue table.
+DOC_LANGUAGES = ("en", "it")
+
+
+def flag_image(lang, width=26, height=17):
+    """A small flag (PIL image): the Union flag for 'en', the Italian tricolour for 'it'. Drawn 4x and scaled down."""
+    from PIL import ImageDraw
+    k = 4
+    w, h = width * k, height * k
+    img = Image.new("RGB", (w, h), "white")
+    d = ImageDraw.Draw(img)
+    if lang == "it":
+        d.rectangle([0, 0, w // 3, h], fill="#009246")
+        d.rectangle([2 * w // 3, 0, w, h], fill="#ce2b37")
+    else:
+        d.rectangle([0, 0, w, h], fill="#012169")
+        for line in (((0, 0), (w, h)), ((0, h), (w, 0))):
+            d.line(line, fill="white", width=int(h * 0.30))
+            d.line(line, fill="#c8102e", width=int(h * 0.10))
+        d.rectangle([w / 2 - h * 0.17, 0, w / 2 + h * 0.17, h], fill="white")
+        d.rectangle([0, h * 0.33, w, h * 0.67], fill="white")
+        d.rectangle([w / 2 - h * 0.10, 0, w / 2 + h * 0.10, h], fill="#c8102e")
+        d.rectangle([0, h * 0.40, w, h * 0.60], fill="#c8102e")
+    d.rectangle([0, 0, w - 1, h - 1], outline="#9ca3af", width=k)
+    return img.resize((width, height), Image.LANCZOS)
+
+
+class FlagSwitch:
+    """Two clickable flags (English, Italian); the one of the current language has a dark frame.
+    on_pick(lang) is called on a click. Falls back to EN / IT text where images cannot be made."""
+
+    def __init__(self, master, current, on_pick, bg="white"):
+        self.frame = tk.Frame(master, bg=bg)
+        self.on_pick = on_pick
+        self.labels = {}
+        self._images = {}
+        for lang in DOC_LANGUAGES:
+            try:
+                self._images[lang] = ImageTk.PhotoImage(flag_image(lang))
+                lab = tk.Label(self.frame, image=self._images[lang], bg=bg, cursor="hand2", borderwidth=2)
+            except Exception:
+                lab = tk.Label(self.frame, text=lang.upper(), bg=bg, cursor="hand2", borderwidth=2)
+            lab.pack(side="left", padx=2)
+            lab.bind("<Button-1>", lambda e, l=lang: self.pick(l))
+            self.labels[lang] = lab
+        self.show(current)
+
+    def show(self, current):
+        for lang, lab in self.labels.items():
+            lab.config(relief="solid" if lang == current else "flat")
+
+    def pick(self, lang):
+        self.show(lang)
+        self.on_pick(lang)
+
+
 class PdfManualPanel:
     """Renders a PDF as a scrollable, lazily-rendered stack of page images inside a Tk Frame, with both a vertical and a horizontal scrollbar.
     """
 
-    def __init__(self, master, pdf_path):
+    def __init__(self, master, pdf_path, pdf_paths=None, on_language=None, language="en"):
         self.frame = ttk.Frame(master)
         self._pdf_path = pdf_path
+        # v2.4.0: {"en": path, "it": path}; the flags on top switch between them.
+        self._pdf_paths = dict(pdf_paths or {"en": pdf_path})
+        self._on_language = on_language
+        self.language = language
         self._photo_refs = []  # keeps live references -- Tk drops images otherwise
         self._rendered = False
+        self._visible = False
+        self._build_language_bar()
         self._build_scrollable_canvas()
+
+    def _build_language_bar(self):
+        """v2.4.0: a thin bar above the pages with the English / Italian flags."""
+        self.language_bar = tk.Frame(self.frame, bg="#e5e7eb")
+        self.language_bar.grid(row=0, column=0, columnspan=2, sticky="ew")
+        tk.Label(self.language_bar, text="User manual", bg="#e5e7eb", fg="#111827",
+                 font=("TkDefaultFont", 10, "bold")).pack(side="left", padx=10, pady=3)
+        self.flags = FlagSwitch(self.language_bar, self.language, self._pick_language, bg="#e5e7eb")
+        self.flags.frame.pack(side="right", padx=8, pady=2)
+
+    def _pick_language(self, lang):
+        if self._on_language is not None:
+            self._on_language(lang)
+        else:
+            self.set_language(lang)
+
+    def set_language(self, lang):
+        """Shows the manual in lang ('en' / 'it'); rendered again at once if the panel is on screen."""
+        path = self._pdf_paths.get(lang)
+        if not path:
+            self.flags.show(self.language)
+            return False
+        self.flags.show(lang)
+        if lang == self.language and path == self._pdf_path:
+            return False
+        self.language, self._pdf_path = lang, path
+        self.canvas.delete("all")
+        self._photo_refs.clear()
+        self._rendered = False
+        if self._visible:
+            self.show()
+        return True
 
     def _build_scrollable_canvas(self):
         """Builds the canvas plus BOTH scrollbars."""
@@ -288,10 +383,10 @@ class PdfManualPanel:
         h_scroll = ttk.Scrollbar(self.frame, orient="horizontal", command=self.canvas.xview)
         self.canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
 
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        v_scroll.grid(row=0, column=1, sticky="ns")
-        h_scroll.grid(row=1, column=0, sticky="ew")
-        self.frame.grid_rowconfigure(0, weight=1)
+        self.canvas.grid(row=1, column=0, sticky="nsew")   # row 0: the language bar (v2.4.0)
+        v_scroll.grid(row=1, column=1, sticky="ns")
+        h_scroll.grid(row=2, column=0, sticky="ew")
+        self.frame.grid_rowconfigure(1, weight=1)
         self.frame.grid_columnconfigure(0, weight=1)
 
         self.canvas.bind("<Enter>", self._on_enter)
@@ -411,6 +506,7 @@ class PdfManualPanel:
     def show(self):
         """Packs the panel, then renders the PDF on first call only. Packed before rendering so winfo_width() reflects the real on-screen width."""
         self.frame.pack(fill="both", expand=True)
+        self._visible = True
         if not self._rendered:
             self._rendered = True   # set first: a failed render is not retried on every press
             self.canvas.update_idletasks()
@@ -420,6 +516,7 @@ class PdfManualPanel:
                 self._show_fallback_message(f"Could not display the user manual:\n{type(e).__name__}: {e}")
 
     def hide(self):
+        self._visible = False
         self.frame.pack_forget()
 
 
@@ -650,28 +747,45 @@ class InfoPanel:
 
 
 class IssueLogPanel:
-    """v2.4.0 [Show segmentation issues] (code 165): covers the window like the manual and shows
-    'segmentation_issues.csv' (N, image, category, problem, mode, destination); the selected rows can
-    be deleted."""
+    """v2.4.0 [Show segmentation issues] (code 165): shows 'segmentation_issues.csv' (N, image, category, problem,
+    mode, destination) in place of the photo; the selected rows can be deleted. The flags show it in English or
+    Italian (only the display: the file stays in English)."""
 
     NAVY, TEAL, INK, ZEBRA = "#0f3460", "#1f8a9e", "#1f2937", "#f3f7f9"
+    TEXTS = {
+        "en": {"title": "Segmentation issues", "close": "\u2715 Close", "delete": "Delete selected rows",
+               "refresh": "\u21BB Refresh", "summary": "{rows} problem(s) on {photos} photo(s)   |   issue log {state}",
+               "on": "on", "off": "off (Issue log button, left sidebar)", "empty": "No problem logged yet: {path}",
+               "select": "Select one or more rows first (Ctrl/Shift + click for several).",
+               "ask": "Delete {n} row(s) from the issue log?", "deleted": "{n} row(s) deleted."},
+        "it": {"title": "Criticità della segmentazione", "close": "\u2715 Chiudi", "delete": "Cancella righe selezionate",
+               "refresh": "\u21BB Aggiorna", "summary": "{rows} problemi su {photos} foto   |   issue log {state}",
+               "on": "attivo", "off": "spento (pulsante Issue log, barra sinistra)",
+               "empty": "Nessun problema registrato: {path}",
+               "select": "Seleziona prima una o più righe (Ctrl/Shift + clic per più righe).",
+               "ask": "Cancellare {n} righe dall'elenco?", "deleted": "{n} righe cancellate."},
+    }
 
     def __init__(self, master, app):
         self.app = app
+        self.language = app.doc_language() if hasattr(app, "doc_language") else "en"
         self.frame = tk.Frame(master, bg="white")
         header = tk.Frame(self.frame, bg=self.NAVY)
         header.pack(fill="x")
-        tk.Label(header, text="Segmentation issues", bg=self.NAVY, fg="white",
-                 font=("TkDefaultFont", 15, "bold")).pack(side="left", padx=14, pady=8)
+        self.title = tk.Label(header, text="", bg=self.NAVY, fg="white", font=("TkDefaultFont", 15, "bold"))
+        self.title.pack(side="left", padx=14, pady=8)
         self.summary = tk.Label(header, text="", bg=self.NAVY, fg="#cfe3ea", font=("TkDefaultFont", 10))
         self.summary.pack(side="left", padx=10)
-        tk.Button(header, text="\u2715 Close", command=self.app._toggle_issue_log_view,
-                  cursor="hand2").pack(side="right", padx=12, pady=6)
+        self.close_button = tk.Button(header, text="", command=self.app._toggle_issue_log_view, cursor="hand2")
+        self.close_button.pack(side="right", padx=12, pady=6)
+        self.flags = FlagSwitch(header, self.language, self._pick_language, bg=self.NAVY)
+        self.flags.frame.pack(side="right", padx=6)
         actions = tk.Frame(self.frame, bg="#e8f1f4")
         actions.pack(fill="x")
-        tk.Button(actions, text="Delete selected rows", command=self.delete_selected,
-                  cursor="hand2").pack(side="left", padx=14, pady=6)
-        tk.Button(actions, text="\u21BB Refresh", command=self.refresh, cursor="hand2").pack(side="right", padx=12)
+        self.delete_button = tk.Button(actions, text="", command=self.delete_selected, cursor="hand2")
+        self.delete_button.pack(side="left", padx=14, pady=6)
+        self.refresh_button = tk.Button(actions, text="", command=self.refresh, cursor="hand2")
+        self.refresh_button.pack(side="right", padx=12)
         body = tk.Frame(self.frame, bg="white")
         body.pack(fill="both", expand=True)
         style = ttk.Style()
@@ -684,7 +798,6 @@ class IssueLogPanel:
                                  selectmode="extended")
         widths = {"N": 50, "image": 320, "category": 80, "problem": 520, "mode": 80, "destination": 130}
         for col in ISSUE_FIELDS:
-            self.tree.heading(col, text=col)
             self.tree.column(col, width=widths[col], anchor="w" if col in ("image", "problem") else "center")
         self.tree.tag_configure("odd", background=self.ZEBRA)
         scroll = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
@@ -694,6 +807,32 @@ class IssueLogPanel:
         self.status = tk.Label(self.frame, text="", bg="white", fg=self.INK, anchor="w")
         self.status.pack(fill="x", padx=14, pady=4)
         self._number_of = {}   # tree item -> n
+        self._apply_texts()
+
+    def t(self, key, **kw):
+        return self.TEXTS[self.language][key].format(**kw)
+
+    def _apply_texts(self):
+        self.title.configure(text=self.t("title"))
+        self.close_button.configure(text=self.t("close"))
+        self.delete_button.configure(text=self.t("delete"))
+        self.refresh_button.configure(text=self.t("refresh"))
+        for col in ISSUE_FIELDS:
+            self.tree.heading(col, text=ISSUE_HEADINGS[self.language][col])
+
+    def _pick_language(self, lang):
+        if hasattr(self.app, "set_doc_language"):
+            self.app.set_doc_language(lang)
+        else:
+            self.set_language(lang)
+
+    def set_language(self, lang):
+        if lang not in self.TEXTS:
+            return
+        self.language = lang
+        self.flags.show(lang)
+        self._apply_texts()
+        self.refresh()
 
     def refresh(self):
         """Reads the CSV again."""
@@ -704,25 +843,26 @@ class IssueLogPanel:
         path = self.app.issue_log_file()
         rows = read_issues(path)
         for i, r in enumerate(rows):
-            item = self.tree.insert("", "end", values=tuple(r[k] for k in ISSUE_FIELDS),
+            shown = issue_display_row(r, self.language)
+            item = self.tree.insert("", "end", values=tuple(shown[k] for k in ISSUE_FIELDS),
                                     tags=("odd",) if i % 2 else ())
             self._number_of[item] = r["N"]
         photos = len({r["image"] for r in rows})
-        state = "on" if self.app.issue_log_on() else "off (Issue log button, left sidebar)"
-        self.summary.configure(text=f"{len(rows)} problem(s) on {photos} photo(s)   |   issue log {state}")
-        self.status.configure(text=path if rows else f"No problem logged yet: {path}")
+        state = self.t("on") if self.app.issue_log_on() else self.t("off")
+        self.summary.configure(text=self.t("summary", rows=len(rows), photos=photos, state=state))
+        self.status.configure(text=path if rows else self.t("empty", path=path))
 
     def delete_selected(self):
         numbers = [self._number_of[i] for i in self.tree.selection() if i in self._number_of]
         if not numbers:
-            self.status.configure(text="Select one or more rows first (Ctrl/Shift + click for several).")
+            self.status.configure(text=self.t("select"))
             return 0
-        if not messagebox.askyesno("Crack Detector - Segmentation issues",
-                                   f"Delete {len(numbers)} row(s) from the issue log?", parent=self.frame):
+        if not messagebox.askyesno("Crack Detector - Segmentation issues", self.t("ask", n=len(numbers)),
+                                   parent=self.frame):
             return 0
         deleted = delete_issue_rows(self.app.issue_log_file(), numbers)
         self.refresh()
-        self.status.configure(text=f"{deleted} row(s) deleted.")
+        self.status.configure(text=self.t("deleted", n=deleted))
         return deleted
 
     def show(self):
@@ -2338,6 +2478,26 @@ class GuiCrackSegmentation(CrackSegmentation):
             return getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
         return os.path.dirname(os.path.abspath(__file__))
 
+    def _resolve_manual_pdf_paths(self):
+        """v2.4.0: {"en": English manual, "it": Italian manual (when bundled)}."""
+        paths = {"en": self._resolve_manual_pdf_path()}
+        it = os.path.join(self._resolve_app_resource_dir(), "Crack_Segmentation_User_Manual_IT.pdf")
+        if os.path.exists(it):
+            paths["it"] = it
+        return paths
+
+    def doc_language(self):
+        return getattr(self.cfg, "doc_language", "en")
+
+    def set_doc_language(self, lang):
+        """v2.4.0 flags: the manual and the issue table follow the language picked in either of them."""
+        if lang not in DOC_LANGUAGES:
+            return
+        self.cfg.doc_language = lang
+        self._pdf_panel.set_language(lang)
+        self._issue_panel.set_language(lang)
+        print(f" [LANGUAGE] Manual and issue table in {'English' if lang == 'en' else 'Italian'}.")
+
     def _resolve_manual_pdf_path(self):
         """Path of the bundled PDF user manual."""
         return os.path.join(self._resolve_app_resource_dir(), "Crack_Segmentation_User_Manual.pdf")
@@ -2358,7 +2518,8 @@ class GuiCrackSegmentation(CrackSegmentation):
         self._canvas = EmbeddedCanvas(self._middle_row, self)
         self._canvas.canvas.focus_set()
         # v2.4.0: in the middle row, so the manual takes the place of the photo between the two sidebars.
-        self._pdf_panel = PdfManualPanel(self._middle_row, self._resolve_manual_pdf_path())
+        self._pdf_panel = PdfManualPanel(self._middle_row, self._resolve_manual_pdf_path(),
+                                         self._resolve_manual_pdf_paths(), self.set_doc_language, self.doc_language())
         self._pdf_panel_visible = False
         self._dataset_panel = DatasetBrowserPanel(self._tk_root, self)
         self._dataset_panel_visible = False

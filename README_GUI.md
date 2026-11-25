@@ -54,6 +54,10 @@ Il pulsante **Info** (J) mostra i dati della foto (file, strumento, zoom, lunghe
 elementi e la tabella con affidabilità, confidenza e viste di ogni fessura, le incerte in rosso) su un pannello bianco
 **Photo info** nello stesso spazio, invece del riquadro scuro trasparente sopra la foto. Il Crack report resta sulla foto.
 
+In cima al manuale e alla tabella Issues ci sono due bandierine (inglese e italiana): cliccandole entrambi passano alla
+lingua scelta. Il manuale esiste ora anche in italiano (`Crack_Segmentation_User_Manual_IT.pdf`); nella tabella in italiano
+cambiano i nomi delle colonne, i testi standard dei problemi e `none` (nessuna), mentre il file resta in inglese.
+
 ## Novità 2.3.1: correzione
 
 La finestra "This photo has changes not saved yet" non compare più per una foto appena salvata: l'app confronta fessure,
