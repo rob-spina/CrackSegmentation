@@ -309,6 +309,19 @@ class TestLanguages(unittest.TestCase):
         with open(app.issue_log_file(), encoding="utf-8-sig") as fh:
             self.assertIn("edges, corners", fh.read(), "the file stays in English")
 
+    def test_english_again_after_closing(self):
+        import test_gui_panel_wiring as wiring
+        app = wiring.make_app(self)
+        with mock.patch.object(app._pdf_panel, "_load_and_render"), redirect_stdout(io.StringIO()):
+            app._toggle_help_menu()
+            app._pdf_panel._pdf_paths["it"] = "/x/it.pdf"
+            app._pdf_panel.flags.pick("it")
+            self.assertEqual(app.doc_language(), "it")
+            app._toggle_help_menu()
+        self.assertEqual(app.doc_language(), "en", "closed in Italian, opens in English")
+        self.assertEqual(app._pdf_panel.language, "en")
+        self.assertEqual(app._issue_panel.language, "en")
+
     def test_manual_switches_pdf(self):
         panel = gm.PdfManualPanel(fake_tkinter.Tk(), "/x/en.pdf", {"en": "/x/en.pdf", "it": "/x/it.pdf"})
         with mock.patch.object(panel, "_load_and_render") as render:

@@ -2489,14 +2489,20 @@ class GuiCrackSegmentation(CrackSegmentation):
     def doc_language(self):
         return getattr(self.cfg, "doc_language", "en")
 
-    def set_doc_language(self, lang):
+    def set_doc_language(self, lang, quiet=False):
         """v2.4.0 flags: the manual and the issue table follow the language picked in either of them."""
         if lang not in DOC_LANGUAGES:
             return
         self.cfg.doc_language = lang
         self._pdf_panel.set_language(lang)
         self._issue_panel.set_language(lang)
-        print(f" [LANGUAGE] Manual and issue table in {'English' if lang == 'en' else 'Italian'}.")
+        if not quiet:
+            print(f" [LANGUAGE] Manual and issue table in {'English' if lang == 'en' else 'Italian'}.")
+
+    def _back_to_english(self):
+        """English is the default: leaving the manual or the issue table in Italian opens them in English next time."""
+        if self.doc_language() != "en":
+            self.set_doc_language("en", quiet=True)
 
     def _resolve_manual_pdf_path(self):
         """Path of the bundled PDF user manual."""
@@ -3188,6 +3194,7 @@ class GuiCrackSegmentation(CrackSegmentation):
             self._pdf_panel.hide()
             self._canvas.container.pack(fill="both", expand=True)
             self._pdf_panel_visible = False
+            self._back_to_english()
 
     def _toggle_help_menu(self):
         """GUI override: shows/hides the real PDF user manual instead of the text overlay render_scene() draws in
@@ -3226,6 +3233,7 @@ class GuiCrackSegmentation(CrackSegmentation):
             self._issue_panel.hide()
             self._canvas.container.pack(fill="both", expand=True)
             self._issue_panel_visible = False
+            self._back_to_english()
 
     def _toggle_issue_log_view(self):
         """GUI override (code 165, Issues button / menu): shows/hides the issue table in place of the photo, between

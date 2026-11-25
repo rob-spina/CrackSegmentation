@@ -55,7 +55,7 @@ elementi e la tabella con affidabilità, confidenza e viste di ogni fessura, le 
 **Photo info** nello stesso spazio, invece del riquadro scuro trasparente sopra la foto. Il Crack report resta sulla foto.
 
 In cima al manuale e alla tabella Issues ci sono due bandierine (inglese e italiana): cliccandole entrambi passano alla
-lingua scelta. Il manuale esiste ora anche in italiano (`Crack_Segmentation_User_Manual_IT.pdf`); nella tabella in italiano
+lingua scelta (l'inglese resta il predefinito: chiudendoli in italiano, si riaprono in inglese). Il manuale esiste ora anche in italiano (`Crack_Segmentation_User_Manual_IT.pdf`); nella tabella in italiano
 cambiano i nomi delle colonne, i testi standard dei problemi e `none` (nessuna), mentre il file resta in inglese.
 
 ## Novità 2.3.1: correzione
