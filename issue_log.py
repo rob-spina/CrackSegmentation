@@ -6,14 +6,14 @@ While the issue log is on, every save ([S], Save+next) in Mode 1 or Mode 2 asks 
 of the photo had -- masonry joints traced as cracks, edges / cornices / roads traced, rubble, crazing, missing
 cracks ... -- and writes them to '<data folder>/segmentation_issues.csv', one row per photo and category:
 
-    n, immagine, categoria, problema, modalità, destinazione
+    N, image, category, problem, mode, destination
 
-  - n: progressive number of the row (kept when the row is updated);
-  - immagine: the photo file name;
-  - categoria / problema: a category of ISSUE_CATEGORIES with its standard description, plus the note typed in
+  - N: progressive number of the row (kept when the row is updated);
+  - image: the photo file name;
+  - category / problem: a category of ISSUE_CATEGORIES with its standard description, plus the note typed in
     the window (zone, what was done), or "X" (other) with a free description;
-  - modalità: 1 or 2, the mode the photo was saved in;
-  - destinazione: the set the photo is meant for -- Training set, Validation set, Test set -- or "nessuna" when
+  - mode: 1 or 2, the mode the photo was saved in;
+  - destination: the set the photo is meant for -- Training set, Validation set, Test set -- or "none" when
     the split is not decided yet (v2.4.0). It is only written down: the photo is not moved. The window proposes
     the set already chosen for the photo, else the set that already holds photos of the same building
     (__BLDGnnn), so a building does not end up in two sets.
@@ -29,8 +29,11 @@ import re
 ISSUE_LOG_CODE = 164
 ISSUE_LOG_VIEW_CODE = 165
 ISSUE_LOG_FILE = "segmentation_issues.csv"
-ISSUE_FIELDS = ("n", "immagine", "categoria", "problema", "modalità", "destinazione")
-NO_DESTINATION = "nessuna"
+ISSUE_FIELDS = ("N", "image", "category", "problem", "mode", "destination")
+# Column names of the first 2.4.0 builds (Italian): still read, written back in English.
+LEGACY_FIELDS = {"n": "N", "immagine": "image", "categoria": "category", "problema": "problem", "modalità": "mode",
+                 "destinazione": "destination"}
+NO_DESTINATION = "none"
 # Destination keys (as in cfg.DATASET_SPLIT_DIRS) in the order shown in the window; None = split not decided yet.
 DESTINATION_KEYS = ("training", "validation", "test", None)
 OTHER_CATEGORY = "X"
@@ -57,13 +60,16 @@ def read_issues(path):
     with open(path, newline="", encoding="utf-8-sig") as fh:
         rows = []
         for r in csv.DictReader(fh):
+            r = {LEGACY_FIELDS.get(k, k): v for k, v in r.items() if k is not None}
+            if (r.get("destination") or "").strip() == "nessuna":   # first 2.4.0 builds
+                r["destination"] = NO_DESTINATION
             rows.append({k: (r.get(k) or "").strip() for k in ISSUE_FIELDS})
         return rows
 
 
 def write_issues(path, rows):
     """Writes the rows sorted by n (UTF-8 with BOM, so Excel shows the accents)."""
-    rows = sorted(rows, key=lambda r: _as_int(r["n"]))
+    rows = sorted(rows, key=lambda r: _as_int(r["N"]))
     tmp = path + ".tmp"
     with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.DictWriter(fh, fieldnames=ISSUE_FIELDS)
@@ -90,12 +96,12 @@ def problem_text(category, note="", other=""):
 
 
 def destination_label(key, split_dirs):
-    """'Test set' for 'test' (names from cfg.DATASET_SPLIT_DIRS), 'nessuna' for None."""
+    """'Test set' for 'test' (names from cfg.DATASET_SPLIT_DIRS), 'none' for None."""
     return split_dirs.get(key, NO_DESTINATION) if key else NO_DESTINATION
 
 
 def destination_key(label, split_dirs):
-    """The inverse of destination_label: None for 'nessuna' / empty / unknown."""
+    """The inverse of destination_label: None for 'none' / empty / unknown."""
     for key, name in split_dirs.items():
         if label == name:
             return key
@@ -116,25 +122,25 @@ def building_sets(data_dir, split_dirs, tag):
 
 
 def photo_issues(rows, photo):
-    return [r for r in rows if r["immagine"] == photo]
+    return [r for r in rows if r["image"] == photo]
 
 
 def set_photo_issues(path, photo, mode, picks, destination=NO_DESTINATION):
     """Replaces the rows of one photo with picks = [(category, problem)], all with the same destination (set name
-    or 'nessuna'). A category already logged for the photo keeps its n; new ones get the next numbers.
+    or 'none'). A category already logged for the photo keeps its n; new ones get the next numbers.
     Returns the photo's new rows."""
     rows = read_issues(path)
-    old = {r["categoria"]: r for r in photo_issues(rows, photo)}
-    kept = [r for r in rows if r["immagine"] != photo]
-    next_n = max([_as_int(r["n"]) for r in rows] + [0]) + 1
+    old = {r["category"]: r for r in photo_issues(rows, photo)}
+    kept = [r for r in rows if r["image"] != photo]
+    next_n = max([_as_int(r["N"]) for r in rows] + [0]) + 1
     new_rows = []
     for category, problem in picks:
         if category in old:
-            n = old[category]["n"]
+            n = old[category]["N"]
         else:
             n, next_n = str(next_n), next_n + 1
-        new_rows.append({"n": n, "immagine": photo, "categoria": category, "problema": problem,
-                         "modalità": str(mode), "destinazione": destination or NO_DESTINATION})
+        new_rows.append({"N": n, "image": photo, "category": category, "problem": problem,
+                         "mode": str(mode), "destination": destination or NO_DESTINATION})
     write_issues(path, kept + new_rows)
     return new_rows
 
@@ -143,7 +149,7 @@ def delete_issue_rows(path, numbers):
     """Deletes the rows whose n is in numbers. Returns how many were deleted."""
     numbers = {str(n) for n in numbers}
     rows = read_issues(path)
-    kept = [r for r in rows if r["n"] not in numbers]
+    kept = [r for r in rows if r["N"] not in numbers]
     if len(kept) != len(rows):
         write_issues(path, kept)
     return len(rows) - len(kept)
@@ -171,8 +177,8 @@ class IssueLogMixin:
         """(key or None, hint): the set already written for the photo, else the set holding its building."""
         split_dirs = self.cfg.DATASET_SPLIT_DIRS
         for r in current_rows:
-            if r.get("destinazione"):
-                return destination_key(r["destinazione"], split_dirs), ""
+            if r.get("destination"):
+                return destination_key(r["destination"], split_dirs), ""
         from building_filter import building_tag
         tag = building_tag(photo)
         found = building_sets(self.cfg.SCRIPT_DIR, split_dirs, tag)
@@ -189,7 +195,7 @@ class IssueLogMixin:
         for letter, text in ISSUE_CATEGORIES:
             print(f"   {letter}  {text}")
         print(f"   {OTHER_CATEGORY}  other (describe it)")
-        now = ",".join(r["categoria"] for r in current_rows)
+        now = ",".join(r["category"] for r in current_rows)
         try:
             answer = input(f" [ISSUE LOG] {photo}: categories (e.g. A,C; '-' = none; ENTER = skip)"
                            + (f" [now {now}]" if now else "") + ": ").strip().upper()
@@ -248,8 +254,8 @@ class IssueLogMixin:
             print(f" [ISSUE LOG] Could not update {path}: {e}")
             return None
         if rows:
-            print(f" [ISSUE LOG] {photo}: " + ", ".join(r["categoria"] for r in rows)
-                  + f", destination {rows[0]['destinazione']} -> {path}")
+            print(f" [ISSUE LOG] {photo}: " + ", ".join(r["category"] for r in rows)
+                  + f", destination {rows[0]['destination']} -> {path}")
         else:
             print(f" [ISSUE LOG] {photo}: no problem, not in the list.")
         return rows
@@ -261,7 +267,7 @@ class IssueLogMixin:
         if not rows:
             print(f" [ISSUE LOG] No problem logged yet ({path}).")
             return
-        print(f"\n{'n':>4}  {'mod.':<4} cat  immagine  [destinazione] / problema   ({path})")
+        print(f"\n{'N':>4}  {'mode':<4} cat  image  [destination] / problem   ({path})")
         for r in rows:
-            print(f"{r['n']:>4}  {r['modalità']:<4} {r['categoria']:<4} {r['immagine']}  [{r['destinazione']}]\n"
-                  f"{'':>15}{r['problema']}")
+            print(f"{r['N']:>4}  {r['mode']:<4} {r['category']:<4} {r['image']}  [{r['destination']}]\n"
+                  f"{'':>15}{r['problem']}")

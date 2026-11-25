@@ -39,8 +39,8 @@ salvataggio in Mode 1 o Mode 2 apre una finestra con le criticità della segment
 muratura tracciate come fessure, B bordi/spigoli/cornici/strade/striature tracciati, C macerie o crollo, D
 cavillatura, E fessure vere non tracciate, F fessure tracciate male, X altro (testo libero), più una nota (zona, cosa
 è stato fatto). Le righe vanno in `segmentation_issues.csv` nella cartella dei dati, una per foto e categoria, con i
-campi `n, immagine, categoria, problema, modalità, destinazione`. Nella stessa finestra si sceglie il set di
-destinazione (Training, Validation, Test set o *Not decided yet* = `nessuna`): viene solo annotato, la foto non viene
+campi `N, image, category, problem, mode, destination`. Nella stessa finestra si sceglie il set di
+destinazione (Training, Validation, Test set o *Not decided yet* = `none`): viene solo annotato, la foto non viene
 spostata; è proposto il set già scelto per la foto, altrimenti quello che contiene già foto dello stesso edificio. Risalvando la foto le sue categorie sono già spuntate e le sue
 righe vengono sostituite; senza spunte la foto esce dall'elenco; *Skip* lascia l'elenco com'è.
 

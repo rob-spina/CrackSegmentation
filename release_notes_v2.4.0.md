@@ -13,9 +13,9 @@ A new **Issue log** button (left sidebar, Dataset section; also in the new **Iss
 - **F** cracks traced badly (path, width or gaps)
 - **X** other, with a free description
 
-plus a note (zone, what was done). The rows go to `segmentation_issues.csv` in the data folder, one per photo and category, with the columns `n, immagine, categoria, problema, modalità` (1 or 2) and `destinazione`.
+plus a note (zone, what was done). The rows go to `segmentation_issues.csv` in the data folder, one per photo and category, with the columns `N, image, category, problem, mode` (1 or 2) and `destination`.
 
-The same window asks the **destination set** of the photo: Training set, Validation set, Test set or *Not decided yet* (written as `nessuna`). It is only written down, the photo is not moved. The window proposes the set already chosen for the photo, otherwise the set that already holds photos of the same building (`__BLDGnnn`), and warns when the building is already in a set, so a building does not end up in two sets.
+The same window asks the **destination set** of the photo: Training set, Validation set, Test set or *Not decided yet* (written as `none`). It is only written down, the photo is not moved. The window proposes the set already chosen for the photo, otherwise the set that already holds photos of the same building (`__BLDGnnn`), and warns when the building is already in a set, so a building does not end up in two sets.
 
 Saving the photo again shows its categories already ticked and replaces its rows; with nothing ticked the photo leaves the list; **Skip** leaves the list as it is.
 

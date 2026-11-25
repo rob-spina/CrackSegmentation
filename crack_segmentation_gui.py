@@ -651,7 +651,7 @@ class InfoPanel:
 
 class IssueLogPanel:
     """v2.4.0 [Show segmentation issues] (code 165): covers the window like the manual and shows
-    'segmentation_issues.csv' (n, immagine, categoria, problema, modalita, destinazione); the selected rows can
+    'segmentation_issues.csv' (N, image, category, problem, mode, destination); the selected rows can
     be deleted."""
 
     NAVY, TEAL, INK, ZEBRA = "#0f3460", "#1f8a9e", "#1f2937", "#f3f7f9"
@@ -682,10 +682,10 @@ class IssueLogPanel:
         style.map("Issues.Treeview", background=[("selected", self.TEAL)], foreground=[("selected", "white")])
         self.tree = ttk.Treeview(body, columns=ISSUE_FIELDS, show="headings", style="Issues.Treeview",
                                  selectmode="extended")
-        widths = {"n": 50, "immagine": 320, "categoria": 80, "problema": 520, "modalità": 80, "destinazione": 130}
+        widths = {"N": 50, "image": 320, "category": 80, "problem": 520, "mode": 80, "destination": 130}
         for col in ISSUE_FIELDS:
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=widths[col], anchor="w" if col in ("immagine", "problema") else "center")
+            self.tree.column(col, width=widths[col], anchor="w" if col in ("image", "problem") else "center")
         self.tree.tag_configure("odd", background=self.ZEBRA)
         scroll = ttk.Scrollbar(body, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scroll.set)
@@ -706,8 +706,8 @@ class IssueLogPanel:
         for i, r in enumerate(rows):
             item = self.tree.insert("", "end", values=tuple(r[k] for k in ISSUE_FIELDS),
                                     tags=("odd",) if i % 2 else ())
-            self._number_of[item] = r["n"]
-        photos = len({r["immagine"] for r in rows})
+            self._number_of[item] = r["N"]
+        photos = len({r["image"] for r in rows})
         state = "on" if self.app.issue_log_on() else "off (Issue log button, left sidebar)"
         self.summary.configure(text=f"{len(rows)} problem(s) on {photos} photo(s)   |   issue log {state}")
         self.status.configure(text=path if rows else f"No problem logged yet: {path}")
@@ -2045,8 +2045,8 @@ class _IssueDialog:
         body.pack(fill="both", expand=True)
         tk.Label(body, text="Problems of the segmentation", font=("TkDefaultFont", 11, "bold")).pack(anchor="w")
         tk.Label(body, text=photo, fg="#555555").pack(anchor="w", pady=(0, 8))
-        ticked = {r["categoria"] for r in current_rows}
-        old_other = next((r["problema"] for r in current_rows if r["categoria"] == OTHER_CATEGORY), "")
+        ticked = {r["category"] for r in current_rows}
+        old_other = next((r["problem"] for r in current_rows if r["category"] == OTHER_CATEGORY), "")
         self.vars = {}
         for letter, text in ISSUE_CATEGORIES:
             var = tk.BooleanVar(master=self.top, value=letter in ticked)
